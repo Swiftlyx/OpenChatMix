@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in OpenChatMix does not work as expected.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenChatMix version
+      description: Shown at the bottom of the Settings tab.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: headset
+    attributes:
+      label: Headset
+      description: Model, or "none" without a SteelSeries headset.
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+  - type: dropdown
+    id: routing
+    attributes:
+      label: Virtual device mode
+      options:
+        - "Off"
+        - "On"
+  - type: textarea
+    id: log
+    attributes:
+      label: OpenChatMix.log
+      description: Set `Log=1` in `%APPDATA%\OpenChatMix\OpenChatMix.ini`, restart OpenChatMix, reproduce the problem and attach the log.
+      render: text

@@ -1,0 +1,10 @@
+build/
+dist/
+tools/icongen/obj/
+.vs/
+*.obj
+*.res
+*.pdb
+*.ilk
+OpenChatMix.ini
+OpenChatMix.log

@@ -1,0 +1,55 @@
+name: Headset report
+description: Tell us how OpenChatMix works with your headset, especially an untested model.
+labels: ["headset"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Reports for untested models help most when a log is attached.
+        To make one, set `Log=1` in `%APPDATA%\OpenChatMix\OpenChatMix.ini`, restart OpenChatMix,
+        turn the ChatMix dial a few times and open the panel, then attach `OpenChatMix.log` from the same folder.
+  - type: input
+    id: model
+    attributes:
+      label: Headset
+      description: Full model name, e.g. Arctis Nova 7 Wireless (PC).
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OpenChatMix version
+      description: Shown at the bottom of the Settings tab.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: chatmix
+    attributes:
+      label: Does the ChatMix dial change the balance?
+      options:
+        - "Yes"
+        - Partly (please describe below)
+        - "No"
+    validations:
+      required: true
+  - type: dropdown
+    id: settings
+    attributes:
+      label: Do the headset settings in the Headset tab work?
+      options:
+        - "Yes"
+        - Partly (please describe below)
+        - "No"
+        - The Headset tab does not appear
+  - type: textarea
+    id: details
+    attributes:
+      label: What works and what does not
+      description: Swapped Game and Chat, settings that do nothing, wrong battery level and so on.
+  - type: textarea
+    id: log
+    attributes:
+      label: OpenChatMix.log
+      description: Paste the log or attach the file.
+      render: text
