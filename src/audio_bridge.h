@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#include <endpointvolume.h>
+#include <wrl/client.h>
+
 #include <atomic>
 #include <memory>
 #include <string>
@@ -59,19 +62,37 @@ private:
 };
 
 // Two bridges that implement ChatMix with virtual devices: Game and Chat play into one output.
+// Loopback capture takes the sound before the Windows volume of a device, so the router applies it:
+// the Game device (the default output, so the taskbar slider and volume keys) scales both sides, the
+// Chat device scales Chat. Captures of the devices by other apps keep the full level.
 class AudioRouter {
 public:
+    // Posts WM_APP_DEVICE_VOLUME to notifyWindow when the volume of the Game or Chat device changes.
     bool Start(const std::wstring& gameId, const std::wstring& chatId, const std::wstring& outputId, HWND notifyWindow);
     void Stop();
     bool IsRunning() const { return game_.IsRunning() && chat_.IsRunning(); }
     BridgeError Error() const;
     void SetLevels(Levels levels);
+    // Reads the Windows volume and mute of the Game and Chat devices again.
+    void UpdateDeviceVolumes();
     void SetEqualizers(std::shared_ptr<const ParametricEq> game, std::shared_ptr<const ParametricEq> chat);
     // Largest Chat output sample since the last call.
     float TakeChatPeak() { return chat_.TakePeak(); }
     int LatencyMs() const;
 
 private:
+    struct DeviceVolume {
+        Microsoft::WRL::ComPtr<IAudioEndpointVolume> control;
+        Microsoft::WRL::ComPtr<IAudioEndpointVolumeCallback> callback;
+        float gain = 1.0f;
+    };
+
+    static void WatchVolume(const std::wstring& id, HWND notifyWindow, DeviceVolume& volume);
+    void ApplyVolumes();
+
     AudioBridge game_;
     AudioBridge chat_;
+    DeviceVolume gameVolume_;
+    DeviceVolume chatVolume_;
+    Levels levels_;
 };

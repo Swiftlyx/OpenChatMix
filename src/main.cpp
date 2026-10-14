@@ -1778,7 +1778,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         OnUpdateInstalled(wParam != 0);
         return 0;
 
+    case WM_APP_DEVICE_VOLUME:
+        g_app.router.UpdateDeviceVolumes();
+        return 0;
+
     case WM_APP_SESSIONS_CHANGED:
+        g_app.mixer.ReleaseExpired();
         ApplyLevels();
         RefreshApps();
         SyncAppRouting();

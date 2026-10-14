@@ -8,8 +8,8 @@
 #include <wrl/client.h>
 
 #include <cstdint>
+#include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -17,7 +17,10 @@
 #include "balance.h"
 #include "settings.h"
 
-// Applies ChatMix levels as per-application session volume on the target render endpoints.
+// Applies ChatMix levels to the apps on the target render endpoints through the per-channel volume of
+// their audio sessions. Windows multiplies it with the session volume, which the volume mixer shows
+// and which stays the user's own. Windows also persists the channel volume per app, so a session keeps
+// its ChatMix level only while it lives: the level is reset once the app exits.
 // Must be used from a COM MTA thread: session notifications are not delivered to STA threads.
 class SessionMixer {
 public:
@@ -38,11 +41,14 @@ public:
     void Rebind();
     bool HasEndpoint() const { return !endpoints_.empty(); }
 
+    // Posts WM_APP_SESSIONS_CHANGED when a session it changed expires.
     void Apply(Levels levels, const Settings& settings);
     // Returns one app to full volume, e.g. after it moved to the Media group.
     void RestoreApp(const std::wstring& exe);
     // Returns every app changed by this mixer to full volume.
     void ResetVolumes();
+    // Resets the sessions of apps that exited, before Windows keeps their level for the next start.
+    void ReleaseExpired();
 
     // Unique applications with live sessions on the target endpoints.
     std::vector<ProcessApp> ActiveApps() const;
@@ -64,13 +70,31 @@ private:
         std::wstring exe;
         std::wstring path;
         DWORD pid;
-        ISimpleAudioVolume* volume;
+        IChannelAudioVolume* channels;
         IAudioSessionControl* control;
+        IAudioSessionControl2* control2;
+        const std::wstring* endpointId;
     };
+
+    // A session whose channel volume this mixer changed. The reference keeps an expired session
+    // reachable, so its level can still be reset after the app exited.
+    struct Changed {
+        std::wstring exe;
+        std::wstring endpointId;
+        Microsoft::WRL::ComPtr<IAudioSessionControl> control;
+        Microsoft::WRL::ComPtr<IChannelAudioVolume> channels;
+        Microsoft::WRL::ComPtr<IAudioSessionEvents> events;
+    };
+
     template <class Fn>
     static void ForEachSession(const std::vector<Endpoint>& endpoints, Fn&& fn);
     std::vector<Endpoint> ResolveEndpoints();
     void Unregister(std::vector<Endpoint>& endpoints);
+    void SetLevel(const Session& session, float level);
+    // Resets the session to full volume and stops watching it.
+    static void Release(Changed& changed);
+    template <class Pred>
+    void ReleaseWhere(Pred&& pred);
 
     HWND notify_ = nullptr;
     std::optional<uint16_t> target_;
@@ -78,5 +102,5 @@ private:
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator_;
     Microsoft::WRL::ComPtr<IMMNotificationClient> endpointNotifier_;
     std::vector<Endpoint> endpoints_;
-    std::set<std::wstring, NoCaseLess> touched_;  // Apps whose volume this mixer changed.
+    std::map<std::wstring, Changed> changed_;  // Keyed by session instance identifier.
 };

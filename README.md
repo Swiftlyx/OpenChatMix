@@ -15,8 +15,10 @@ running: several background processes, hundreds of megabytes of RAM and a set of
 devices, just to balance game and chat audio.
 
 OpenChatMix talks to the headset directly over USB HID and applies the balance as per-app volume
-in Windows. It is a single native executable of about 1 MB that idles at 0% CPU, installs no
-drivers and creates no virtual audio devices.
+in Windows, so the sound keeps going straight to the headset. If you prefer Sonar's way, an
+optional [virtual device mode](#virtual-device-mode) mixes Game and Chat from two virtual audio
+cables instead. It is a single native executable of about 1 MB that idles at 0% CPU and installs
+no drivers of its own.
 
 <p align="center">
   <img src="docs/screenshots/mixer.png" width="260" alt="Mixer panel">
@@ -26,12 +28,38 @@ drivers and creates no virtual audio devices.
   <img src="docs/screenshots/equalizer.png" width="260" alt="Equalizer">
 </p>
 
+## One app instead of SteelSeries GG
+
+Most of what GG does for a headset is built in, so GG and Sonar can stay closed:
+
+- **ChatMix** from the dial on the GameDAC, base station or headset.
+- **Native headset settings** from GG's Engine page: the Engine EQ with its presets and custom
+  curve, microphone volume, sidetone, mic mute LED, gain, volume limiter, display brightness and
+  dimming, auto power-off, wireless and Bluetooth options and battery level, depending on the model.
+  They are stored in the headset itself and stay active while no app runs.
+- **A Sonar-style mode** with two virtual audio devices and a 10-band parametric equalizer, if you
+  want it.
+
+## Works with any headset
+
+SteelSeries headsets from the [list below](#supported-headsets) get the hardware dial and their
+native settings. Any other headset, speakers or an unsupported SteelSeries model work too:
+
+- The balance is set in the panel or with hotkeys and applies to the default output device. A single
+  key works as a hotkey, so a keyboard's volume knob can act as a ChatMix wheel.
+- Game, Chat and Media groups, ducking, game profiles and the popup work the same way.
+- In virtual device mode the equalizer and its effects work on any output.
+
 ## Features
 
 - **Hardware dial.** The GameDAC / base station dial drives the Game–Chat balance. While
   OpenChatMix runs, the ChatMix icon is shown on the GameDAC display, so a glance tells you it is active.
 - **Volume stays hardware.** Only ChatMix reports are used; turning the knob in volume mode keeps
   working as before. The panel shows which mode the dial is in.
+- **Your own volumes stay.** ChatMix does not move the app sliders of the Windows volume mixer, so a
+  volume you set for an app yourself keeps working on top of the balance. In virtual device mode the
+  taskbar slider and the volume keys work too, while recordings of the Game and Chat devices (for
+  example in OBS) keep the full level.
 - **Game / Chat / Media groups.** Unknown apps follow the Game side, Discord starts in Chat, and
   Media apps (music, videos) are never touched by ChatMix — like Sonar's Media channel. The Media
   group can be turned off if you do not need it.
@@ -113,7 +141,9 @@ collect a log.
    *Task Manager → Startup apps*. GG and OpenChatMix cannot control the headset at the same time.
 3. In *Settings → System → Sound*, choose the headset itself (for example
    *Headphones (Arctis Nova Pro)*) as the output device instead of *SteelSeries Sonar – Gaming*.
-   In Discord and other apps, set the output to *Default* or to the headset.
+   In Discord and other apps, set the output to *Default* or to the headset. Prefer Sonar's setup
+   with separate Game and Chat devices? See the [virtual device mode guide](#virtual-device-mode)
+   further down.
 4. Run `OpenChatMix.exe`. A tray icon with two bars (Game and Chat) appears; click it to open the panel.
 
 The executable is not code-signed, so Windows SmartScreen may ask for confirmation on the first run
@@ -147,8 +177,9 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode). |
 | Game profiles | *Settings* → *Game profiles* → *Add*. |
 
-When OpenChatMix exits, every app it changed goes back to 100% volume and the GameDAC dial returns
-to plain volume control.
+When OpenChatMix exits, every app it lowered plays at its own volume again and the GameDAC dial
+returns to plain volume control. An app that exits while ChatMix lowers it also starts at its own
+volume next time.
 
 Headset settings are only sent when you change them in the panel; OpenChatMix never overwrites the
 headset's settings on its own. On the Nova Pro Wired the current EQ preset and curve, microphone
@@ -169,12 +200,12 @@ custom curve. If the current custom curve is not saved yet, it is first kept und
    | --- | --- | --- |
    | Game | [VB-Audio Hi-Fi Cable](https://vb-audio.com/Cable/) | free for end users |
    | Chat | [Virtual Audio Cable Lite](https://vac.muzychenko.net/en/download.htm) | free for home use; one cable, 48 kHz / 16-bit |
-   | Microphone chain (optional) | [VB-Audio VB-CABLE](https://vb-audio.com/Cable/) | free |
+   | Alternative for either | [VB-Audio VB-CABLE](https://vb-audio.com/Cable/) | free |
 
    Several apps (say Discord and Telegram) can play into VAC Lite at once: Windows mixes them into the
    single stream the Lite edition allows. [VB-CABLE A+B](https://vb-audio.com/Cable/) (donationware)
    works as well. *CABLE Input* and *CABLE In 16ch* of the basic VB-CABLE are two inputs of the same
-   cable and cannot serve as separate devices; OpenChatMix leaves them to a microphone chain.
+   cable, so only one of them can be used; it is not picked on its own, choose it in the card.
 
    Then Settings → *Audio routing* → enable *Virtual device mode* and choose the Game and Chat devices
    in the same card. VB-Audio Hi-Fi Cable, Virtual Audio Cable and VB-CABLE A–D are recognized and
@@ -202,8 +233,13 @@ There is no Media group in this mode: Media apps play on the Game side. Apps tha
 the headset are not affected.
 
 OpenChatMix captures what is played on the two devices (WASAPI loopback) and plays it on the output
-with the ChatMix balance applied, adding about 30 ms of latency. App volumes are reset to 100%
-when the mode is turned on.
+with the ChatMix balance applied, adding about 30 ms of latency.
+
+The Windows volume and mute of the Game device apply to both sides, so the taskbar slider and the
+volume keys work as usual while it is the default output. The volume of the Chat device applies to
+the Chat side only. A level above 0 dB, such as the +12 dB of Virtual Audio Cable at 100%, plays at
+the original level. Apps that record the Game or Chat device themselves, such as OBS, get the sound
+before ChatMix and the device volume, at full level.
 
 OpenChatMix cannot install a virtual audio device itself: that takes a signed kernel driver, and
 bundling VB-CABLE with other software needs a distribution agreement with VB-Audio. The open-source
@@ -280,9 +316,13 @@ When OpenChatMix exits or the PC goes to sleep, the display is handed back to th
 | | device → PC | `B0 …` | Status: game and chat at bytes 4 and 5 (Nova 5X: chat 5, game 6) |
 | | device → PC | `45 gg cc` | Dial event (Gen 2 firmware); polling stops once seen |
 
-**Audio.** The balance is applied with the Windows audio session API
-(`IAudioSessionManager2` / `ISimpleAudioVolume`) on the headset's playback device, so there is no
-extra audio path and no added latency. The screensaver watches the device's peak meter
+**Audio.** The balance is applied with the Windows audio session API on the headset's playback
+device, so there is no extra audio path and no added latency. `IAudioSessionManager2` lists the apps
+and `IChannelAudioVolume` lowers them through the per-channel volume of their session, which Windows
+multiplies with the app's slider in the volume mixer. Windows keeps that volume for the app's next
+start, so OpenChatMix resets it as soon as the app exits. In virtual device mode loopback capture
+takes the sound before the Windows volume of the Game and Chat devices, so the bridges read it
+(`IAudioEndpointVolume`) and apply it themselves. The screensaver watches the device's peak meter
 (`IAudioMeterInformation`). Virtual device mode switches devices and defaults through the
 `IPolicyConfig` interface that the Windows sound settings use, and sends apps to the Game or Chat
 device through `IAudioPolicyConfigFactory`, the interface behind the per-app device choice in the

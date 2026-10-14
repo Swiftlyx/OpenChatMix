@@ -19,6 +19,7 @@ constexpr UINT WM_APP_ROUTING = WM_APP + 10;          // A virtual device bridge
 constexpr UINT WM_APP_FRAME = WM_APP + 11;            // FrameClock: time to draw the next animation frame.
 constexpr UINT WM_APP_UPDATE_CHECKED = WM_APP + 12;   // Update check finished; lParam owns an UpdateCheckResult*.
 constexpr UINT WM_APP_UPDATE_INSTALLED = WM_APP + 13; // Update download finished; wParam 1 when it is in place.
+constexpr UINT WM_APP_DEVICE_VOLUME = WM_APP + 14;    // Windows volume or mute of a virtual Game or Chat device changed.
 
 inline constexpr wchar_t kAppName[] = L"OpenChatMix";
 inline constexpr wchar_t kMainWindowClass[] = L"OpenChatMix.Main";

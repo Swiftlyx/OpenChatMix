@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- ChatMix no longer moves the app sliders of the Windows volume mixer: apps are lowered through the
+  per-channel volume of their audio session, so a volume set for an app by hand stays and applies on
+  top of the balance. An app that exits while ChatMix lowers it starts at its own volume next time.
+- Virtual device mode follows the Windows volume and mute of the Game device (taskbar slider, volume
+  keys) for both sides and of the Chat device for the Chat side. Before, the bridges ignored them.
+  Levels above 0 dB are not reproduced, and recordings of the two devices keep the full level.
+
 ## 1.0.0 — 2026-10-14
 
 First public release.

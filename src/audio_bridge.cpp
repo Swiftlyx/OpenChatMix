@@ -237,6 +237,55 @@ private:
     float gain_ = 1.0f;
 };
 
+// Called on audio service threads; only posts to the UI thread.
+class VolumeNotifier final : public IAudioEndpointVolumeCallback {
+public:
+    explicit VolumeNotifier(HWND target) : target_(target) {}
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&refs_); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG refs = InterlockedDecrement(&refs_);
+        if (refs == 0) {
+            delete this;
+        }
+        return refs;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IAudioEndpointVolumeCallback)) {
+            *out = static_cast<IAudioEndpointVolumeCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA) override {
+        PostMessageW(target_, WM_APP_DEVICE_VOLUME, 0, 0);
+        return S_OK;
+    }
+
+private:
+    LONG refs_ = 1;
+    HWND target_;
+};
+
+// Gain a device applies at its Windows volume, in the device's own decibel scale. Levels above 0 dB
+// (Virtual Audio Cable reaches +12 dB at 100%) are not reproduced, so no setting plays louder than the
+// source. 0% is silence even where the device's range stops short of it.
+float DeviceGain(IAudioEndpointVolume* volume) {
+    BOOL muted = FALSE;
+    float scalar = 1.0f;
+    float decibels = 0.0f;
+    if (FAILED(volume->GetMute(&muted)) || FAILED(volume->GetMasterVolumeLevelScalar(&scalar)) ||
+        FAILED(volume->GetMasterVolumeLevel(&decibels))) {
+        return 1.0f;
+    }
+    if (muted || scalar <= 0.0f) {
+        return 0.0f;
+    }
+    return std::pow(10.0f, std::min(decibels, 0.0f) / 20.0f);
+}
+
 }  // namespace
 
 AudioBridge::~AudioBridge() {
@@ -487,12 +536,46 @@ bool AudioRouter::Start(const std::wstring& gameId, const std::wstring& chatId, 
         Stop();
         return false;
     }
+    WatchVolume(gameId, notifyWindow, gameVolume_);
+    WatchVolume(chatId, notifyWindow, chatVolume_);
+    UpdateDeviceVolumes();
+    Log("routing device gains: game %.3f, chat %.3f", gameVolume_.gain, chatVolume_.gain);
     return true;
 }
 
 void AudioRouter::Stop() {
+    for (DeviceVolume* volume : {&gameVolume_, &chatVolume_}) {
+        if (volume->control && volume->callback) {
+            volume->control->UnregisterControlChangeNotify(volume->callback.Get());
+        }
+        *volume = {};
+    }
     game_.Stop();
     chat_.Stop();
+}
+
+void AudioRouter::WatchVolume(const std::wstring& id, HWND notifyWindow, DeviceVolume& volume) {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IMMDevice> device;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
+        FAILED(enumerator->GetDevice(id.c_str(), &device)) ||
+        FAILED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, &volume.control))) {
+        // Without a volume control the device plays at full level, as before it was read.
+        volume.control.Reset();
+        Log("routing: no volume control for a device");
+        return;
+    }
+    volume.callback.Attach(new VolumeNotifier(notifyWindow));
+    if (FAILED(volume.control->RegisterControlChangeNotify(volume.callback.Get()))) {
+        volume.callback.Reset();
+    }
+}
+
+void AudioRouter::UpdateDeviceVolumes() {
+    for (DeviceVolume* volume : {&gameVolume_, &chatVolume_}) {
+        volume->gain = volume->control ? DeviceGain(volume->control.Get()) : 1.0f;
+    }
+    ApplyVolumes();
 }
 
 BridgeError AudioRouter::Error() const {
@@ -500,8 +583,13 @@ BridgeError AudioRouter::Error() const {
 }
 
 void AudioRouter::SetLevels(Levels levels) {
-    game_.SetVolume(levels.game / 100.0f);
-    chat_.SetVolume(levels.chat / 100.0f);
+    levels_ = levels;
+    ApplyVolumes();
+}
+
+void AudioRouter::ApplyVolumes() {
+    game_.SetVolume(levels_.game / 100.0f * gameVolume_.gain);
+    chat_.SetVolume(levels_.chat / 100.0f * chatVolume_.gain * gameVolume_.gain);
 }
 
 void AudioRouter::SetEqualizers(std::shared_ptr<const ParametricEq> game, std::shared_ptr<const ParametricEq> chat) {
