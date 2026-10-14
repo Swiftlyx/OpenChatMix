@@ -354,7 +354,7 @@ details they documented:
 - Robert Bristow-Johnson's *Audio EQ Cookbook* — the filter formulas of the equalizer.
 - The [hid-steelseries Arctis patch series](https://lkml.iu.edu/2602.3/08373.html) for the Linux
   kernel — ChatMix parsing for the Nova Pro, Nova 7 Gen 2 events and the Nova 5X byte order.
-- USB captures of the Arctis Nova Pro Wired GameDAC by Swiftlyx.
+- USB captures of the Arctis Nova Pro Wired GameDAC by Swiftlyx (me).
 - The interface follows [Material Design 3](https://m3.material.io/); icons come from Segoe Fluent
   Icons, which ship with Windows.
 
