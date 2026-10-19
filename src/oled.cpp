@@ -4,6 +4,7 @@
 #include <objbase.h>
 
 #include <algorithm>
+#include <exception>
 #include <vector>
 
 #include "log.h"
@@ -27,6 +28,14 @@ constexpr DWORD kStopTimeoutMs = 5000;
 constexpr DWORD kHandBackTimeoutMs = 250;
 // The GameDAC redraws its interface after the hand-back; commands sooner may not show on it.
 constexpr DWORD kHandBackSettleMs = 20;
+constexpr uint8_t kBadgeShown = 0x01;
+constexpr uint8_t kBadgeBlink = 0x02;
+constexpr int kBadgeMargin = 1;
+constexpr ULONGLONG kBadgeShiftMs = 30000;
+constexpr ULONGLONG kBadgeBlinkMs = 500;
+// The Bluetooth rune, 5 x 9 pixels.
+constexpr const char* kBluetoothRune[] = {"..#..", "..##.", "#.#.#", ".###.", "..#..",
+                                          ".###.", "#.#.#", "..##.", "..#.."};
 
 }  // namespace
 
@@ -94,8 +103,10 @@ void OledDisplay::Close() {
         handle_ = INVALID_HANDLE_VALUE;
     }
     playing_ = false;
+    overlaid_ = false;
     AcquireSRWLockExclusive(&lock_);
     requested_.reset();
+    overlay_.reset();
     ReleaseSRWLockExclusive(&lock_);
 }
 
@@ -110,10 +121,37 @@ void OledDisplay::Play(std::shared_ptr<IdleAnimation> animation) {
     SetEvent(wake_);
 }
 
+void OledDisplay::Hold(bool hold) {
+    if (holding_.exchange(hold) != hold && wake_) {
+        SetEvent(wake_);
+    }
+}
+
+void OledDisplay::SetBluetoothIcon(bool shown, bool blink, OledCorner corner) {
+    const uint8_t badge =
+        shown ? static_cast<uint8_t>(kBadgeShown | (blink ? kBadgeBlink : 0) | (static_cast<uint8_t>(corner) << 2)) : 0;
+    if (badge_.exchange(badge) != badge && wake_) {
+        SetEvent(wake_);
+    }
+}
+
+void OledDisplay::SetOverlay(std::shared_ptr<IdleAnimation> overlay) {
+    AcquireSRWLockExclusive(&lock_);
+    overlaid_ = overlay != nullptr;
+    overlay_ = std::move(overlay);
+    ReleaseSRWLockExclusive(&lock_);
+    if (wake_) {
+        SetEvent(wake_);
+    }
+}
+
 void OledDisplay::Pause() {
     if (playing_.exchange(false) && wake_) {
         SetEvent(wake_);
-        WaitForSingleObject(released_, kHandBackTimeoutMs);
+        // An add-on's screen keeps the display until it ends.
+        if (!overlaid_) {
+            WaitForSingleObject(released_, kHandBackTimeoutMs);
+        }
     }
 }
 
@@ -133,6 +171,8 @@ void OledDisplay::Run() {
     bool failureLogged = false;
     int failures = 0;
     ULONGLONG start = 0;
+    ULONGLONG resumed = 0;  // Drawing went on after a hold; the device may have its screen back by then.
+    bool held = false;
     ULONGLONG lastFull = 0;
     // Frames live on the heap; together they would take 16 KB of the thread's stack.
     const auto shown = std::make_unique<OledBitmap>();
@@ -144,7 +184,7 @@ void OledDisplay::Run() {
         if (stop_) {
             break;
         }
-        if (!playing_) {
+        if (!playing_ && !overlaid_) {
             if (drawn) {
                 ReturnToDevice();
                 drawn = false;
@@ -157,8 +197,17 @@ void OledDisplay::Run() {
             continue;
         }
 
+        if (holding_ && !overlaid_) {
+            // Whatever is on the display stays; the next frame is sent whole.
+            held = true;
+            shownValid = false;
+            wait = INFINITE;
+            continue;
+        }
+
         AcquireSRWLockShared(&lock_);
-        std::shared_ptr<IdleAnimation> requested = requested_;
+        const bool overlay = overlay_ != nullptr;
+        std::shared_ptr<IdleAnimation> requested = overlay ? overlay_ : requested_;
         ReleaseSRWLockShared(&lock_);
         if (requested != current) {
             current = std::move(requested);
@@ -170,7 +219,17 @@ void OledDisplay::Run() {
             continue;
         }
         if (!loaded) {
-            if (!current->Load(stop_)) {
+            // Decoding a large GIF can take a while; it must not slow down the rest of the PC, and a
+            // file that needs more memory than there is only fails to load.
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+            bool ok = false;
+            try {
+                ok = current->Load(stop_);
+            } catch (const std::exception&) {
+                Log("display: out of memory while loading the animation");
+            }
+            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
+            if (!ok) {
                 if (!stop_) {
                     Log("display: animation could not be loaded");
                 }
@@ -188,11 +247,19 @@ void OledDisplay::Run() {
 
         const ULONGLONG frameStart = GetTickCount64();
         frame->Clear();
-        const DWORD delay = current->Render(frameStart - start, *frame);
-        const bool takeover = frameStart - start < kTakeoverMs;
+        DWORD delay = current->Render(frameStart - start, *frame);
+        if (const uint8_t badge = badge_.load(); badge != 0 && !overlay) {
+            delay = std::min(delay, DrawBadge(*frame, badge, frameStart));
+        }
+        if (held) {
+            // SteelSeries GG may have given the display back to the device meanwhile: a takeover again.
+            held = false;
+            resumed = frameStart;
+        }
+        const bool takeover = frameStart - start < kTakeoverMs || frameStart - resumed < kTakeoverMs;
         const bool full = !shownValid || takeover || frameStart - lastFull >= kFullRedrawMs;
         // Pause() may have been called while the frame was rendered.
-        if (!playing_) {
+        if (!playing_ && !overlaid_) {
             SetEvent(wake_);
             continue;
         }
@@ -200,7 +267,14 @@ void OledDisplay::Run() {
             ResetEvent(released_);
         }
         drawn = true;
-        if (Draw(*frame, full ? nullptr : shown.get())) {
+        bool interrupted = false;
+        if (Draw(*frame, full ? nullptr : shown.get(), interrupted)) {
+            if (interrupted) {
+                // Part of the frame is on the display, so the next one is sent whole.
+                shownValid = false;
+                wait = 0;
+                continue;
+            }
             *shown = *frame;
             shownValid = true;
             failures = 0;
@@ -236,7 +310,7 @@ void OledDisplay::Run() {
     }
 }
 
-bool OledDisplay::Draw(const OledBitmap& frame, const OledBitmap* shown) {
+bool OledDisplay::Draw(const OledBitmap& frame, const OledBitmap* shown, bool& interrupted) {
     // Only the bounding box of the changed pixels is sent: every report takes the device about
     // 30 ms regardless of its size.
     int left = 0;
@@ -269,6 +343,10 @@ bool OledDisplay::Draw(const OledBitmap& frame, const OledBitmap* shown) {
     const int bitsPerReport = (featureLength_ - kHeaderSize) * 8;
     const int maxWidth = std::min(kMaxRegionWidth, bitsPerReport / height);
     for (int x = left; x < right; x += maxWidth) {
+        if (holding_ && !overlaid_) {
+            interrupted = true;
+            return true;
+        }
         if (!SendRegion(frame, x, top, std::min(maxWidth, right - x), height)) {
             return false;
         }
@@ -303,6 +381,41 @@ bool OledDisplay::SendRegion(const OledBitmap& frame, int left, int top, int wid
         Sleep(10 * attempt * attempt);
     }
     return false;
+}
+
+DWORD OledDisplay::DrawBadge(OledBitmap& frame, uint8_t badge, ULONGLONG now) {
+    constexpr int kRuneWidth = 5;
+    constexpr int kRuneHeight = static_cast<int>(std::size(kBluetoothRune));
+    // A black margin keeps the icon readable over the animation.
+    constexpr int kBoxWidth = kRuneWidth + 2;
+    constexpr int kBoxHeight = kRuneHeight + 2;
+    static constexpr int kShifts[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    const int* shift = kShifts[(now / kBadgeShiftMs) % std::size(kShifts)];
+    const auto corner = static_cast<OledCorner>((badge >> 2) & 0x03);
+    const bool right = corner == OledCorner::TopRight || corner == OledCorner::BottomRight;
+    const bool bottom = corner == OledCorner::BottomLeft || corner == OledCorner::BottomRight;
+    const int left = right ? kOledWidth - kBadgeMargin - kBoxWidth - shift[0] : kBadgeMargin + shift[0];
+    const int top = bottom ? kOledHeight - kBadgeMargin - kBoxHeight - shift[1] : kBadgeMargin + shift[1];
+    ULONGLONG next = kBadgeShiftMs - now % kBadgeShiftMs;
+    if (badge & kBadgeBlink) {
+        next = std::min(next, kBadgeBlinkMs - now % kBadgeBlinkMs);
+        if ((now / kBadgeBlinkMs) % 2) {
+            return static_cast<DWORD>(next);
+        }
+    }
+    for (int y = 0; y < kBoxHeight; ++y) {
+        for (int x = 0; x < kBoxWidth; ++x) {
+            frame.Set(left + x, top + y, false);
+        }
+    }
+    for (int y = 0; y < kRuneHeight; ++y) {
+        for (int x = 0; x < kRuneWidth; ++x) {
+            if (kBluetoothRune[y][x] == '#') {
+                frame.Set(left + 1 + x, top + 1 + y);
+            }
+        }
+    }
+    return static_cast<DWORD>(next);
 }
 
 bool OledDisplay::ReturnToDevice() {

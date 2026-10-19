@@ -131,81 +131,112 @@ SeedLch Analyze(uint32_t seed) {
     return {std::hypot(lab.a, lab.b), std::atan2(lab.b, lab.a)};
 }
 
+// The Game side: the seed's hue at no more than the soft chroma limit.
+SeedLch GameLch(uint32_t seed) {
+    const SeedLch lch = Analyze(seed);
+    return {std::min(lch.chroma, static_cast<double>(kMaxSeedChroma)), lch.hue};
+}
+
+// The Chat side is soft as well, but never so gray that it blends into a gray Game side.
+constexpr double kChatMinChroma = 0.045;
+constexpr double kChatMaxChroma = 0.09;
+// Below this chroma Game reads as gray, and any Chat hue already stands apart from it.
+constexpr double kColorfulChroma = 0.04;
+constexpr double kMinHueSeparation = 60.0 * kPi / 180.0;
+// Without a chosen color Chat sits this far around the hue circle, which gives the default orange the
+// blue it always had.
+constexpr double kAutoChatTurn = 200.0 * kPi / 180.0;
+
+// The Chat side next to game: the chosen color within the limits above, or the automatic pairing.
+SeedLch ChatLch(const SeedLch& game, std::optional<uint32_t> chatSeed) {
+    if (!chatSeed) {
+        return {std::clamp(game.chroma * 0.75, kChatMinChroma, kChatMaxChroma), game.hue + kAutoChatTurn};
+    }
+    SeedLch chat = Analyze(*chatSeed);
+    chat.chroma = std::clamp(chat.chroma, kChatMinChroma, kChatMaxChroma);
+    if (game.chroma >= kColorfulChroma) {
+        // The shortest turn from the Game hue; a Chat hue closer than the minimum moves out to it on
+        // its own side.
+        const double turn = std::remainder(chat.hue - game.hue, 2.0 * kPi);
+        if (std::fabs(turn) < kMinHueSeparation) {
+            chat.hue = game.hue + (turn < 0.0 ? -kMinHueSeparation : kMinHueSeparation);
+        }
+    }
+    return chat;
+}
+
 ThemeMode g_mode = ThemeMode::System;
 Palette g_palettes[2] = {MakePalette(kDefaultAccent, false), MakePalette(kDefaultAccent, true)};
 
 }  // namespace
 
-Palette MakePalette(uint32_t seed, bool dark) {
-    const SeedLch lch = Analyze(seed);
-    const double chroma = std::min(lch.chroma, 0.20);
-    // Game keeps the seed hue; Chat sits 200 degrees away so both sides stay apart for any seed, and
-    // the default orange gets the blue it always had.
-    const TonalPalette primary{lch.hue, chroma};
-    const TonalPalette secondary{lch.hue, std::min(chroma / 3.0, 0.045)};
-    const TonalPalette tertiary{lch.hue + 200.0 * kPi / 180.0, std::clamp(chroma * 0.6, 0.06, 0.11)};
-    const TonalPalette neutral{lch.hue, std::min(chroma / 10.0, 0.012)};
-    const TonalPalette neutralVariant{lch.hue, std::min(chroma / 5.0, 0.026)};
+Palette MakePalette(uint32_t seed, bool dark, std::optional<uint32_t> chatSeed, ContrastLevel contrast) {
+    // Game keeps the seed hue; Chat takes the chosen or the paired color, see ChatLch().
+    const SeedLch game = GameLch(seed);
+    const SeedLch chat = ChatLch(game, chatSeed);
+    const double chroma = game.chroma;
+    const TonalPalette primary{game.hue, chroma};
+    const TonalPalette secondary{game.hue, std::min(chroma / 3.0, 0.045)};
+    const TonalPalette tertiary{chat.hue, chat.chroma};
+    const TonalPalette neutral{game.hue, std::min(chroma / 10.0, 0.012)};
+    const TonalPalette neutralVariant{game.hue, std::min(chroma / 5.0, 0.026)};
     const TonalPalette error{29.0 * kPi / 180.0, 0.19};
 
-    if (dark) {
-        return Palette{
-            .dark = true,
-            .primary = primary(80),
-            .onPrimary = primary(20),
-            .primaryContainer = primary(30),
-            .onPrimaryContainer = primary(90),
-            .secondaryContainer = secondary(30),
-            .onSecondaryContainer = secondary(90),
-            .tertiary = tertiary(80),
-            .onTertiary = tertiary(20),
-            .tertiaryContainer = tertiary(30),
-            .onTertiaryContainer = tertiary(90),
-            .error = error(80),
-            .surface = neutral(6),
-            .surfaceContainer = neutral(12),
-            .surfaceContainerHigh = neutral(17),
-            .surfaceContainerHighest = neutral(22),
-            .onSurface = neutral(90),
-            .onSurfaceVariant = neutralVariant(80),
-            .outline = neutralVariant(60),
-            .outlineVariant = neutralVariant(30),
-            .inverseSurface = neutral(90),
-            .inverseOnSurface = neutral(20),
-            .inversePrimary = primary(40),
-        };
-    }
+    // Tones of the roles that carry contrast, per level. Standard follows the Material 3 scheme, except
+    // the light secondary container: it is 86 instead of 90 because the panel's tiles are translucent
+    // over a usually bright backdrop, where 90 would vanish against them. Medium and High move text,
+    // outlines and containers further from their surfaces; surfaces keep their tones.
+    struct Tones {
+        double accent, onAccent, container, onContainer, secondaryContainer, onSecondaryContainer;
+        double onSurface, onSurfaceVariant, outline, outlineVariant;
+        float surfaceAlpha, tileAlpha;
+    };
+    constexpr Tones kLight[] = {
+        {40, 100, 90, 10, 86, 10, 10, 30, 50, 80, 0.62f, 0.72f},
+        {32, 100, 86, 4, 82, 4, 6, 22, 40, 64, 0.80f, 0.86f},
+        {24, 100, 82, 0, 78, 0, 0, 14, 30, 48, 1.0f, 1.0f},
+    };
+    constexpr Tones kDark[] = {
+        {80, 20, 30, 90, 30, 90, 90, 80, 60, 30, 0.62f, 0.72f},
+        {86, 14, 34, 96, 34, 96, 95, 86, 70, 45, 0.80f, 0.86f},
+        {92, 8, 38, 100, 38, 100, 100, 94, 80, 60, 1.0f, 1.0f},
+    };
+    const Tones& t = (dark ? kDark : kLight)[static_cast<int>(contrast)];
+
     return Palette{
-        .dark = false,
-        .primary = primary(40),
-        .onPrimary = primary(100),
-        .primaryContainer = primary(90),
-        .onPrimaryContainer = primary(10),
-        .secondaryContainer = secondary(90),
-        .onSecondaryContainer = secondary(10),
-        .tertiary = tertiary(40),
-        .onTertiary = tertiary(100),
-        .tertiaryContainer = tertiary(90),
-        .onTertiaryContainer = tertiary(10),
-        .error = error(40),
-        .surface = neutral(98),
-        .surfaceContainer = neutral(94),
-        .surfaceContainerHigh = neutral(92),
-        .surfaceContainerHighest = neutral(90),
-        .onSurface = neutral(10),
-        .onSurfaceVariant = neutralVariant(30),
-        .outline = neutralVariant(50),
-        .outlineVariant = neutralVariant(80),
-        .inverseSurface = neutral(20),
-        .inverseOnSurface = neutral(95),
-        .inversePrimary = primary(80),
+        .dark = dark,
+        .primary = primary(t.accent),
+        .onPrimary = primary(t.onAccent),
+        .primaryContainer = primary(t.container),
+        .onPrimaryContainer = primary(t.onContainer),
+        .secondary = secondary(t.accent),
+        .secondaryContainer = secondary(t.secondaryContainer),
+        .onSecondaryContainer = secondary(t.onSecondaryContainer),
+        .tertiary = tertiary(t.accent),
+        .onTertiary = tertiary(t.onAccent),
+        .tertiaryContainer = tertiary(t.container),
+        .onTertiaryContainer = tertiary(t.onContainer),
+        .error = error(t.accent),
+        .surface = neutral(dark ? 6 : 98),
+        .surfaceContainer = neutral(dark ? 12 : 94),
+        .surfaceContainerHigh = neutral(dark ? 17 : 92),
+        .surfaceContainerHighest = neutral(dark ? 22 : 90),
+        .onSurface = neutral(t.onSurface),
+        .onSurfaceVariant = neutralVariant(t.onSurfaceVariant),
+        .outline = neutralVariant(t.outline),
+        .outlineVariant = neutralVariant(t.outlineVariant),
+        .inverseSurface = neutral(dark ? 90 : 20),
+        .inverseOnSurface = neutral(dark ? 20 : 95),
+        .inversePrimary = primary(dark ? 40 : 80),
+        .surfaceAlpha = t.surfaceAlpha,
+        .tileAlpha = t.tileAlpha,
     };
 }
 
-void SetTheme(ThemeMode mode, uint32_t seed) {
+void SetTheme(ThemeMode mode, uint32_t seed, std::optional<uint32_t> chatSeed, ContrastLevel contrast) {
     g_mode = mode;
-    g_palettes[0] = MakePalette(seed, false);
-    g_palettes[1] = MakePalette(seed, true);
+    g_palettes[0] = MakePalette(seed, false, chatSeed, contrast);
+    g_palettes[1] = MakePalette(seed, true, chatSeed, contrast);
 }
 
 bool ThemeIsDark() {
@@ -246,8 +277,18 @@ uint32_t WindowsAccentColor() {
 }
 
 D2D1_COLOR_F SeedSwatch(uint32_t seed, bool dark) {
-    const SeedLch lch = Analyze(seed);
-    return ToneColor(lch.hue, std::min(lch.chroma, 0.20), dark ? 70.0 : 50.0);
+    const SeedLch lch = GameLch(seed);
+    return ToneColor(lch.hue, lch.chroma, dark ? 70.0 : 50.0);
+}
+
+D2D1_COLOR_F ChatSwatch(uint32_t gameSeed, std::optional<uint32_t> chatSeed, bool dark) {
+    const SeedLch lch = ChatLch(GameLch(gameSeed), chatSeed);
+    return ToneColor(lch.hue, lch.chroma, dark ? 70.0 : 50.0);
+}
+
+uint32_t EffectiveChatSeed(uint32_t gameSeed, std::optional<uint32_t> chatSeed) {
+    const SeedLch lch = ChatLch(GameLch(gameSeed), chatSeed);
+    return SeedFromHueChroma(static_cast<float>(lch.hue * 180.0 / kPi), static_cast<float>(lch.chroma));
 }
 
 uint32_t SeedFromHueChroma(float hueDegrees, float chroma) {
@@ -263,15 +304,21 @@ void HueChromaOf(uint32_t seed, float& hueDegrees, float& chroma) {
         degrees += 360.0;
     }
     hueDegrees = static_cast<float>(degrees);
-    chroma = static_cast<float>(std::min(lch.chroma, 0.20));
+    chroma = static_cast<float>(std::min(lch.chroma, static_cast<double>(kMaxSeedChroma)));
 }
 
 D2D1_COLOR_F HueChromaColor(float hueDegrees, float chroma, bool dark) {
     return ToneColor(hueDegrees * kPi / 180.0, chroma, dark ? 70.0 : 55.0);
 }
 
-D2D1_COLOR_F RgbColor(uint32_t rgb) {
-    return {((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, 1.0f};
+D2D1_COLOR_F BatteryColor(float charge, bool darkBackground) {
+    // OKLCH hue stops: red at 0, yellow at 0.5, green at 1; the hue moves linearly between them.
+    constexpr double kRed = 27.0;
+    constexpr double kYellow = 95.0;
+    constexpr double kGreen = 145.0;
+    const double c = std::clamp(static_cast<double>(charge), 0.0, 1.0);
+    const double degrees = c < 0.5 ? kRed + (kYellow - kRed) * c * 2.0 : kYellow + (kGreen - kYellow) * (c - 0.5) * 2.0;
+    return ToneColor(degrees * kPi / 180.0, 0.17, darkBackground ? 76.0 : 48.0);
 }
 
 D2D1_COLOR_F Alpha(D2D1_COLOR_F color, float alpha) {
@@ -280,6 +327,7 @@ D2D1_COLOR_F Alpha(D2D1_COLOR_F color, float alpha) {
 }
 
 D2D1_COLOR_F Mix(D2D1_COLOR_F from, D2D1_COLOR_F to, float t) {
+    t = std::clamp(t, 0.0f, 1.0f);  // Springs may overshoot; colors must not.
     return {from.r + (to.r - from.r) * t, from.g + (to.g - from.g) * t, from.b + (to.b - from.b) * t,
             from.a + (to.a - from.a) * t};
 }

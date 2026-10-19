@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "../app_info.h"
 #include "panel.h"
 #include "panel_internal.h"
 #include "widgets.h"
@@ -18,9 +19,9 @@ namespace {
 constexpr const wchar_t* kBandLabels[kEqBands] = {L"32", L"64", L"125", L"250", L"500",
                                                   L"1k", L"2k", L"4k",  L"8k",  L"16k"};
 constexpr float kEqTrackHeight = 120.0f;
-constexpr float kSliderRowHeight = 80.0f;
-constexpr float kChoiceRowHeight = 84.0f;
-constexpr size_t kMaxSegments = 4;  // Longer option lists use a stepper.
+constexpr float kSliderRowHeight = design::kChoiceRowHeight;
+constexpr size_t kMaxSegments = 5;  // Longer option lists use a dropdown.
+constexpr float kPresetRowHeight = 40.0f;  // A saved preset in the headset equalizer card.
 constexpr SliderStyle kRowSlider{12.0f, 5.0f, 32.0f};
 
 std::wstring OptionLabel(const SettingOption& option) {
@@ -49,36 +50,26 @@ std::wstring FormatDb(int halfSteps) {
 float RowHeight(const SettingSpec& spec) {
     switch (spec.kind) {
     case SettingKind::Slider: return kSliderRowHeight;
-    case SettingKind::Choice: return spec.options.size() <= kMaxSegments ? kChoiceRowHeight : kRowHeight;
+    case SettingKind::Choice: return spec.options.size() <= kMaxSegments ? design::kChoiceRowHeight : kRowHeight;
     case SettingKind::Toggle: break;
     }
     return kRowHeight;
 }
 
-constexpr IdleAnimationKind kIdleAnimations[] = {IdleAnimationKind::Off,    IdleAnimationKind::Stars,
-                                                 IdleAnimationKind::Bounce, IdleAnimationKind::Clock,
-                                                 IdleAnimationKind::Life,   IdleAnimationKind::Blank,
-                                                 IdleAnimationKind::Image};
-constexpr Text kIdleAnimationLabels[] = {Text::OptOff,   Text::IdleStars, Text::IdleBounce, Text::IdleClock,
+constexpr IdleAnimationKind kIdleAnimations[] = {IdleAnimationKind::Off,   IdleAnimationKind::Stars,
+                                                 IdleAnimationKind::Clock, IdleAnimationKind::Life,
+                                                 IdleAnimationKind::Blank, IdleAnimationKind::Image};
+constexpr Text kIdleAnimationLabels[] = {Text::OptOff,   Text::IdleStars, Text::IdleClock,
                                          Text::IdleLife, Text::IdleBlank, Text::IdleImage};
 constexpr int kIdleDelays[] = {15, 30, 60, 120, 300, 600};
-constexpr float kIdleHintHeight = 62.0f;
+constexpr IconCorner kIconCorners[] = {IconCorner::Off, IconCorner::TopLeft, IconCorner::TopRight,
+                                       IconCorner::BottomLeft, IconCorner::BottomRight};
+constexpr Text kIconCornerLabels[] = {Text::OptOff, Text::CornerTopLeft, Text::CornerTopRight, Text::CornerBottomLeft,
+                                      Text::CornerBottomRight};
 
 std::wstring DelayLabel(int seconds) {
     return seconds < 60 ? std::to_wstring(seconds) + L" " + T(Text::SecondsShort)
                         : std::to_wstring(seconds / 60) + L" " + T(Text::MinutesShort);
-}
-
-// Opens a folder or URL. explorer.exe needs no COM apartment, unlike ShellExecute on this MTA thread.
-void OpenWithExplorer(const std::wstring& target) {
-    std::wstring command = L"explorer.exe \"" + target + L"\"";
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    PROCESS_INFORMATION process{};
-    if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process)) {
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-    }
 }
 
 int OptionIndex(const SettingSpec& spec, int value) {
@@ -138,32 +129,32 @@ void Panel::DrawHeadset() {
         }
         const wchar_t glyph = static_cast<wchar_t>((headset_.charging ? kGlyphBatteryCharging0 : kGlyphBattery0) +
                                                    std::clamp(headset_.battery / 10, 0, 10));
-        canvas_.Glyph(glyph, {32.0f, y + 12.0f}, 16.0f, p.onSurfaceVariant);
-        canvas_.Text(text, {48.0f, y, kWidth - 20.0f, y + 24.0f}, TextStyle::BodyMedium, p.onSurfaceVariant);
-        y += 34.0f;
+        canvas_.Glyph(glyph, {kInset + 6.0f, y + 12.0f}, 16.0f, p.onSurfaceVariant);
+        canvas_.Text(text, {kInset + 20.0f, y, kWidth - kInset, y + 24.0f}, TextStyle::BodyMedium, p.onSurfaceVariant);
+        y += 24.0f + design::kSpace2;
     }
     if (features_->equalizer.bandsCommand) {
         y = DrawEqualizer(y);
     }
     for (const auto& section : features_->sections) {
-        canvas_.Text(T(section.title), {20.0f, y, kWidth - 20.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
-        y += 26.0f;
-        float height = 2.0f * kListPadding;
+        y = SectionTitle(T(section.title), y);
+        std::vector<CardRow> rows;
         for (const auto& setting : section.settings) {
-            height += RowHeight(setting);
+            if (setting.shownWith && headset_.values[setting.shownWith] != setting.shownWithValue) {
+                continue;
+            }
+            const SettingSpec* spec = &setting;
+            const bool toggle = setting.kind == SettingKind::Toggle;
+            rows.push_back({RowHeight(setting), [this, spec](float top) { DrawSettingRow(*spec, top); },
+                            toggle ? HashId(kKindSetting, std::to_wstring(setting.command)) : 0u});
         }
-        const D2D1_RECT_F card{16.0f, y, kWidth - 16.0f, y + height};
-        canvas_.FillRound(card, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
-        float top = card.top + kListPadding;
-        for (const auto& setting : section.settings) {
-            top = DrawSettingRow(setting, top);
-        }
-        y = card.bottom + 20.0f;
+        y = DrawCard(y, rows) + design::kSectionGap;
     }
     if (features_->oled) {
+        y = DrawVisualizer(y);
         y = DrawIdleScreen(y);
     }
-    EndScroll(Page::Headset, kHeaderHeight, y - 20.0f);
+    EndScroll(Page::Headset, kHeaderHeight, y - design::kSectionGap);
 }
 
 EqCurve Panel::ActiveCurve() const {
@@ -213,38 +204,21 @@ float Panel::DrawEqualizer(float y) {
     const bool devicePreset = eq.presetCommand != 0 && headset_.eqPreset >= 0 && headset_.eqPreset < custom;
     const EqCurve curve = ActiveCurve();
 
-    canvas_.Text(T(Text::Equalizer), {20.0f, y, 240.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
-    TextButton(kIdEqReset, {kWidth - 16.0f - 104.0f, y - 6.0f, kWidth - 16.0f, y + 26.0f}, kGlyphReset,
+    canvas_.Text(T(Text::Equalizer), {kInset, y, 240.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
+    TextButton(kIdEqReset, {kWidth - kGutter - 104.0f, y - 6.0f, kWidth - kGutter, y + 26.0f}, kGlyphReset,
                T(Text::EqReset), false, [this] { host_.OnEqualizerCurve(EqCurve{}); });
-    y += 30.0f;
+    y += design::kSectionTitleHeight + 2.0f;
 
-    // Saved presets flow as chips; measure them first so the card can be sized.
-    struct Chip {
-        D2D1_RECT_F rect;
-        const UserPreset* preset;
-    };
-    std::vector<Chip> chips;
-    const float chipsLeft = 32.0f;
-    const float chipsRight = kWidth - 32.0f;
-    float chipX = chipsLeft;
-    float chipRow = 0.0f;
-    for (const auto& preset : userPresets_) {
-        const float width = std::min(chipsRight - chipsLeft, canvas_.Measure(preset.name, TextStyle::LabelLarge) + 28.0f);
-        if (chipX + width > chipsRight && chipX > chipsLeft) {
-            chipX = chipsLeft;
-            chipRow += 40.0f;
-        }
-        chips.push_back({{chipX, chipRow, chipX + width, chipRow + 32.0f}, &preset});
-        chipX += width + 8.0f;
-    }
     const float hintHeight = devicePreset ? HintHeight(T(Text::EqPresetActive), kWidth - 64.0f) + 4.0f : 0.0f;
     const float bandsHeight = 20.0f + kEqTrackHeight + 30.0f;
     const float gameHint = HintHeight(T(Text::GamePresetsHint), kWidth - 64.0f);
     const float gameHeight = 44.0f + gameHint;
-    const float presetsHeight = chips.empty() ? 0.0f : 24.0f + chipRow + 32.0f + 8.0f;
-    const D2D1_RECT_F card{16.0f, y, kWidth - 16.0f,
-                           y + 16.0f + 44.0f + hintHeight + bandsHeight + 44.0f + gameHeight + presetsHeight + 12.0f};
-    canvas_.FillRound(card, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
+    // Saved presets: one row each, applied by a click, renamed, copied and deleted in place.
+    const size_t saved = userPresets_.size();
+    const float presetsHeight =
+        saved == 0 ? 0.0f : 24.0f + saved * kPresetRowHeight + (saved - 1) * design::kSegmentGap + 8.0f;
+    const D2D1_RECT_F card =
+        Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + 44.0f + gameHeight + presetsHeight + 12.0f);
 
     std::vector<const wchar_t*> labels;
     for (const auto& preset : eq.presets) {
@@ -252,7 +226,7 @@ float Panel::DrawEqualizer(float y) {
     }
     labels.push_back(T(Text::EqCustom));
     DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdEqPreset, labels, headset_.eqPreset,
-                  p.primaryContainer, p.onPrimaryContainer, [this](int index) { host_.OnEqualizerPreset(index); });
+                  p.primary, p.onPrimary, [this](int index) { host_.OnEqualizerPreset(index); });
     float inner = y + 60.0f;
     if (devicePreset) {
         canvas_.Text(T(Text::EqPresetActive), {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall,
@@ -272,7 +246,7 @@ float Panel::DrawEqualizer(float y) {
     for (int band = 0; band < kEqBands; ++band) {
         const float cx = left + column * (band + 0.5f);
         const uint32_t id = kIdEqBand + band;
-        const float value = Animate(AnimKey(id, 0), static_cast<float>(curve[band]), 22.0f);
+        const float value = Animate(AnimKey(id, 0), static_cast<float>(curve[band]), design::kSpringFastEffects);
         const float handleY = zero - value / eq.range * half;
         canvas_.FillRound({cx - 4.0f, trackTop, cx + 4.0f, trackBottom}, 4.0f, Alpha(p.secondaryContainer, alpha));
         if (std::fabs(value) > 0.05f) {
@@ -280,12 +254,13 @@ float Panel::DrawEqualizer(float y) {
                               Alpha(p.primary, alpha));
         }
         canvas_.FillRect({cx - 7.0f, zero - 0.5f, cx + 7.0f, zero + 0.5f}, Alpha(p.outline, 0.6f * alpha));
-        const float handleWidth = Animate(AnimKey(id, 1), pressedId_ == id ? 28.0f : 22.0f, 24.0f);
+        const float handleWidth = Animate(AnimKey(id, 1), pressedId_ == id ? 28.0f : 22.0f, design::kSpringFastEffects);
         canvas_.FillRound({cx - handleWidth / 2.0f, handleY - 3.0f, cx + handleWidth / 2.0f, handleY + 3.0f}, 3.0f,
                           Alpha(curve[band] == 0 ? p.onSurface : p.primary, alpha));
         canvas_.Text(FormatDb(curve[band]), {cx - column / 2.0f, valueTop, cx + column / 2.0f, valueTop + 16.0f},
                      TextStyle::LabelMedium, Alpha(p.onSurfaceVariant, alpha), TextAlign::Center);
-        canvas_.Text(kBandLabels[band], {cx - column / 2.0f, trackBottom + 8.0f, cx + column / 2.0f, trackBottom + 24.0f},
+        canvas_.Text(kBandLabels[band],
+                     {cx - column / 2.0f, trackBottom + 8.0f, cx + column / 2.0f, trackBottom + 24.0f},
                      TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Center);
 
         if (devicePreset) {
@@ -340,28 +315,89 @@ float Panel::DrawEqualizer(float y) {
     canvas_.Text(T(Text::GamePresetsHint), {32.0f, gameTop + 40.0f, kWidth - 32.0f, gameTop + 40.0f + gameHint},
                  TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Leading, true);
 
-    if (!chips.empty()) {
+    if (saved > 0) {
         const float labelTop = actions + 44.0f + gameHeight;
         canvas_.Text(T(Text::MyPresets), {32.0f, labelTop, kWidth - 32.0f, labelTop + 18.0f}, TextStyle::BodySmall,
                      p.onSurfaceVariant);
-        const float chipsTop = labelTop + 24.0f;
-        for (const auto& chip : chips) {
-            const D2D1_RECT_F rect{chip.rect.left, chipsTop + chip.rect.top, chip.rect.right, chipsTop + chip.rect.bottom};
-            const EqCurve presetCurve = PresetCurve(*chip.preset, eq.range);
+        float rowTop = labelTop + 24.0f;
+        const std::vector<UserPreset> presets = userPresets_;  // Actions below reload the list.
+        for (const UserPreset& preset : presets) {
+            const EqCurve presetCurve = PresetCurve(preset, eq.range);
             const bool active = presetCurve == curve && (eq.presetCommand == 0 || headset_.eqPreset == custom);
-            const uint32_t id = HashId(kKindPreset, chip.preset->path);
-            if (active) {
-                canvas_.FillRound(rect, 8.0f, p.secondaryContainer);
-            } else {
-                canvas_.StrokeRound(Inset(rect, 0.5f, 0.5f), 8.0f, p.outline, 1.0f);
-            }
-            StateLayer(id, rect, 8.0f, p.onSurface);
-            canvas_.Text(chip.preset->name, Inset(rect, 14.0f, 0.0f), TextStyle::LabelLarge,
-                         active ? p.onSecondaryContainer : p.onSurface, TextAlign::Center);
-            AddHit({rect, id, [this, presetCurve] { host_.OnEqualizerCurve(presetCurve); }});
+            DrawPresetRow(preset, {24.0f, rowTop, kWidth - 24.0f, rowTop + kPresetRowHeight}, active, presetCurve);
+            rowTop += kPresetRowHeight + design::kSegmentGap;
         }
     }
-    return card.bottom + 20.0f;
+    return card.bottom + design::kSectionGap;
+}
+
+void Panel::DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool active, const EqCurve& presetCurve) {
+    const Palette& p = P();
+    const uint32_t id = HashId(kKindPreset, preset.path);
+    const uint32_t fieldId = PartId(id, 4);
+    const float middle = (row.top + row.bottom) / 2.0f;
+    const float button = design::kIconButtonSize - design::kSpace1;
+    const float deleteX = row.right - button / 2.0f;
+    const float copyX = deleteX - button;
+    const float renameX = copyX - button;
+    const float nameRight = renameX - button / 2.0f - design::kSpace1;
+    auto reload = [this] {
+        userPresets_ = LoadUserPresets();
+        Invalidate();
+    };
+    // A click on the row applies the preset; the chosen one is filled.
+    if (active) {
+        canvas_.FillRound(row, design::kRadiusMedium, p.secondaryContainer);
+    }
+    StateLayer(id, row, design::kRadiusMedium, p.onSurface);
+    AddHit({row, id, [this, presetCurve] { host_.OnEqualizerCurve(presetCurve); }});
+
+    // The name renames in place: Enter keeps it, Esc leaves it as it was.
+    auto rename = [preset, reload](const std::wstring& text) {
+        std::wstring name = text;
+        while (!name.empty() && name.back() == L' ') {
+            name.pop_back();
+        }
+        if (name.empty()) {
+            return false;
+        }
+        if (name != preset.name) {
+            RenamePreset(preset, name);
+            reload();
+        }
+        return true;
+    };
+    if (field_.id == fieldId) {
+        DrawEditableValue(fieldId, {row.left + design::kSpace1, middle - design::kFieldHeight / 2.0f, nameRight,
+                                    middle + design::kFieldHeight / 2.0f},
+                          preset.name, rename, false);
+    } else {
+        canvas_.Text(preset.name, {row.left + design::kSpace3, row.top, nameRight, row.bottom}, TextStyle::LabelLarge,
+                     active ? p.onSecondaryContainer : p.onSurface);
+    }
+    const D2D1_COLOR_F icons = active ? p.onSecondaryContainer : p.onSurfaceVariant;
+    IconButton(PartId(id, 1), {renameX, middle}, kGlyphEdit, icons,
+               [this, fieldId, preset, rename] { BeginField(fieldId, preset.name, rename, false); });
+    Tooltip(PartId(id, 1), T(Text::TipRename));
+    IconButton(PartId(id, 2), {copyX, middle}, kGlyphCopy, icons, [this, preset, reload] {
+        // "Name (copy)", then "Name (copy 2)" and so on, so copies stay apart.
+        const std::wstring base = preset.name + L" (" + T(Text::CopySuffix);
+        std::wstring name = base + L")";
+        for (int number = 2; std::any_of(userPresets_.begin(), userPresets_.end(),
+                                         [&](const UserPreset& other) { return other.name == name; });
+             ++number) {
+            name = base + L" " + std::to_wstring(number) + L")";
+        }
+        CopyPreset(preset, name);
+        reload();
+    });
+    Tooltip(PartId(id, 2), T(Text::TipCopy));
+    // Deleted presets go to the Recycle Bin, so there is nothing to confirm.
+    IconButton(PartId(id, 3), {deleteX, middle}, kGlyphDelete, p.error, [preset, reload] {
+        DeletePreset(preset);
+        reload();
+    });
+    Tooltip(PartId(id, 3), T(Text::TipDelete));
 }
 
 float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
@@ -370,6 +406,7 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
     const uint32_t id = HashId(kKindSetting, std::to_wstring(spec.command));
     const int value = headset_.values[spec.command];
     const SettingSpec* setting = &spec;
+    const float controlBottom = top + design::kChoiceRowHeight - design::kHintBottomGap;
 
     switch (spec.kind) {
     case SettingKind::Toggle:
@@ -380,18 +417,20 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
 
     case SettingKind::Slider: {
         // No room for a second line above the slider, so long labels use the smaller style.
-        const D2D1_RECT_F labelRect{36.0f, top + 8.0f, kWidth - 110.0f, top + 32.0f};
+        const D2D1_RECT_F labelRect{kInset, top + design::kHintBottomGap, kWidth - 110.0f, top + 34.0f};
         const bool fits = canvas_.Measure(T(spec.label), TextStyle::BodyLarge) <= labelRect.right - labelRect.left;
         canvas_.Text(T(spec.label), labelRect, fits ? TextStyle::BodyLarge : TextStyle::BodyMedium, p.onSurface);
-        canvas_.Text(value >= 0 ? std::to_wstring(value) : L"—", {kWidth - 110.0f, top + 8.0f, kWidth - 36.0f, top + 32.0f},
-                     TextStyle::LabelLarge, p.onSurfaceVariant, TextAlign::Trailing);
-        const float left = 40.0f;
-        const float right = kWidth - 40.0f;
-        const float centerY = top + 54.0f;
+        canvas_.Text(value >= 0 ? std::to_wstring(value) : L"—",
+                     {kWidth - 110.0f, labelRect.top, kWidth - kInset, labelRect.bottom}, TextStyle::LabelLarge,
+                     p.onSurfaceVariant, TextAlign::Trailing);
+        const float left = kInset + design::kSpace1;
+        const float right = kWidth - kInset - design::kSpace1;
+        const float centerY = controlBottom - design::kControlHeight / 2.0f;
         const float t = value >= 0 ? static_cast<float>(value - spec.min) / (spec.max - spec.min) : 0.0f;
-        const float shown = Animate(AnimKey(id, 0), t, 20.0f);
-        const float handleWidth = Animate(AnimKey(id, 1), pressedId_ == id ? 2.0f : 4.0f, 24.0f);
-        DrawValueSlider(canvas_, p, left, right, centerY, shown, handleWidth, kRowSlider, value >= 0);
+        const float shown = Animate(AnimKey(id, 0), t, design::kSpringDefaultSpatial);
+        const float handleWidth = Animate(AnimKey(id, 1), pressedId_ == id ? 2.0f : 4.0f, design::kSpringFastSpatial);
+        DrawValueSlider(canvas_, p, left, right, centerY, std::clamp(shown, 0.0f, 1.0f), handleWidth, kRowSlider,
+                        value >= 0);
         Hit hit;
         hit.rect = {left - 12.0f, centerY - 18.0f, right + 12.0f, centerY + 18.0f};
         hit.id = id;
@@ -409,8 +448,9 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
     case SettingKind::Choice: {
         const int selected = OptionIndex(spec, value);
         if (spec.options.size() <= kMaxSegments) {
-            canvas_.Text(T(spec.label), {36.0f, top + 8.0f, kWidth - 36.0f, top + 32.0f}, TextStyle::BodyLarge,
-                         p.onSurface);
+            // A few short options: all in view as a button group.
+            canvas_.Text(T(spec.label), {kInset, top + design::kHintBottomGap, kWidth - kInset, top + 34.0f},
+                         TextStyle::BodyLarge, p.onSurface);
             std::vector<std::wstring> texts;
             for (const auto& option : spec.options) {
                 texts.push_back(OptionLabel(option));
@@ -419,19 +459,25 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
             for (const auto& text : texts) {
                 labels.push_back(text.c_str());
             }
-            DrawSegmented({36.0f, top + 42.0f, kWidth - 36.0f, top + 74.0f}, id, labels, selected,
-                          p.secondaryContainer, p.onSecondaryContainer, [this, setting](int index) {
+            DrawSegmented({kInset, controlBottom - design::kControlHeight, kWidth - kInset, controlBottom}, id, labels,
+                          selected, p.primary, p.onPrimary, [this, setting](int index) {
                               host_.OnHeadsetSetting(setting->command, setting->options[index].value);
                           });
         } else {
-            const int count = static_cast<int>(spec.options.size());
-            const int previous = selected < 0 ? 0 : std::max(0, selected - 1);
-            const int next = selected < 0 ? 0 : std::min(count - 1, selected + 1);
-            DrawStepperRow(
-                id, top, T(spec.label), selected >= 0 ? OptionLabel(spec.options[selected]) : L"—", 72.0f,
-                selected != 0, selected < count - 1,
-                [this, setting, previous] { host_.OnHeadsetSetting(setting->command, setting->options[previous].value); },
-                [this, setting, next] { host_.OnHeadsetSetting(setting->command, setting->options[next].value); });
+            // More options: a dropdown with the whole list.
+            const D2D1_RECT_F field = DrawDropdown(
+                id, kWidth - kInset, top + kRowHeight / 2.0f,
+                selected >= 0 ? OptionLabel(spec.options[selected]) : L"—", 200.0f,
+                [this, setting, selected](const D2D1_RECT_F& anchor) {
+                    std::vector<MenuItem> items;
+                    for (const auto& option : setting->options) {
+                        items.push_back({OptionLabel(option)});
+                    }
+                    OpenMenu(anchor, std::move(items), selected, [this, setting](int index) {
+                        host_.OnHeadsetSetting(setting->command, setting->options[index].value);
+                    });
+                });
+            DrawRowLabel(T(spec.label), {kInset, top, field.left - design::kSpace3, top + kRowHeight}, p.onSurface);
         }
         break;
     }
@@ -439,154 +485,280 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
     return top + height;
 }
 
+float Panel::DrawVisualizer(float y) {
+    y = SectionTitle(T(Text::Visualizer), y);
+    const VisualizerSettings& visualizer = settings_.visualizer;
+    std::vector<CardRow> rows{SwitchItem(kIdVisualizer, T(Text::VisualizerShow), visualizer.enabled, [this] {
+        Edit([](Settings& s) { s.visualizer.enabled = !s.visualizer.enabled; });
+    }, T(Text::VisualizerHint))};
+    if (visualizer.enabled) {
+        rows.push_back(ChoiceItem(kIdVisualizerFor, T(Text::VisualizerFor),
+                                  {T(Text::VisualizerMedia), T(Text::VisualizerSound)}, visualizer.mediaOnly ? 0 : 1,
+                                  [this](int choice) { Edit([choice](Settings& s) { s.visualizer.mediaOnly = choice == 0; }); },
+                                  T(visualizer.mediaOnly ? Text::VisualizerMediaHint : Text::VisualizerSoundHint)));
+    }
+    return DrawCard(y, rows) + design::kSectionGap;
+}
+
 float Panel::DrawIdleScreen(float y) {
     const Palette& p = P();
-    canvas_.Text(T(Text::IdleScreen), {20.0f, y, kWidth - 20.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
     if (idle_.showing) {
-        canvas_.Text(T(Text::IdleShowing), {20.0f, y, kWidth - 24.0f, y + 20.0f}, TextStyle::BodySmall, p.primary,
-                     TextAlign::Trailing);
+        canvas_.Text(T(Text::IdleShowing), {kInset, y, kWidth - kInset, y + design::kSpace5}, TextStyle::BodySmall,
+                     p.primary, TextAlign::Trailing);
     }
-    y += 26.0f;
+    y = SectionTitle(T(Text::IdleScreen), y);
     const bool on = idle_.animation != IdleAnimationKind::Off;
     const bool image = idle_.animation == IdleAnimationKind::Image;
-    const int rows = 1 + (on ? 1 : 0) + (image ? 1 : 0);
-    const D2D1_RECT_F card{16.0f, y, kWidth - 16.0f, y + 2.0f * kListPadding + rows * kRowHeight + kIdleHintHeight};
-    canvas_.FillRound(card, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
-    float top = card.top + kListPadding;
+    std::vector<CardRow> rows;
 
-    const int count = static_cast<int>(std::size(kIdleAnimations));
     const int index = static_cast<int>(std::find(std::begin(kIdleAnimations), std::end(kIdleAnimations),
-                                                 idle_.animation) - std::begin(kIdleAnimations));
-    DrawStepperRow(HashId(kKindIdle, L"animation"), top, T(Text::IdleAnimation), T(kIdleAnimationLabels[index]),
-                   150.0f, index > 0, index < count - 1,
-                   [this, index] { host_.OnIdleAnimation(kIdleAnimations[index - 1]); },
-                   [this, index] { host_.OnIdleAnimation(kIdleAnimations[index + 1]); });
-    top += kRowHeight;
+                                                 idle_.animation) -
+                                       std::begin(kIdleAnimations));
+    rows.push_back(DropdownItem(
+        HashId(kKindIdle, L"animation"), T(Text::IdleAnimation), index, static_cast<int>(std::size(kIdleAnimations)),
+        [](int i) { return std::wstring(T(kIdleAnimationLabels[i])); },
+        [this](int i) { host_.OnIdleAnimation(kIdleAnimations[i]); }));
 
     if (on) {
         const int delays = static_cast<int>(std::size(kIdleDelays));
-        // The nearest listed delay, so values edited in the ini file still step sensibly.
+        // The nearest listed delay, so values edited in the ini file still show sensibly.
         int delay = 0;
         for (int i = 1; i < delays; ++i) {
             if (std::abs(kIdleDelays[i] - idle_.delaySeconds) < std::abs(kIdleDelays[delay] - idle_.delaySeconds)) {
                 delay = i;
             }
         }
-        DrawStepperRow(HashId(kKindIdle, L"delay"), top, T(Text::IdleDelay), DelayLabel(idle_.delaySeconds), 72.0f,
-                       delay > 0, delay < delays - 1, [this, delay] { host_.OnIdleDelay(kIdleDelays[delay - 1]); },
-                       [this, delay] { host_.OnIdleDelay(kIdleDelays[delay + 1]); });
-        top += kRowHeight;
+        rows.push_back(DropdownItem(
+            HashId(kKindIdle, L"delay"), T(Text::IdleDelay), delay, delays,
+            [](int i) { return DelayLabel(kIdleDelays[i]); }, [this](int i) { host_.OnIdleDelay(kIdleDelays[i]); }));
     }
 
-    if (image) {
-        const float right = kWidth - 36.0f;
-        canvas_.Text(T(Text::IdleFile), {36.0f, top + 8.0f, right - 120.0f, top + 29.0f}, TextStyle::BodyLarge,
-                     p.onSurface);
-        canvas_.Text(idle_.imageName.empty() ? T(Text::NotSelected) : idle_.imageName.c_str(),
-                     {36.0f, top + 29.0f, right - 120.0f, top + 47.0f}, TextStyle::BodySmall, p.onSurfaceVariant);
-        TextButton(kIdIdleChoose, {right - 108.0f, top + 12.0f, right, top + 44.0f}, kGlyphFolder,
-                   T(Text::IdleChoose), true, [this] { RunFileDialog(FileDialog::IdleImage); });
-        top += kRowHeight;
+    if (on && idle_.bluetooth) {
+        const int corner = static_cast<int>(std::find(std::begin(kIconCorners), std::end(kIconCorners),
+                                                      idle_.bluetoothIcon) -
+                                            std::begin(kIconCorners));
+        rows.push_back(DropdownItem(
+            HashId(kKindIdle, L"bluetooth"), T(Text::IdleBluetoothIcon), corner,
+            static_cast<int>(std::size(kIconCorners)), [](int i) { return std::wstring(T(kIconCornerLabels[i])); },
+            [this](int i) { host_.OnIdleBluetoothIcon(kIconCorners[i]); }, T(Text::IdleBluetoothIconHint)));
     }
-    canvas_.Text(T(Text::IdleHint), {36.0f, top + 2.0f, kWidth - 36.0f, top + kIdleHintHeight - 6.0f},
-                 TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Leading, true);
-    return card.bottom + 20.0f;
+    if (image) {
+        rows.push_back({design::kTwoLineRowHeight, [this, &p](float top) {
+                            const float right = kWidth - kInset;
+                            const float buttonTop = top + (design::kTwoLineRowHeight - design::kControlHeight) / 2.0f;
+                            canvas_.Text(T(Text::IdleFile), {kInset, top + 9.0f, right - 120.0f, top + 31.0f},
+                                         TextStyle::BodyLarge, p.onSurface);
+                            canvas_.Text(idle_.imageName.empty() ? T(Text::NotSelected) : idle_.imageName.c_str(),
+                                         {kInset, top + 31.0f, right - 120.0f, top + 50.0f}, TextStyle::BodySmall,
+                                         p.onSurfaceVariant);
+                            TextButton(kIdIdleChoose,
+                                       {right - 108.0f, buttonTop, right, buttonTop + design::kControlHeight},
+                                       kGlyphFolder, T(Text::IdleChoose), true,
+                                       [this] { RunFileDialog(FileDialog::IdleImage); });
+                        }});
+    }
+    if (on) {
+        // Choosing an animation only saves it; this shows it on the headset to try.
+        rows.push_back({design::kTwoLineRowHeight, [this, &p](float top) {
+                            const float right = kWidth - kInset;
+                            const float buttonTop = top + (design::kTwoLineRowHeight - design::kControlHeight) / 2.0f;
+                            canvas_.Text(T(Text::IdleTest), {kInset, top + 9.0f, right - 120.0f, top + 31.0f},
+                                         TextStyle::BodyLarge, p.onSurface);
+                            canvas_.Text(T(Text::IdleTestHint), {kInset, top + 31.0f, right - 120.0f, top + 50.0f},
+                                         TextStyle::BodySmall, p.onSurfaceVariant);
+                            TextButton(kIdIdleTest, {right - 108.0f, buttonTop, right, buttonTop + design::kControlHeight},
+                                       0, T(Text::IdleTestButton), true, [this] { host_.OnIdleTest(); });
+                        }});
+    }
+    rows.push_back(HintItem(T(Text::IdleHint)));
+    const std::wstring gg = std::wstring(T(Text::IdleGgApps)) + idle_.ggApps;
+    if (on && !idle_.ggApps.empty()) {
+        rows.push_back(HintItem(gg.c_str()));
+    }
+    return DrawCard(y, rows) + design::kSectionGap;
 }
 
 float Panel::DrawRoutingSettings(float y) {
     const Palette& p = P();
-    canvas_.Text(T(Text::Routing), {20.0f, y, kWidth - 20.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
-    y += 26.0f;
+    y = SectionTitle(T(Text::Routing), y);
     const bool on = routing_.enabled;
-    const int rows = on ? 3 : 0;
-    const float statusHeight = on ? 28.0f : 0.0f;
-    const float modeHint = HintHeight(T(Text::RoutingModeHint));
-    const float manageHint = on ? HintHeight(T(Text::RoutingManageHint)) : 0.0f;
-    const float routeHint = on ? HintHeight(T(Text::AutoRouteHint)) : 0.0f;
-    const float manageHeight = on ? 2.0f * kRowHeight + manageHint + routeHint : 0.0f;
-    const float cablesHeight = on && routing_.cablesMissing ? HintHeight(T(Text::RoutingNoCables)) : 0.0f;
-    const D2D1_RECT_F card{16.0f, y, kWidth - 16.0f,
-                           y + 2.0f * kListPadding + kRowHeight + modeHint + manageHeight + cablesHeight +
-                               rows * kRowHeight + statusHeight};
-    canvas_.FillRound(card, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
-
-    float top = card.top + kListPadding;
-    DrawSwitchRow(kIdRoutingToggle, top, T(Text::RoutingMode), on, [this] { host_.OnRoutingEnabled(!routing_.enabled); });
-    DrawHint(T(Text::RoutingModeHint), top + kRowHeight - 8.0f, modeHint);
-    top += kRowHeight + modeHint;
-
+    std::vector<CardRow> rows{
+        SwitchItem(kIdRoutingToggle, T(Text::RoutingMode), on, [this] { host_.OnRoutingEnabled(!routing_.enabled); },
+                   T(Text::RoutingModeHint)),
+    };
     if (on) {
-        DrawSwitchRow(kIdRoutingManage, top, T(Text::RoutingManage), routing_.manageDevices,
-                      [this] { host_.OnRoutingManage(!routing_.manageDevices); });
-        DrawHint(T(Text::RoutingManageHint), top + kRowHeight - 8.0f, manageHint);
-        top += kRowHeight + manageHint;
-        DrawSwitchRow(kIdAutoRoute, top, T(Text::AutoRoute), settings_.routing.autoRoute,
-                      [this] { Edit([](Settings& s) { s.routing.autoRoute = !s.routing.autoRoute; }); });
-        DrawHint(T(Text::AutoRouteHint), top + kRowHeight - 8.0f, routeHint);
-        top += kRowHeight + routeHint;
+        if (routing_.cablesMissing) {
+            rows.push_back(HintItem(T(Text::RoutingNoCables)));
+        }
+        // A row per channel with its device and where it plays; Media only while its group is on.
+        constexpr Text kChannels[] = {Text::Game, Text::Chat, Text::Media};
+        constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media};
+        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
+        const D2D1_COLOR_F colors[] = {p.primary, p.tertiary, p.onSurfaceVariant};
+        const wchar_t glyphs[] = {kGlyphGame, kGlyphChat, kGlyphVolume};
+        for (int channel = 0; channel < (settings_.mediaGroup ? 3 : 2); ++channel) {
+            // The device, and where it plays when that is not the shared output.
+            const std::wstring& device = routing_.names[static_cast<int>(kDevices[channel])];
+            const int output = static_cast<int>(kOutputs[channel]);
+            std::wstring subtitle =
+                device.empty() ? std::wstring(T(channel == 2 ? Text::RoutingMediaNone : Text::NotSelected)) : device;
+            if (!device.empty() && !routing_.ids[output].empty()) {
+                subtitle += L" → " + routing_.names[output];
+            }
+            rows.push_back(NavItem(kIdRoutingRow + 10 + channel, glyphs[channel], colors[channel], T(kChannels[channel]),
+                                   subtitle, [this, channel] {
+                                       routingChannel_ = channel;
+                                       GoTo(Page::RoutingChannel);
+                                   }));
+        }
+        rows.push_back(ValueItem(kIdRoutingRow + 4 + static_cast<int>(RoutingSlot::Output), T(Text::RoutingOutput),
+                                 routing_.names[static_cast<int>(RoutingSlot::Output)].empty()
+                                     ? T(Text::NotSelected)
+                                     : routing_.names[static_cast<int>(RoutingSlot::Output)],
+                                 [this] { OpenPicker(RoutingSlot::Output); }));
+        if (!routing_.status.empty()) {
+            const float height = HintHeight(routing_.status.c_str()) + design::kHintBottomGap;
+            rows.push_back({height, [this, &p, height](float top) {
+                                canvas_.Text(routing_.status, {kInset, top + design::kHintBottomGap, kWidth - kInset,
+                                                               top + height - design::kHintBottomGap},
+                                             TextStyle::BodySmall, routing_.error ? p.error : p.onSurfaceVariant,
+                                             TextAlign::Leading, true);
+                            }});
+        }
     }
-    if (cablesHeight > 0.0f) {
-        DrawHint(T(Text::RoutingNoCables), top, cablesHeight);
-        top += cablesHeight;
+    y = DrawCard(y, rows) + design::kGroupGap;
+    if (on) {
+        // How the mode treats Windows: the devices it switches and the apps it sends to them.
+        y = DrawCard(y, {
+                            SwitchItem(kIdRoutingManage, T(Text::RoutingManage), routing_.manageDevices,
+                                       [this] { host_.OnRoutingManage(!routing_.manageDevices); },
+                                       T(Text::RoutingManageHint)),
+                            SwitchItem(kIdAutoRoute, T(Text::AutoRoute), settings_.routing.autoRoute,
+                                       [this] { Edit([](Settings& s) { s.routing.autoRoute = !s.routing.autoRoute; }); },
+                                       T(Text::AutoRouteHint)),
+                        }) +
+            design::kGroupGap;
     }
+    return y;
+}
 
-    constexpr RoutingSlot kSlots[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Output};
-    constexpr Text kLabels[] = {Text::RoutingGame, Text::RoutingChat, Text::RoutingOutput};
-    for (int i = 0; i < rows; ++i) {
-        const uint32_t id = kIdRoutingRow + 4 + i;
-        const D2D1_RECT_F row{20.0f, top, kWidth - 20.0f, top + kRowHeight};
-        StateLayer(id, row, 16.0f, p.onSurface);
-        canvas_.Text(T(kLabels[i]), {36.0f, top, 170.0f, top + kRowHeight}, TextStyle::BodyLarge, p.onSurface);
-        canvas_.Text(routing_.names[i].empty() ? T(Text::NotSelected) : routing_.names[i].c_str(),
-                     {170.0f, top, kWidth - 56.0f, top + kRowHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
-                     TextAlign::Trailing);
-        canvas_.Glyph(kGlyphChevronRight, {kWidth - 40.0f, top + 28.0f}, 14.0f, p.onSurfaceVariant);
-        AddHit({row, id, [this, slot = kSlots[i]] { OpenPicker(slot); }});
-        top += kRowHeight;
+void Panel::DrawRoutingChannel() {
+    const Palette& p = P();
+    constexpr Text kTitles[] = {Text::Game, Text::Chat, Text::Media};
+    constexpr Text kHints[] = {Text::RoutingGameHint, Text::RoutingChatHint, Text::RoutingMediaHint};
+    constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media};
+    constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
+    const int channel = std::clamp(routingChannel_, 0, 2);
+    DrawHeader(T(kTitles[channel]));
+    float y = BeginScroll(Page::RoutingChannel, kHeaderHeight);
+    y = PageHint(T(kHints[channel]), y);
+    const RoutingSlot device = kDevices[channel];
+    const RoutingSlot output = kOutputs[channel];
+    const std::wstring& deviceName = routing_.names[static_cast<int>(device)];
+    std::vector<CardRow> rows{
+        ValueItem(kIdRoutingRow + 14, T(Text::RoutingDevice),
+                  deviceName.empty() ? std::wstring(T(channel == 2 ? Text::RoutingMediaNone : Text::NotSelected))
+                                     : deviceName,
+                  [this, device] { OpenPicker(device); }),
+    };
+    // Where a channel plays matters only once it has a device.
+    if (!routing_.ids[static_cast<int>(device)].empty()) {
+        rows.push_back(ValueItem(kIdRoutingRow + 15, T(Text::RoutingPlaysOn), routing_.names[static_cast<int>(output)],
+                                 [this, output] { OpenPicker(output); }));
     }
-    if (routing_.enabled) {
-        canvas_.Text(routing_.status, {36.0f, top, kWidth - 36.0f, top + statusHeight}, TextStyle::BodySmall,
-                     routing_.error ? p.error : p.onSurfaceVariant);
+    y = DrawCard(y, rows);
+    if (!routing_.status.empty() && routing_.error) {
+        y = PageHint(routing_.status.c_str(), y + design::kSpace2, p.error);
     }
-    return card.bottom + 12.0f;
+    EndScroll(Page::RoutingChannel, kHeaderHeight, y);
 }
 
 void Panel::DrawPickDevice() {
     const Palette& p = P();
-    constexpr Text kTitles[] = {Text::RoutingGame, Text::RoutingChat, Text::RoutingOutput};
+    constexpr Text kTitles[] = {Text::RoutingGame,    Text::RoutingChat,    Text::RoutingOutput,
+                                Text::MicInput,       Text::MicOutput,      Text::RoutingMediaDevice,
+                                Text::RoutingPlaysOn, Text::RoutingPlaysOn, Text::RoutingPlaysOn};
     const int slot = static_cast<int>(pickSlot_);
     DrawHeader(T(kTitles[slot]));
 
+    // An empty ID stands for the automatic choice of the slots that have one.
     std::vector<AudioEndpoint> items;
-    if (pickSlot_ == RoutingSlot::Output) {
-        items.push_back({L"", T(Text::AutomaticHeadset), std::nullopt});
+    switch (pickSlot_) {
+    case RoutingSlot::Output: items.push_back({L"", T(Text::AutomaticHeadset), std::nullopt}); break;
+    case RoutingSlot::MicInput: items.push_back({L"", T(Text::MicDefaultInput), std::nullopt}); break;
+    case RoutingSlot::MicOutput: items.push_back({L"", T(Text::MicAutomaticCable), std::nullopt}); break;
+    case RoutingSlot::Media: items.push_back({L"", T(Text::RoutingMediaNone), std::nullopt}); break;
+    case RoutingSlot::GameOutput:
+    case RoutingSlot::ChatOutput:
+    case RoutingSlot::MediaOutput: items.push_back({L"", T(Text::SameAsOutput), std::nullopt}); break;
+    case RoutingSlot::Game:
+    case RoutingSlot::Chat: break;
     }
     items.insert(items.end(), endpoints_.begin(), endpoints_.end());
+    const std::wstring& current = pickSlot_ == RoutingSlot::MicInput    ? settings_.mic.input
+                                  : pickSlot_ == RoutingSlot::MicOutput ? settings_.mic.output
+                                                                        : routing_.ids[slot];
 
-    const D2D1_RECT_F list{16.0f, 64.0f, kWidth - 16.0f, ContentBottom() - 12.0f};
+    // Pickers list connected devices only; the hint says where the others went. Virtual cables are what
+    // the Game, Chat and cable slots are for, so only the output and microphone pickers leave them out.
+    const bool cables = pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat ||
+                        pickSlot_ == RoutingSlot::Media || pickSlot_ == RoutingSlot::MicOutput;
+    if (!cables) {
+        std::erase_if(items, [](const AudioEndpoint& item) { return !item.id.empty() && IsVirtualEndpoint(item); });
+    }
+    // The channels play from virtual cables only: a headset or speakers there would loop the sound
+    // into itself and be switched off with the mode.
+    if (pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media) {
+        std::erase_if(items, [](const AudioEndpoint& item) { return !item.id.empty() && !IsVirtualEndpoint(item); });
+    }
+    // Media cannot share the Game or Chat device.
+    if (pickSlot_ == RoutingSlot::Media) {
+        std::erase_if(items, [this](const AudioEndpoint& item) {
+            return !item.id.empty() && (item.id == routing_.ids[static_cast<int>(RoutingSlot::Game)] ||
+                                        item.id == routing_.ids[static_cast<int>(RoutingSlot::Chat)]);
+        });
+    }
+    const bool channel = pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media;
+    const wchar_t* hintText = T(channel  ? Text::ChannelDevicesHint
+                                : cables ? Text::DisabledDevicesHint
+                                         : Text::HiddenDevicesHint);
+    const float listTop = PageHint(hintText, kHeaderHeight);
+    const D2D1_RECT_F list{kGutter, listTop, kWidth - kGutter, ContentBottom() - design::kGroupGap};
     if (items.empty()) {
-        canvas_.FillRound(list, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
-        canvas_.Text(T(Text::NoPlaybackDevices), Inset(list, 24.0f, 0.0f), TextStyle::BodyMedium, p.onSurfaceVariant,
-                     TextAlign::Center, true);
+        DrawCard(listTop, {HintItem(T(Text::NoPlaybackDevices))});
         return;
     }
-    DrawList(list, kIdPickList, scroll_[Page::PickDevice], items.size(), [&](size_t index, float top) {
-        const AudioEndpoint& item = items[index];
-        const uint32_t id = HashId(kKindEndpoint, item.id.empty() ? L"auto" : item.id);
-        const D2D1_RECT_F row{20.0f, top, kWidth - 20.0f, top + kRowHeight};
-        const bool chosen = routing_.ids[slot] == item.id;
-        StateLayer(id, row, 16.0f, p.onSurface);
-        canvas_.Glyph(item.steelSeriesProductId || item.id.empty() ? kGlyphHeadphones : kGlyphSpeakers,
-                      {44.0f, top + 28.0f}, 18.0f, chosen ? p.primary : p.onSurfaceVariant);
-        canvas_.Text(item.name, {68.0f, top, kWidth - 64.0f, top + kRowHeight}, TextStyle::BodyLarge, p.onSurface);
-        if (chosen) {
-            canvas_.Glyph(kGlyphCheck, {kWidth - 44.0f, top + 28.0f}, 16.0f, p.primary);
-        }
-        AddHit({row, id, [this, id = item.id] {
-                    host_.OnRoutingDevice(pickSlot_, id);
-                    GoBack();
-                }});
-    });
+    auto idOf = [&](size_t index) {
+        return HashId(kKindEndpoint, items[index].id.empty() ? L"auto" : items[index].id);
+    };
+    DrawList(list, kIdPickList, scroll_[Page::PickDevice], items.size(), kRowHeight, idOf,
+             [&](size_t index, float top) {
+                 const AudioEndpoint& item = items[index];
+                 const bool chosen = current == item.id;
+                 const float middle = top + kRowHeight / 2.0f;
+                 const wchar_t glyph = pickSlot_ == RoutingSlot::MicInput                             ? kGlyphMicrophone
+                                       : item.steelSeriesProductId || (item.id.empty() && !MicSlot()) ? kGlyphHeadphones
+                                                                                                      : kGlyphSpeakers;
+                 canvas_.Glyph(glyph, {design::kLeadingIconCenter, middle}, design::kIconSize - 2.0f,
+                               chosen ? p.primary : p.onSurfaceVariant);
+                 canvas_.Text(
+                     item.name,
+                     {design::kLeadingTextInset, top, design::kTrailingIconCenter - design::kSpace4, top + kRowHeight},
+                     TextStyle::BodyLarge, chosen ? p.primary : p.onSurface);
+                 if (chosen) {
+                     canvas_.Glyph(kGlyphCheck, {design::kTrailingIconCenter, middle}, 16.0f, p.primary);
+                 }
+                 AddHit({TileRect(top, kRowHeight), idOf(index), [this, id = item.id] {
+                             if (pickSlot_ == RoutingSlot::MicInput) {
+                                 Edit([id](Settings& s) { s.mic.input = id; });
+                             } else if (pickSlot_ == RoutingSlot::MicOutput) {
+                                 Edit([id](Settings& s) { s.mic.output = id; });
+                             } else {
+                                 host_.OnRoutingDevice(pickSlot_, id);
+                             }
+                             GoBack();
+                         }});
+             });
 }
 
 }  // namespace ui

@@ -24,4 +24,10 @@ void DrawBalancedChip(Canvas& canvas, const Palette& palette, D2D1_POINT_2F cent
 void DrawValueSlider(Canvas& canvas, const Palette& palette, float left, float right, float centerY, float t,
                      float handleWidth, const SliderStyle& style, bool known);
 
+// The headset battery as the tray icon draws it: a body on its side with the terminal on the right,
+// the charge (0..1) from the left in color and the rest faded, a bolt while charging. height is the
+// body's; the icon is about 1.8 times as wide.
+void DrawBatteryIcon(Canvas& canvas, const Palette& palette, D2D1_POINT_2F center, float height, float charge,
+                     bool charging, D2D1_COLOR_F color);
+
 }  // namespace ui

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "../balance.h"
 
@@ -101,6 +102,35 @@ void DrawValueSlider(Canvas& canvas, const Palette& p, float left, float right, 
     canvas.FillRound({handleX - handleWidth / 2.0f, centerY - style.handleHeight / 2.0f, handleX + handleWidth / 2.0f,
                       centerY + style.handleHeight / 2.0f},
                      handleWidth / 2.0f, active);
+}
+
+void DrawBatteryIcon(Canvas& canvas, const Palette& palette, D2D1_POINT_2F center, float height, float charge,
+                     bool charging, D2D1_COLOR_F color) {
+    charge = std::clamp(charge, 0.0f, 1.0f);
+    const float bodyWidth = height * 1.6f;
+    const float capWidth = height * 0.2f;
+    const float left = center.x - (bodyWidth + capWidth) / 2.0f;
+    const D2D1_RECT_F body{left, center.y - height / 2.0f, left + bodyWidth, center.y + height / 2.0f};
+    const float radius = height * 0.32f;
+    const D2D1_COLOR_F faded = Alpha(color, 0.4f);
+    canvas.FillRound(body, radius, faded);
+    canvas.FillRound({body.right - 1.0f, center.y - height * 0.22f, body.right + capWidth, center.y + height * 0.22f},
+                     capWidth / 2.0f, charge >= 1.0f ? color : faded);
+    if (charge > 0.0f) {
+        // The charge ends straight, wherever it is, so a low one keeps the body's shape.
+        canvas.PushClip({body.left, body.top, body.left + bodyWidth * charge, body.bottom});
+        canvas.FillRound(body, radius, color);
+        canvas.PopClip();
+    }
+    if (charging) {
+        constexpr float kBolt[][2] = {{0.57f, 0.06f}, {0.35f, 0.56f}, {0.49f, 0.56f}, {0.43f, 0.94f},
+                                      {0.67f, 0.42f}, {0.53f, 0.42f}};
+        D2D1_POINT_2F points[std::size(kBolt)];
+        for (size_t i = 0; i < std::size(kBolt); ++i) {
+            points[i] = {body.left + bodyWidth * kBolt[i][0], body.top + height * kBolt[i][1]};
+        }
+        canvas.FillPolygon(points, palette.surface);
+    }
 }
 
 }  // namespace ui

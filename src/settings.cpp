@@ -5,6 +5,9 @@
 #include <shlobj.h>
 
 #include <algorithm>
+#include <cstdio>
+#include <cwctype>
+#include <optional>
 #include <iterator>
 #include <vector>
 
@@ -12,6 +15,9 @@ namespace {
 
 constexpr wchar_t kMainSection[] = L"ChatMix";
 constexpr wchar_t kAppsSection[] = L"Apps";
+constexpr wchar_t kGgSection[] = L"GGHeartbeats";
+constexpr wchar_t kAddOnsSection[] = L"AddOns";
+constexpr wchar_t kVisualizerSection[] = L"Visualizer";
 constexpr wchar_t kRoutingSection[] = L"Routing";
 constexpr wchar_t kIdleSection[] = L"IdleScreen";
 constexpr wchar_t kAppearanceSection[] = L"Appearance";
@@ -20,18 +26,31 @@ constexpr wchar_t kBatterySection[] = L"Battery";
 constexpr wchar_t kProfilesSection[] = L"Profiles";
 constexpr wchar_t kGameEqSection[] = L"Equalizer.Game";
 constexpr wchar_t kChatEqSection[] = L"Equalizer.Chat";
+constexpr wchar_t kMicEqSection[] = L"Equalizer.Mic";
+constexpr wchar_t kMediaEqSection[] = L"Equalizer.Media";
+constexpr wchar_t kMicSection[] = L"Microphone";
+constexpr wchar_t kOutputsSection[] = L"Outputs";
+constexpr const wchar_t* kNoiseNames[] = {L"off", L"standard", L"strong"};
+constexpr const wchar_t* kCompressorNames[] = {L"off", L"light", L"medium", L"strong"};
+constexpr const wchar_t* kMicStageNames[] = {L"noise", L"eq", L"compressor", L"plugins"};  // Indexed by MicStage.
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr wchar_t kRunValue[] = L"OpenChatMix";
 constexpr wchar_t kLegacyRunValue[] = L"NovaChatMix";
 constexpr wchar_t kConfigFile[] = L"OpenChatMix.ini";
 constexpr wchar_t kPathSeparator = L'|';
 constexpr const wchar_t* kHotkeyKeys[kHotkeyCount] = {L"HotkeyTowardGame", L"HotkeyTowardChat", L"HotkeyCenter",
-                                                       L"HotkeyMuteChat", L"HotkeyNextPreset"};
+                                                       L"HotkeyMuteGame", L"HotkeyMuteChat", L"HotkeyMuteMedia",
+                                                       L"HotkeyNextOutput", L"HotkeyNextMicrophone",
+                                                       L"HotkeyScreensaver"};
 constexpr const wchar_t* kThemeNames[] = {L"system", L"light", L"dark"};
 constexpr const wchar_t* kBackdropNames[] = {L"acrylic", L"mica", L"solid"};
+constexpr const wchar_t* kContrastNames[] = {L"standard", L"medium", L"high"};
 constexpr const wchar_t* kTrayNames[] = {L"color", L"monochrome"};
-// Indexed by IdleAnimationKind.
-constexpr const wchar_t* kIdleAnimationNames[] = {L"off", L"stars", L"bounce", L"clock", L"life", L"blank", L"image"};
+constexpr const wchar_t* kBalancedIconNames[] = {L"bars", L"square", L"ring", L"equals", L"battery"};
+constexpr const wchar_t* kBatteryTintNames[] = {L"theme", L"charge"};
+// Indexed by IdleAnimationKind; the removed "bounce" reads as off.
+constexpr const wchar_t* kIdleAnimationNames[] = {L"off", L"stars", L"clock", L"life", L"blank", L"image"};
+constexpr const wchar_t* kIconCornerNames[] = {L"off", L"top-left", L"top-right", L"bottom-left", L"bottom-right"};
 
 std::wstring ReadString(const std::wstring& path, const wchar_t* section, const wchar_t* key,
                         const wchar_t* fallback) {
@@ -119,7 +138,7 @@ void SaveEqChannel(const std::wstring& path, const wchar_t* section, const EqCha
     WriteSectionString(path, section, L"SmartVolume", SmartVolumeKey(effects.smartVolume));
 }
 
-// [Profiles] exe=path|balance|gameEq|headsetEq; an empty balance leaves it unchanged.
+// [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq; an empty field leaves that unchanged.
 void LoadProfiles(const std::wstring& path, Settings& settings) {
     std::vector<wchar_t> buffer(65536, L'\0');
     const DWORD length = GetPrivateProfileSectionW(kProfilesSection, buffer.data(), static_cast<DWORD>(buffer.size()),
@@ -143,7 +162,7 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
             }
             start = end + 1;
         }
-        fields.resize(4);
+        fields.resize(6);
         profile.path = fields[0];
         // Percent with a "%" sign; a bare number is a dial step of earlier versions.
         if (!fields[1].empty()) {
@@ -153,6 +172,8 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
         }
         profile.gameEq = fields[2];
         profile.headsetEq = fields[3].empty() ? -1 : _wtoi(fields[3].c_str());
+        profile.chatEq = fields[4];
+        profile.mediaEq = fields[5];
         if (!profile.exe.empty()) {
             settings.profiles.push_back(std::move(profile));
         }
@@ -164,11 +185,87 @@ void SaveProfiles(const std::wstring& path, const Settings& settings) {
     for (const auto& profile : settings.profiles) {
         section += profile.exe + L"=" + profile.path + kPathSeparator +
                    (profile.balance ? std::to_wstring(*profile.balance) + L"%" : L"") + kPathSeparator + profile.gameEq +
-                   kPathSeparator + (profile.headsetEq >= 0 ? std::to_wstring(profile.headsetEq) : L"");
+                   kPathSeparator + (profile.headsetEq >= 0 ? std::to_wstring(profile.headsetEq) : L"") +
+                   kPathSeparator + profile.chatEq + kPathSeparator + profile.mediaEq;
         section += L'\0';
     }
     section += L'\0';
     WritePrivateProfileSectionW(kProfilesSection, section.c_str(), path.c_str());
+}
+
+// [Microphone] Plugin1=enabled|id|path
+void LoadMic(const std::wstring& path, MicSettings& mic) {
+    mic.enabled = ReadSectionInt(path, kMicSection, L"Enabled", 0) != 0;
+    mic.input = ReadString(path, kMicSection, L"Input", L"");
+    mic.output = ReadString(path, kMicSection, L"Output", L"");
+    mic.keepLevels = ReadSectionInt(path, kMicSection, L"KeepLevels", 1) != 0;
+    mic.noise = ParseName(ReadString(path, kMicSection, L"NoiseSuppression", L"standard"), kNoiseNames,
+                          NoiseSuppression::Standard);
+    mic.compressor = ParseName(ReadString(path, kMicSection, L"Compressor", L"off"), kCompressorNames, MicCompressor::Off);
+    mic.monitor = ReadSectionInt(path, kMicSection, L"Monitor", 0) != 0;
+    // "noise,eq,compressor,plugins"; anything but each step exactly once keeps the default order.
+    const std::wstring order = ReadString(path, kMicSection, L"Order", L"");
+    MicStageOrder parsed{};
+    int count = 0;
+    bool seen[kMicStageCount] = {};
+    for (size_t start = 0; start <= order.size() && count < kMicStageCount;) {
+        const size_t end = std::min(order.find(L',', start), order.size());
+        const std::wstring name = Trim(order.substr(start, end - start));
+        for (int stage = 0; stage < kMicStageCount; ++stage) {
+            if (_wcsicmp(name.c_str(), kMicStageNames[stage]) == 0 && !seen[stage]) {
+                seen[stage] = true;
+                parsed[count++] = static_cast<MicStage>(stage);
+            }
+        }
+        start = end + 1;
+    }
+    if (count == kMicStageCount) {
+        mic.order = parsed;
+    }
+    for (int index = 1;; ++index) {
+        const std::wstring key = L"Plugin" + std::to_wstring(index);
+        const std::wstring value = ReadString(path, kMicSection, key.c_str(), L"");
+        const size_t first = value.find(kPathSeparator);
+        const size_t second = first == std::wstring::npos ? std::wstring::npos : value.find(kPathSeparator, first + 1);
+        if (second == std::wstring::npos) {
+            break;
+        }
+        MicPlugin plugin;
+        plugin.enabled = value.substr(0, first) != L"0";
+        plugin.id = value.substr(first + 1, second - first - 1);
+        plugin.path = value.substr(second + 1);
+        if (!plugin.path.empty() && !plugin.id.empty()) {
+            mic.plugins.push_back(std::move(plugin));
+        }
+    }
+}
+
+void SaveMic(const std::wstring& path, const MicSettings& mic) {
+    // The section is written whole, so removed plugins do not linger.
+    std::wstring section;
+    auto add = [&](const std::wstring& key, const std::wstring& value) {
+        section += key + L"=" + value;
+        section += L'\0';
+    };
+    add(L"Enabled", mic.enabled ? L"1" : L"0");
+    add(L"Input", mic.input);
+    add(L"Output", mic.output);
+    add(L"KeepLevels", mic.keepLevels ? L"1" : L"0");
+    add(L"NoiseSuppression", kNoiseNames[static_cast<int>(mic.noise)]);
+    add(L"Compressor", kCompressorNames[static_cast<int>(mic.compressor)]);
+    add(L"Monitor", mic.monitor ? L"1" : L"0");
+    std::wstring order;
+    for (const MicStage stage : mic.order) {
+        order += (order.empty() ? L"" : L",") + std::wstring(kMicStageNames[static_cast<int>(stage)]);
+    }
+    add(L"Order", order);
+    for (size_t index = 0; index < mic.plugins.size(); ++index) {
+        const MicPlugin& plugin = mic.plugins[index];
+        add(L"Plugin" + std::to_wstring(index + 1),
+            std::wstring(plugin.enabled ? L"1" : L"0") + kPathSeparator + plugin.id + kPathSeparator + plugin.path);
+    }
+    section += L'\0';
+    WritePrivateProfileSectionW(kMicSection, section.c_str(), path.c_str());
 }
 
 std::vector<std::wstring> SplitList(const std::wstring& text) {
@@ -212,6 +309,200 @@ AppGroup ParseGroup(const std::wstring& text) {
         return AppGroup::Media;
     }
     return AppGroup::Game;
+}
+
+void LoadGgHeartbeats(const std::wstring& path, Settings& settings) {
+    std::vector<wchar_t> buffer(4096, L'\0');
+    const DWORD length =
+        GetPrivateProfileSectionW(kGgSection, buffer.data(), static_cast<DWORD>(buffer.size()), path.c_str());
+    for (size_t offset = 0; offset < length;) {
+        const std::wstring entry(buffer.data() + offset);
+        offset += entry.size() + 1;
+        const size_t equals = entry.find(L'=');
+        if (equals == std::wstring::npos) {
+            continue;
+        }
+        // Sizes separated by commas.
+        std::vector<unsigned long long> sizes;
+        for (const wchar_t* at = entry.c_str() + equals + 1; *at;) {
+            wchar_t* end = nullptr;
+            const unsigned long long bytes = wcstoull(at, &end, 10);
+            if (end == at) {
+                break;
+            }
+            if (bytes) {
+                sizes.push_back(bytes);
+            }
+            at = *end == L',' ? end + 1 : end;
+        }
+        if (!sizes.empty()) {
+            settings.ggHeartbeats[Trim(entry.substr(0, equals))] = sizes;
+        }
+    }
+}
+
+// Add-on option values may hold any text; characters the [AddOns] lines use as separators are written as %XX.
+std::wstring EscapeOption(const std::wstring& value) {
+    std::wstring escaped;
+    for (const wchar_t ch : value) {
+        if (ch < 0x20 || ch == L'%' || ch == L';' || ch == L'|' || ch == L'=') {
+            wchar_t code[4];
+            swprintf_s(code, L"%%%02X", static_cast<unsigned>(ch));
+            escaped += code;
+        } else {
+            escaped += ch;
+        }
+    }
+    return escaped;
+}
+
+std::wstring UnescapeOption(const std::wstring& value) {
+    std::wstring text;
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == L'%' && i + 2 < value.size() && iswxdigit(value[i + 1]) && iswxdigit(value[i + 2])) {
+            text += static_cast<wchar_t>(wcstoul(value.substr(i + 1, 2).c_str(), nullptr, 16));
+            i += 2;
+        } else {
+            text += value[i];
+        }
+    }
+    return text;
+}
+
+// An event screen as one option value: its settings, then each display, separated by control characters.
+constexpr wchar_t kRecordSeparator = 0x1E;
+constexpr wchar_t kFieldSeparator = 0x1F;
+constexpr wchar_t kScreenPrefix[] = L"screen.";
+
+std::vector<std::wstring> SplitOn(const std::wstring& text, wchar_t separator) {
+    std::vector<std::wstring> parts;
+    size_t start = 0;
+    for (size_t at = text.find(separator); at != std::wstring::npos; at = text.find(separator, start)) {
+        parts.push_back(text.substr(start, at - start));
+        start = at + 1;
+    }
+    parts.push_back(text.substr(start));
+    return parts;
+}
+
+std::wstring EncodeScreen(const AddOnEventScreen& screen) {
+    std::wstring value = std::wstring(screen.enabled ? L"1" : L"0") + kRecordSeparator + (screen.whileOn ? L"w" : L"t") +
+                         kRecordSeparator + std::to_wstring(screen.times);
+    for (const AddOnDisplay& display : screen.displays) {
+        value += kRecordSeparator + std::to_wstring(display.icon) + kFieldSeparator +
+                 std::to_wstring(display.lengthMs) + kFieldSeparator + display.heading + kFieldSeparator +
+                 display.text + kFieldSeparator + display.image;
+    }
+    return value;
+}
+
+std::optional<AddOnEventScreen> DecodeScreen(const std::wstring& value) {
+    const std::vector<std::wstring> records = SplitOn(value, kRecordSeparator);
+    if (records.size() < 3) {
+        return std::nullopt;
+    }
+    AddOnEventScreen screen;
+    screen.enabled = records[0] != L"0";
+    screen.whileOn = records[1] == L"w";
+    screen.times = std::clamp(_wtoi(records[2].c_str()), 1, 99);
+    for (size_t i = 3; i < records.size(); ++i) {
+        const std::vector<std::wstring> fields = SplitOn(records[i], kFieldSeparator);
+        if (fields.size() < 5) {
+            continue;
+        }
+        AddOnDisplay display;
+        display.icon = std::max(0, _wtoi(fields[0].c_str()));
+        display.lengthMs = std::clamp(_wtoi(fields[1].c_str()), 500, 60000);
+        display.heading = fields[2];
+        display.text = fields[3];
+        display.image = fields[4];
+        screen.displays.push_back(std::move(display));
+    }
+    return screen;
+}
+
+// [AddOns] holds one add-on per numbered key: "enabled|path|key=value;key=value", values escaped.
+void LoadAddOns(const std::wstring& path, Settings& settings) {
+    std::vector<wchar_t> buffer(32768, L'\0');
+    const DWORD length =
+        GetPrivateProfileSectionW(kAddOnsSection, buffer.data(), static_cast<DWORD>(buffer.size()), path.c_str());
+    for (size_t offset = 0; offset < length;) {
+        const std::wstring entry(buffer.data() + offset);
+        offset += entry.size() + 1;
+        const size_t equals = entry.find(L'=');
+        if (equals == std::wstring::npos) {
+            continue;
+        }
+        const std::wstring value = entry.substr(equals + 1);
+        const size_t first = value.find(kPathSeparator);
+        if (first == std::wstring::npos) {
+            continue;
+        }
+        const size_t second = value.find(kPathSeparator, first + 1);
+        AddOnSettings addOn;
+        addOn.enabled = value.substr(0, first) != L"0";
+        addOn.path = Trim(value.substr(first + 1, second == std::wstring::npos ? std::wstring::npos : second - first - 1));
+        if (second != std::wstring::npos) {
+            const std::wstring options = value.substr(second + 1);
+            for (size_t start = 0; start < options.size();) {
+                size_t end = options.find(L';', start);
+                if (end == std::wstring::npos) {
+                    end = options.size();
+                }
+                const std::wstring pair = options.substr(start, end - start);
+                const size_t at = pair.find(L'=');
+                if (at != std::wstring::npos && at > 0) {
+                    const std::wstring key = pair.substr(0, at);
+                    const std::wstring option = UnescapeOption(pair.substr(at + 1));
+                    if (key.starts_with(kScreenPrefix)) {
+                        if (std::optional<AddOnEventScreen> screen = DecodeScreen(option)) {
+                            addOn.screens[key.substr(std::size(kScreenPrefix) - 1)] = std::move(*screen);
+                        }
+                    } else {
+                        addOn.options[key] = option;
+                    }
+                }
+                start = end + 1;
+            }
+        }
+        if (!addOn.path.empty()) {
+            settings.addOns.push_back(std::move(addOn));
+        }
+    }
+}
+
+void SaveAddOns(const std::wstring& path, const Settings& settings) {
+    std::wstring section;
+    int index = 0;
+    for (const AddOnSettings& addOn : settings.addOns) {
+        std::wstring options;
+        for (const auto& [key, value] : addOn.options) {
+            options += (options.empty() ? L"" : L";") + key + L"=" + EscapeOption(value);
+        }
+        for (const auto& [event, screen] : addOn.screens) {
+            options += (options.empty() ? L"" : L";") + std::wstring(kScreenPrefix) + event + L"=" +
+                       EscapeOption(EncodeScreen(screen));
+        }
+        section += std::to_wstring(++index) + L"=" + (addOn.enabled ? L"1" : L"0") + kPathSeparator + addOn.path +
+                   kPathSeparator + options;
+        section.push_back(L'\0');
+    }
+    section.push_back(L'\0');
+    WritePrivateProfileSectionW(kAddOnsSection, section.c_str(), path.c_str());
+}
+
+void SaveGgHeartbeats(const std::wstring& path, const Settings& settings) {
+    std::wstring section;
+    for (const auto& [exe, sizes] : settings.ggHeartbeats) {
+        std::wstring list;
+        for (const unsigned long long bytes : sizes) {
+            list += (list.empty() ? L"" : L",") + std::to_wstring(bytes);
+        }
+        section += exe + L"=" + list;
+        section.push_back(L'\0');
+    }
+    section.push_back(L'\0');
+    WritePrivateProfileSectionW(kGgSection, section.c_str(), path.c_str());
 }
 
 void LoadApps(const std::wstring& path, Settings& settings) {
@@ -279,6 +570,20 @@ void Settings::SetGroup(const std::wstring& exe, AppGroup group, const std::wstr
     }
 }
 
+EqChannelSettings& EqStateOf(Settings& settings, EqChannel channel) {
+    switch (channel) {
+    case EqChannel::Chat: return settings.chatEq;
+    case EqChannel::Mic: return settings.micEq;
+    case EqChannel::Media: return settings.mediaEq;
+    case EqChannel::Game: break;
+    }
+    return settings.gameEq;
+}
+
+const EqChannelSettings& EqStateOf(const Settings& settings, EqChannel channel) {
+    return EqStateOf(const_cast<Settings&>(settings), channel);
+}
+
 std::wstring ExePath() {
     std::wstring path(MAX_PATH, L'\0');
     for (;;) {
@@ -311,6 +616,17 @@ std::wstring ConfigDirectory() {
     return directory;
 }
 
+// Apps that start in the Chat group, as SteelSeries GG puts them. A settings file written before an
+// app joined this list gets it once (ChatDefaults counts how many were known when it was saved).
+// Their rules are kept even when the app isn't installed, so it lands in Chat when it first runs.
+constexpr const wchar_t* kChatApps[] = {L"Discord.exe", L"XboxPartyChatHost.exe"};
+constexpr int kChatAppsKnown = static_cast<int>(std::size(kChatApps));
+
+bool IsDefaultChatApp(const std::wstring& exe) {
+    return std::any_of(std::begin(kChatApps), std::end(kChatApps),
+                       [&](const wchar_t* app) { return _wcsicmp(app, exe.c_str()) == 0; });
+}
+
 Settings LoadSettings(const std::wstring& path) {
     Settings settings;
     settings.firstRun = GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES;
@@ -318,35 +634,62 @@ Settings LoadSettings(const std::wstring& path) {
         settings.hotkeys[action] = DefaultHotkey(action);
     }
     if (settings.firstRun) {
-        settings.SetGroup(L"Discord.exe", AppGroup::Chat, L"");
+        for (const wchar_t* exe : kChatApps) {
+            settings.SetGroup(exe, AppGroup::Chat, L"");
+        }
         return settings;
     }
 
     LoadApps(path, settings);
+    LoadGgHeartbeats(path, settings);
+    LoadAddOns(path, settings);
+    // Chat apps added to the defaults since the file was saved; one removed by hand stays removed.
+    const int chatAppsKnown = ReadInt(path, L"ChatDefaults", 1);
+    for (int index = std::max(chatAppsKnown, 0); index < kChatAppsKnown; ++index) {
+        if (!settings.apps.contains(kChatApps[index])) {
+            settings.SetGroup(kChatApps[index], AppGroup::Chat, L"");
+        }
+    }
     settings.levels = ClampLevels(ReadInt(path, L"Game", 100), ReadInt(path, L"Chat", 100));
     settings.log = ReadInt(path, L"Log", 0) != 0;
     settings.checkUpdates = ReadInt(path, L"CheckUpdates", 1) != 0;
     settings.lastUpdateCheck = _wtoi64(ReadString(path, kMainSection, L"LastUpdateCheck", L"0").c_str());
     settings.showPopup = ReadInt(path, L"ShowPopup", 1) != 0;
     settings.dialPopup = ReadInt(path, L"DialPopup", 1) != 0;
+    settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
+    settings.chatVolume = std::clamp(ReadInt(path, L"ChatVolume", 100), 0, 100);
     settings.warnGg = ReadInt(path, L"WarnGg", 1) != 0;
-    settings.mediaGroup = ReadInt(path, L"MediaGroup", 1) != 0;
-    settings.equalizer = ReadInt(path, L"Equalizer", 1) != 0;
+    // Media and the equalizer start turned off; settings files from earlier versions keep their choice.
+    settings.mediaGroup = ReadInt(path, L"MediaGroup", 0) != 0;
+    settings.equalizer = ReadInt(path, L"Equalizer", 0) != 0;
 
     AppearanceSettings& appearance = settings.appearance;
     appearance.theme = ParseName(ReadString(path, kAppearanceSection, L"Theme", L"system"), kThemeNames,
                                  ThemeMode::System);
     const std::wstring accent = ReadString(path, kAppearanceSection, L"Accent", L"");
-    appearance.windowsAccent = _wcsicmp(accent.c_str(), L"windows") == 0;
+    // The Windows accent is the default; a saved color replaces it.
+    appearance.windowsAccent = accent.empty() || _wcsicmp(accent.c_str(), L"windows") == 0;
     if (accent.size() == 7 && accent[0] == L'#') {
         appearance.accent = static_cast<uint32_t>(wcstoul(accent.c_str() + 1, nullptr, 16)) & 0xFFFFFF;
+    }
+    const std::wstring chatAccent = ReadString(path, kAppearanceSection, L"ChatColor", L"auto");
+    if (chatAccent.size() == 7 && chatAccent[0] == L'#') {
+        appearance.chatAccent = static_cast<uint32_t>(wcstoul(chatAccent.c_str() + 1, nullptr, 16)) & 0xFFFFFF;
     }
     // Version 1 had a single translucency switch.
     const bool translucent = ReadInt(path, L"Translucent", 1) != 0;
     appearance.backdrop = ParseName(ReadString(path, kAppearanceSection, L"Backdrop", translucent ? L"acrylic" : L"solid"),
                                     kBackdropNames, Backdrop::Acrylic);
+    appearance.contrast = ParseName(ReadString(path, kAppearanceSection, L"Contrast", L"standard"), kContrastNames,
+                                    ContrastLevel::Standard);
     appearance.reduceMotion = ReadSectionInt(path, kAppearanceSection, L"ReduceMotion", 0) != 0;
     appearance.tray = ParseName(ReadString(path, kAppearanceSection, L"TrayIcon", L"color"), kTrayNames, TrayStyle::Color);
+    appearance.balancedIcon = ParseName(ReadString(path, kAppearanceSection, L"TrayBalanced", L"bars"), kBalancedIconNames,
+                                        BalancedIcon::Bars);
+    appearance.battery = ParseName(ReadString(path, kAppearanceSection, L"Battery", L"theme"), kBatteryTintNames,
+                                   BatteryTint::Theme);
+    appearance.trayBattery = ParseName(ReadString(path, kAppearanceSection, L"TrayBattery", L"theme"), kBatteryTintNames,
+                                       BatteryTint::Theme);
 
     settings.ducking.enabled = ReadSectionInt(path, kDuckingSection, L"Enabled", 0) != 0;
     settings.ducking.amount = std::clamp(ReadSectionInt(path, kDuckingSection, L"Amount", 50), 10, 90);
@@ -354,23 +697,46 @@ Settings LoadSettings(const std::wstring& path) {
     settings.battery.threshold = std::clamp(ReadSectionInt(path, kBatterySection, L"Threshold", 15), 5, 50);
     LoadEqChannel(path, kGameEqSection, settings.gameEq);
     LoadEqChannel(path, kChatEqSection, settings.chatEq);
+    LoadEqChannel(path, kMicEqSection, settings.micEq);
+    LoadEqChannel(path, kMediaEqSection, settings.mediaEq);
+    LoadMic(path, settings.mic);
     LoadProfiles(path, settings);
     settings.routing.enabled = GetPrivateProfileIntW(kRoutingSection, L"Enabled", 0, path.c_str()) != 0;
     settings.routing.game = ReadString(path, kRoutingSection, L"Game", L"");
     settings.routing.chat = ReadString(path, kRoutingSection, L"Chat", L"");
     settings.routing.output = ReadString(path, kRoutingSection, L"Output", L"");
+    settings.routing.media = ReadString(path, kRoutingSection, L"Media", L"");
+    settings.routing.gameOutput = ReadString(path, kRoutingSection, L"GameOutput", L"");
+    settings.routing.chatOutput = ReadString(path, kRoutingSection, L"ChatOutput", L"");
+    settings.routing.mediaOutput = ReadString(path, kRoutingSection, L"MediaOutput", L"");
     settings.routing.manageDevices = GetPrivateProfileIntW(kRoutingSection, L"ManageDevices", 1, path.c_str()) != 0;
     settings.routing.savedDefault = ReadString(path, kRoutingSection, L"SavedDefault", L"");
     settings.routing.savedCommunications = ReadString(path, kRoutingSection, L"SavedCommunications", L"");
     settings.routing.autoRoute = GetPrivateProfileIntW(kRoutingSection, L"AutoRoute", 1, path.c_str()) != 0;
     settings.routing.routedApps = SplitList(ReadString(path, kRoutingSection, L"RoutedApps", L""));
+    settings.outputs.order = SplitList(ReadString(path, kOutputsSection, L"Order", L""));
+    settings.outputs.excluded = SplitList(ReadString(path, kOutputsSection, L"Excluded", L""));
+    settings.outputs.switchOnLoss = ReadSectionInt(path, kOutputsSection, L"SwitchOnLoss", 0) != 0;
+    settings.outputs.returnToPreferred = ReadSectionInt(path, kOutputsSection, L"ReturnToPreferred", 0) != 0;
     settings.idleScreen.animation = ParseIdleAnimation(ReadString(path, kIdleSection, L"Animation", L"off"));
     settings.idleScreen.delaySeconds =
         std::clamp(static_cast<int>(GetPrivateProfileIntW(kIdleSection, L"Delay", 60, path.c_str())), 5, 3600);
     settings.idleScreen.image = ReadString(path, kIdleSection, L"Image", L"");
+    settings.visualizer.enabled = GetPrivateProfileIntW(kVisualizerSection, L"Enabled", 0, path.c_str()) != 0;
+    settings.visualizer.mediaOnly = _wcsicmp(ReadString(path, kVisualizerSection, L"For", L"media").c_str(), L"sound") != 0;
+    const std::wstring corner = ReadString(path, kIdleSection, L"BluetoothIcon", L"top-right");
+    for (size_t i = 0; i < std::size(kIconCornerNames); ++i) {
+        if (_wcsicmp(corner.c_str(), kIconCornerNames[i]) == 0) {
+            settings.idleScreen.bluetoothIcon = static_cast<IconCorner>(i);
+        }
+    }
     settings.language =
         _wcsicmp(ReadString(path, kMainSection, L"Language", L"en").c_str(), L"uk") == 0 ? Language::Ukrainian
                                                                                           : Language::English;
+    const UINT wheel = static_cast<UINT>(wcstoul(ReadString(path, kMainSection, L"WheelModifiers", L"0").c_str(), nullptr, 0));
+    if (std::find(std::begin(kWheelModifierChoices), std::end(kWheelModifierChoices), wheel) != std::end(kWheelModifierChoices)) {
+        settings.wheelModifiers = wheel;
+    }
     for (int action = 0; action < kHotkeyCount; ++action) {
         const std::wstring value = ReadString(path, kMainSection, kHotkeyKeys[action], L"");
         if (!value.empty()) {
@@ -398,7 +764,10 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"CheckUpdates", settings.checkUpdates ? L"1" : L"0");
     WriteString(path, L"LastUpdateCheck", std::to_wstring(settings.lastUpdateCheck).c_str());
     WriteString(path, L"ShowPopup", settings.showPopup ? L"1" : L"0");
+    WriteString(path, L"ChatDefaults", std::to_wstring(kChatAppsKnown).c_str());
     WriteString(path, L"DialPopup", settings.dialPopup ? L"1" : L"0");
+    WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());
+    WriteString(path, L"ChatVolume", std::to_wstring(settings.chatVolume).c_str());
     WriteString(path, L"WarnGg", settings.warnGg ? L"1" : L"0");
     WriteString(path, L"MediaGroup", settings.mediaGroup ? L"1" : L"0");
     WriteString(path, L"Equalizer", settings.equalizer ? L"1" : L"0");
@@ -409,9 +778,20 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     wchar_t accent[16];
     swprintf_s(accent, L"#%06X", appearance.accent & 0xFFFFFF);
     WriteSectionString(path, kAppearanceSection, L"Accent", appearance.windowsAccent ? L"windows" : accent);
+    wchar_t chatAccent[16] = L"auto";
+    if (appearance.chatAccent) {
+        swprintf_s(chatAccent, L"#%06X", *appearance.chatAccent & 0xFFFFFF);
+    }
+    WriteSectionString(path, kAppearanceSection, L"ChatColor", chatAccent);
     WriteSectionString(path, kAppearanceSection, L"Backdrop", kBackdropNames[static_cast<int>(appearance.backdrop)]);
+    WriteSectionString(path, kAppearanceSection, L"Contrast", kContrastNames[static_cast<int>(appearance.contrast)]);
     WriteSectionString(path, kAppearanceSection, L"ReduceMotion", appearance.reduceMotion ? L"1" : L"0");
     WriteSectionString(path, kAppearanceSection, L"TrayIcon", kTrayNames[static_cast<int>(appearance.tray)]);
+    WriteSectionString(path, kAppearanceSection, L"TrayBalanced",
+                       kBalancedIconNames[static_cast<int>(appearance.balancedIcon)]);
+    WriteSectionString(path, kAppearanceSection, L"Battery", kBatteryTintNames[static_cast<int>(appearance.battery)]);
+    WriteSectionString(path, kAppearanceSection, L"TrayBattery",
+                       kBatteryTintNames[static_cast<int>(appearance.trayBattery)]);
 
     WriteSectionString(path, kDuckingSection, L"Enabled", settings.ducking.enabled ? L"1" : L"0");
     WriteSectionString(path, kDuckingSection, L"Amount", std::to_wstring(settings.ducking.amount));
@@ -419,11 +799,18 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteSectionString(path, kBatterySection, L"Threshold", std::to_wstring(settings.battery.threshold));
     SaveEqChannel(path, kGameEqSection, settings.gameEq);
     SaveEqChannel(path, kChatEqSection, settings.chatEq);
+    SaveEqChannel(path, kMicEqSection, settings.micEq);
+    SaveEqChannel(path, kMediaEqSection, settings.mediaEq);
+    SaveMic(path, settings.mic);
     SaveProfiles(path, settings);
     WritePrivateProfileStringW(kRoutingSection, L"Enabled", settings.routing.enabled ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Game", settings.routing.game.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Chat", settings.routing.chat.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Output", settings.routing.output.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"Media", settings.routing.media.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"GameOutput", settings.routing.gameOutput.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"ChatOutput", settings.routing.chatOutput.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"MediaOutput", settings.routing.mediaOutput.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"ManageDevices", settings.routing.manageDevices ? L"1" : L"0",
                                path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"SavedDefault", settings.routing.savedDefault.c_str(), path.c_str());
@@ -435,18 +822,37 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
         routed += (routed.empty() ? L"" : std::wstring(1, kPathSeparator)) + exe;
     }
     WritePrivateProfileStringW(kRoutingSection, L"RoutedApps", routed.c_str(), path.c_str());
+    std::wstring order;
+    for (const auto& id : settings.outputs.order) {
+        order += (order.empty() ? L"" : std::wstring(1, kPathSeparator)) + id;
+    }
+    WriteSectionString(path, kOutputsSection, L"Order", order);
+    std::wstring excluded;
+    for (const auto& id : settings.outputs.excluded) {
+        excluded += (excluded.empty() ? L"" : std::wstring(1, kPathSeparator)) + id;
+    }
+    WriteSectionString(path, kOutputsSection, L"Excluded", excluded);
+    WriteSectionString(path, kOutputsSection, L"SwitchOnLoss", settings.outputs.switchOnLoss ? L"1" : L"0");
+    WriteSectionString(path, kOutputsSection, L"ReturnToPreferred", settings.outputs.returnToPreferred ? L"1" : L"0");
     WritePrivateProfileStringW(kIdleSection, L"Animation",
                                kIdleAnimationNames[static_cast<size_t>(settings.idleScreen.animation)], path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"Delay", std::to_wstring(settings.idleScreen.delaySeconds).c_str(),
                                path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"Image", settings.idleScreen.image.c_str(), path.c_str());
+    WritePrivateProfileStringW(kVisualizerSection, L"Enabled", settings.visualizer.enabled ? L"1" : L"0", path.c_str());
+    WritePrivateProfileStringW(kVisualizerSection, L"For", settings.visualizer.mediaOnly ? L"media" : L"sound",
+                               path.c_str());
+    WritePrivateProfileStringW(kIdleSection, L"BluetoothIcon",
+                               kIconCornerNames[static_cast<size_t>(settings.idleScreen.bluetoothIcon)], path.c_str());
     WriteString(path, L"Language", settings.language == Language::Ukrainian ? L"uk" : L"en");
     for (int action = 0; action < kHotkeyCount; ++action) {
         wchar_t value[16];
         swprintf_s(value, L"0x%06X", PackHotkey(settings.hotkeys[action]));
         WriteString(path, kHotkeyKeys[action], value);
     }
-    // Keys from version 1.
+    WriteString(path, L"WheelModifiers", std::to_wstring(settings.wheelModifiers).c_str());
+    // Keys from version 1, and the removed equalizer preset hotkey.
+    WriteString(path, L"HotkeyNextPreset", nullptr);
     WriteString(path, L"ChatApps", nullptr);
     WriteString(path, L"EngineEq", nullptr);
 
@@ -461,6 +867,8 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     }
     section += L'\0';
     WritePrivateProfileSectionW(kAppsSection, section.c_str(), path.c_str());
+    SaveGgHeartbeats(path, settings);
+    SaveAddOns(path, settings);
 }
 
 namespace {
@@ -567,4 +975,12 @@ bool SetAutostart(bool enable) {
     }
     RegCloseKey(key);
     return status == ERROR_SUCCESS;
+}
+
+AddOnKind AddOnKindOf(const std::wstring& path) {
+    const size_t slash = path.find_last_of(L"\\/");
+    std::wstring name = slash == std::wstring::npos ? path : path.substr(slash + 1);
+    // SteelSeries GG's gamesense-discord-x64.exe, and any other program for Discord by the word in its name.
+    std::transform(name.begin(), name.end(), name.begin(), [](wchar_t c) { return std::towlower(c); });
+    return name.find(L"discord") != std::wstring::npos ? AddOnKind::Discord : AddOnKind::Generic;
 }

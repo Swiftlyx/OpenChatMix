@@ -13,7 +13,7 @@ $zip = Join-Path $dist "OpenChatMix-$version-win-x64.zip"
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 New-Item -ItemType Directory -Force $staging | Out-Null
 Copy-Item "$root\build\OpenChatMix.exe" $dist -Force
-Copy-Item "$root\build\OpenChatMix.exe", "$root\README.md", "$root\LICENSE" $staging
+Copy-Item "$root\build\OpenChatMix.exe", "$root\README.md", "$root\README.uk.md", "$root\LICENSE", "$root\THIRD_PARTY_NOTICES.md" $staging
 Compress-Archive -Path "$staging\*" -DestinationPath $zip -Force
 Remove-Item $staging -Recurse -Force
 

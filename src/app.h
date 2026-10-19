@@ -19,6 +19,13 @@ constexpr UINT WM_APP_ROUTING = WM_APP + 10;          // A virtual device bridge
 constexpr UINT WM_APP_FRAME = WM_APP + 11;            // FrameClock: time to draw the next animation frame.
 constexpr UINT WM_APP_UPDATE_CHECKED = WM_APP + 12;   // Update check finished; lParam owns an UpdateCheckResult*.
 constexpr UINT WM_APP_UPDATE_INSTALLED = WM_APP + 13; // Update download finished; wParam 1 when it is in place.
+constexpr UINT WM_APP_DEVICE_VOLUME = WM_APP + 14;    // Windows volume or mute of a virtual Game or Chat device changed.
+constexpr UINT WM_APP_WHEEL = WM_APP + 15;            // Mouse wheel with the ChatMix keys held; lParam is the delta, 0 a click.
+constexpr UINT WM_APP_MIC_STOPPED = WM_APP + 16;      // The microphone chain stopped on an audio error.
+constexpr UINT WM_APP_MIC_LEVEL = WM_APP + 17;        // The level of a microphone or cable changed.
+constexpr UINT WM_APP_GG_EVENT = WM_APP + 18;         // A SteelSeries GG helper handed GG something to show; wParam: GgScreenApp.
+constexpr UINT WM_APP_GG_HEARTBEAT = WM_APP + 19;     // The GG watch learned a helper's heartbeat.
+constexpr UINT WM_APP_GAMESENSE = WM_APP + 20;        // An add-on sent GameSense requests.
 
 inline constexpr wchar_t kAppName[] = L"OpenChatMix";
 inline constexpr wchar_t kMainWindowClass[] = L"OpenChatMix.Main";

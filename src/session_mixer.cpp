@@ -1,6 +1,5 @@
 #include "session_mixer.h"
 
-
 #include <algorithm>
 #include <cmath>
 
@@ -71,6 +70,23 @@ public:
     }
 };
 
+// Reports the end of a session whose level was changed, see SessionMixer::ReleaseExpired().
+class SessionEndNotifier final : public Notifier<IAudioSessionEvents> {
+public:
+    using Notifier::Notifier;
+    HRESULT STDMETHODCALLTYPE OnDisplayNameChanged(LPCWSTR, LPCGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnIconPathChanged(LPCWSTR, LPCGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnSimpleVolumeChanged(float, BOOL, LPCGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnChannelVolumeChanged(DWORD, float[], DWORD, LPCGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnGroupingParamChanged(LPCGUID, LPCGUID) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnStateChanged(AudioSessionState state) override {
+        return state == AudioSessionStateExpired ? Post(WM_APP_SESSIONS_CHANGED) : S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnSessionDisconnected(AudioSessionDisconnectReason) override {
+        return Post(WM_APP_SESSIONS_CHANGED);
+    }
+};
+
 class EndpointNotifier final : public Notifier<IMMNotificationClient> {
 public:
     using Notifier::Notifier;
@@ -99,16 +115,29 @@ std::wstring ProcessPath(DWORD pid) {
     return path;
 }
 
-std::wstring FileName(const std::wstring& path) {
-    return path.substr(path.find_last_of(L"\\/") + 1);
-}
-
-void SetLevel(ISimpleAudioVolume* volume, float level) {
-    float current = 0.0f;
-    if (SUCCEEDED(volume->GetMasterVolume(&current)) && std::fabs(current - level) < kLevelEpsilon) {
+// Sets every channel of a session to level; a session that already has it is left alone.
+void SetChannels(IChannelAudioVolume* channels, float level) {
+    UINT32 count = 0;
+    if (FAILED(channels->GetChannelCount(&count)) || count == 0) {
         return;
     }
-    volume->SetMasterVolume(level, &kEventContext);
+    std::vector<float> values(count);
+    if (SUCCEEDED(channels->GetAllVolumes(count, values.data())) &&
+        std::all_of(values.begin(), values.end(), [&](float value) { return std::fabs(value - level) < kLevelEpsilon; })) {
+        return;
+    }
+    std::fill(values.begin(), values.end(), level);
+    channels->SetAllVolumes(count, values.data(), &kEventContext);
+}
+
+std::wstring InstanceId(IAudioSessionControl2* control) {
+    LPWSTR id = nullptr;
+    if (FAILED(control->GetSessionInstanceIdentifier(&id)) || !id) {
+        return {};
+    }
+    std::wstring result(id);
+    CoTaskMemFree(id);
+    return result;
 }
 
 }  // namespace
@@ -127,6 +156,12 @@ bool SessionMixer::Init(HWND notifyWindow) {
 }
 
 void SessionMixer::Shutdown() {
+    for (auto& [id, changed] : changed_) {
+        if (changed.events) {
+            changed.control->UnregisterAudioSessionNotification(changed.events.Get());
+        }
+    }
+    changed_.clear();
     Unregister(endpoints_);
     endpoints_.clear();
     if (enumerator_ && endpointNotifier_) {
@@ -207,18 +242,9 @@ void SessionMixer::Rebind() {
     std::vector<Endpoint> next = ResolveEndpoints();
 
     // Endpoints that are no longer targeted keep no ChatMix attenuation.
-    std::vector<Endpoint> dropped;
-    for (auto& endpoint : endpoints_) {
-        const bool kept = std::any_of(next.begin(), next.end(),
-                                      [&](const Endpoint& candidate) { return candidate.id == endpoint.id; });
-        if (!kept) {
-            dropped.push_back(endpoint);
-        }
-    }
-    ForEachSession(dropped, [&](const Session& session) {
-        if (touched_.count(session.exe)) {
-            SetLevel(session.volume, 1.0f);
-        }
+    ReleaseWhere([&](const Changed& changed) {
+        return std::none_of(next.begin(), next.end(),
+                            [&](const Endpoint& candidate) { return candidate.id == changed.endpointId; });
     });
     Unregister(endpoints_);
 
@@ -256,10 +282,10 @@ void SessionMixer::ForEachSession(const std::vector<Endpoint>& endpoints, Fn&& f
         for (int i = 0; i < count; ++i) {
             ComPtr<IAudioSessionControl> control;
             ComPtr<IAudioSessionControl2> control2;
-            ComPtr<ISimpleAudioVolume> volume;
+            ComPtr<IChannelAudioVolume> channels;
             AudioSessionState state = AudioSessionStateExpired;
             if (FAILED(sessions->GetSession(i, &control)) || FAILED(control->GetState(&state)) ||
-                state == AudioSessionStateExpired || FAILED(control.As(&control2)) || FAILED(control.As(&volume))) {
+                state == AudioSessionStateExpired || FAILED(control.As(&control2)) || FAILED(control.As(&channels))) {
                 continue;
             }
             if (control2->IsSystemSoundsSession() == S_OK) {
@@ -274,48 +300,87 @@ void SessionMixer::ForEachSession(const std::vector<Endpoint>& endpoints, Fn&& f
             const std::wstring path = ProcessPath(pid);
             const std::wstring exe = FileNameOf(path);
             if (!exe.empty() && !IsIgnoredApp(exe)) {
-                fn(Session{exe, path, pid, volume.Get(), control.Get()});
+                fn(Session{exe, path, pid, channels.Get(), control.Get(), control2.Get(), &endpoint.id});
             }
         }
     }
 }
 
-void SessionMixer::Apply(Levels levels, const Settings& settings) {
+void SessionMixer::Apply(Levels levels, const Settings& settings, float media) {
     const float game = levels.game / 100.0f;
     const float chat = levels.chat / 100.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
         switch (settings.EffectiveGroupOf(session.exe)) {
         case AppGroup::Game:
-            SetLevel(session.volume, game);
-            touched_.insert(session.exe);
+            SetLevel(session, game);
             break;
         case AppGroup::Chat:
-            SetLevel(session.volume, chat);
-            touched_.insert(session.exe);
+            SetLevel(session, chat);
             break;
         case AppGroup::Media:
+            // Untouched unless muted; once lowered, a session is set back to full when unmuted.
+            if (media < 1.0f || changed_.count(InstanceId(session.control2))) {
+                SetLevel(session, media);
+            }
             break;
         }
     });
+}
+
+void SessionMixer::SetLevel(const Session& session, float level) {
+    SetChannels(session.channels, level);
+    std::wstring id = InstanceId(session.control2);
+    if (id.empty() || changed_.count(id)) {
+        return;
+    }
+    Changed changed{session.exe, *session.endpointId, session.control, session.channels, nullptr};
+    changed.events.Attach(new SessionEndNotifier(notify_));
+    if (FAILED(session.control->RegisterAudioSessionNotification(changed.events.Get()))) {
+        changed.events.Reset();
+    }
+    changed_.emplace(std::move(id), std::move(changed));
+}
+
+void SessionMixer::Release(Changed& changed) {
+    SetChannels(changed.channels.Get(), 1.0f);
+    if (changed.events) {
+        changed.control->UnregisterAudioSessionNotification(changed.events.Get());
+        changed.events.Reset();
+    }
+}
+
+template <class Pred>
+void SessionMixer::ReleaseWhere(Pred&& pred) {
+    for (auto it = changed_.begin(); it != changed_.end();) {
+        if (pred(it->second)) {
+            Release(it->second);
+            it = changed_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void SessionMixer::RestoreApp(const std::wstring& exe) {
+    ReleaseWhere([&](const Changed& changed) { return _wcsicmp(changed.exe.c_str(), exe.c_str()) == 0; });
+    // Also covers a level left by an earlier run that did not end cleanly.
     ForEachSession(endpoints_, [&](const Session& session) {
         if (_wcsicmp(session.exe.c_str(), exe.c_str()) == 0) {
-            SetLevel(session.volume, 1.0f);
+            SetChannels(session.channels, 1.0f);
         }
     });
-    touched_.erase(exe);
 }
 
 void SessionMixer::ResetVolumes() {
-    ForEachSession(endpoints_, [&](const Session& session) {
-        if (touched_.count(session.exe)) {
-            SetLevel(session.volume, 1.0f);
-        }
-    });
-    touched_.clear();
+    ReleaseWhere([](const Changed&) { return true; });
     Log("session volumes reset");
+}
+
+void SessionMixer::ReleaseExpired() {
+    ReleaseWhere([](const Changed& changed) {
+        AudioSessionState state = AudioSessionStateExpired;
+        return FAILED(changed.control->GetState(&state)) || state == AudioSessionStateExpired;
+    });
 }
 
 std::vector<ProcessApp> SessionMixer::ActiveApps() const {
@@ -342,7 +407,20 @@ float SessionMixer::PeakLevel() const {
     return peak;
 }
 
-float SessionMixer::GroupPeak(const Settings& settings, AppGroup group) const {
+float SessionMixer::AppPeak(bool (*match)(const std::wstring& exe)) const {
+    float peak = 0.0f;
+    ForEachSession(endpoints_, [&](const Session& session) {
+        ComPtr<IAudioMeterInformation> meter;
+        float value = 0.0f;
+        if (match(session.exe) && SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) &&
+            SUCCEEDED(meter->GetPeakValue(&value))) {
+            peak = std::max(peak, value);
+        }
+    });
+    return peak;
+}
+
+float SessionMixer::GroupPeak(const Settings& settings, AppGroup group, bool heard) const {
     float peak = 0.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
         if (settings.EffectiveGroupOf(session.exe) != group) {
@@ -350,9 +428,27 @@ float SessionMixer::GroupPeak(const Settings& settings, AppGroup group) const {
         }
         ComPtr<IAudioMeterInformation> meter;
         float value = 0.0f;
-        if (SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) && SUCCEEDED(meter->GetPeakValue(&value))) {
-            peak = std::max(peak, value);
+        if (FAILED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) || FAILED(meter->GetPeakValue(&value))) {
+            return;
         }
+        // The session meter reads the app's sound before both its volume and its channel volume.
+        if (heard) {
+            ComPtr<ISimpleAudioVolume> volume;
+            float master = 1.0f;
+            if (SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&volume)))) {
+                volume->GetMasterVolume(&master);
+            }
+            UINT32 count = 0;
+            float channel = 1.0f;
+            if (SUCCEEDED(session.channels->GetChannelCount(&count)) && count > 0) {
+                std::vector<float> values(count);
+                if (SUCCEEDED(session.channels->GetAllVolumes(count, values.data()))) {
+                    channel = *std::max_element(values.begin(), values.end());
+                }
+            }
+            value *= master * channel;
+        }
+        peak = std::max(peak, value);
     });
     return peak;
 }

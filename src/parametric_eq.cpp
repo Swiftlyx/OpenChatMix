@@ -111,7 +111,9 @@ std::string JsonEscape(const std::wstring& text) {
 // a ten-band graphic one, 3 the microphone.
 std::optional<ParametricEq> FromSonar(const JsonValue& data, EqChannel channel) {
     ParametricEq eq = FlatEq();
-    if (channel == EqChannel::Game) {
+    // Game always has the parametric equalizer; the microphone has it in recent Sonar versions.
+    if (channel == EqChannel::Game || channel == EqChannel::Media ||
+        (channel == EqChannel::Mic && data.Find(L"parametricEQ"))) {
         const JsonValue* parametric = data.Find(L"parametricEQ");
         if (!parametric) {
             return std::nullopt;
@@ -387,6 +389,18 @@ std::array<float, kParametricBands> GraphicEqGains(const ParametricEq& eq, float
 }
 
 std::vector<NamedEq> BuiltinEqPresets(EqChannel channel) {
+    if (channel == EqChannel::Mic) {
+        return {
+            {L"Flat", FlatEq()},
+            {L"Voice Clarity", Shape(-2.0f, {{0, HighPass(80)}, {3, Peak(300, -2.0f)}, {7, Peak(3500, 3.0f, 1.2f)},
+                                             {9, HighShelf(9000, 1.5f)}})},
+            {L"Broadcast", Shape(-3.0f, {{0, HighPass(70)}, {1, LowShelf(150, 3.0f)}, {3, Peak(350, -2.5f)},
+                                         {7, Peak(4000, 3.0f)}, {8, Peak(7000, -1.5f, 2.0f)}})},
+            {L"Bass Cut", Shape(0.0f, {{0, HighPass(120)}})},
+            {L"Less Nasal", Shape(0.0f, {{0, HighPass(80)}, {5, Peak(1000, -3.0f, 1.4f)}})},
+            {L"Less Sibilance", Shape(0.0f, {{0, HighPass(80)}, {8, Peak(7000, -4.0f, 2.0f)}})},
+        };
+    }
     if (channel == EqChannel::Chat) {
         return {
             {L"Flat", FlatEq()},
@@ -435,7 +449,8 @@ std::vector<NamedEq> SonarEqPresets(EqChannel channel) {
     sqlite3_stmt* statement = nullptr;
     if (sqlite3_prepare_v2(db, "SELECT name, data FROM configs WHERE vad = ? ORDER BY name COLLATE NOCASE", -1,
                            &statement, nullptr) == SQLITE_OK) {
-        sqlite3_bind_int(statement, 1, channel == EqChannel::Game ? 1 : 2);
+        sqlite3_bind_int(statement, 1,
+                         channel == EqChannel::Chat ? 2 : channel == EqChannel::Mic ? 3 : 1);
         while (sqlite3_step(statement) == SQLITE_ROW) {
             const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(statement, 0));
             const auto* data = reinterpret_cast<const char*>(sqlite3_column_text(statement, 1));
@@ -567,8 +582,4 @@ std::optional<EqBand> ParseBand(const std::wstring& text) {
     band.type = *parsed;
     band.enabled = enabled != 0;
     return Sanitize(band);
-}
-
-const wchar_t* FilterTypeKey(FilterType type) {
-    return kTypeKeys[static_cast<int>(type)];
 }

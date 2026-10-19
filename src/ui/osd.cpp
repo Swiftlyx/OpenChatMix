@@ -25,6 +25,7 @@ constexpr UINT_PTR kHoldTimer = 1;
 constexpr float kFadeInMs = 120.0f;
 constexpr float kFadeOutMs = 250.0f;
 constexpr double kHoldMs = 1500.0;
+constexpr double kWarningHoldMs = 5000.0;
 
 constexpr wchar_t kGlyphGame = 0xE7FC;
 constexpr wchar_t kGlyphChat = 0xE8BD;
@@ -63,12 +64,14 @@ void Osd::Show(Levels levels) {
         position_ = static_cast<float>(BalanceFromLevels(levels));
     }
     message_ = false;
+    warning_ = false;
     levels_ = levels;
     Begin();
 }
 
-void Osd::ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail) {
+void Osd::ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail, bool warning) {
     message_ = true;
+    warning_ = warning;
     messageGlyph_ = glyph;
     messageTitle_ = title;
     messageDetail_ = detail;
@@ -174,7 +177,8 @@ void Osd::Tick() {
     const double now = NowMs();
     const float elapsedMs = static_cast<float>(std::clamp(now - lastTick_, 0.0, 50.0));
     lastTick_ = now;
-    const bool holding = now - lastShow_ < kHoldMs;
+    const double holdMs = warning_ ? kWarningHoldMs : kHoldMs;
+    const bool holding = now - lastShow_ < holdMs;
     opacity_ = holding ? std::min(1.0f, opacity_ + elapsedMs / kFadeInMs)
                        : std::max(0.0f, opacity_ - elapsedMs / kFadeOutMs);
     const float target = static_cast<float>(BalanceFromLevels(levels_));
@@ -193,7 +197,7 @@ void Osd::Tick() {
     if (holding && opacity_ >= 1.0f && position_ == target) {
         // Nothing moves until the fade-out starts.
         frames_.Stop();
-        SetTimer(window_, kHoldTimer, static_cast<UINT>(std::max(1.0, kHoldMs - (now - lastShow_))), nullptr);
+        SetTimer(window_, kHoldTimer, static_cast<UINT>(std::max(1.0, holdMs - (now - lastShow_))), nullptr);
     }
 }
 
@@ -220,8 +224,10 @@ void Osd::Render() {
     const float left = card.left + 22.0f;
     const float right = card.right - 22.0f;
     if (message_) {
-        canvas_.FillCircle({left + 22.0f, card.top + kCardHeight / 2.0f}, 22.0f, p.secondaryContainer);
-        canvas_.Glyph(messageGlyph_, {left + 22.0f, card.top + kCardHeight / 2.0f}, 18.0f, p.onSecondaryContainer);
+        canvas_.FillCircle({left + 22.0f, card.top + kCardHeight / 2.0f}, 22.0f,
+                           warning_ ? Mix(p.surfaceContainerHigh, p.error, 0.18f) : p.secondaryContainer);
+        canvas_.Glyph(messageGlyph_, {left + 22.0f, card.top + kCardHeight / 2.0f}, 18.0f,
+                      warning_ ? p.error : p.onSecondaryContainer);
         canvas_.Text(messageTitle_, {left + 60.0f, card.top + 18.0f, right, card.top + 46.0f}, TextStyle::TitleMedium,
                      p.onSurface);
         canvas_.Text(messageDetail_, {left + 60.0f, card.top + 46.0f, right, card.top + 70.0f}, TextStyle::BodyMedium,

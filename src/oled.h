@@ -17,6 +17,9 @@
 constexpr int kOledWidth = 128;
 constexpr int kOledHeight = 64;
 
+// Where an icon sits over the animation.
+enum class OledCorner : uint8_t { TopLeft, TopRight, BottomLeft, BottomRight };
+
 // One frame, one byte per pixel (0 off, 1 on), row-major.
 struct OledBitmap {
     std::array<uint8_t, kOledWidth * kOledHeight> pixels{};
@@ -67,13 +70,28 @@ public:
     // sent right after appear on it; Play() resumes.
     void Pause();
     bool IsPlaying() const { return playing_.load(); }
+    // Stops drawing but keeps the display, so what another app (SteelSeries GG) draws meanwhile stays
+    // whole; drawing resumes with a complete frame. Pause() still gives the display back.
+    void Hold(bool hold);
+    // Starts holding from any thread: drawing stops before its next report, even within a frame. Hold()
+    // decides afterwards when it ends.
+    void HoldNow() { holding_ = true; }
+    // Shows the Bluetooth icon over the animation in a corner, blinking while pairing. Like a still image it
+    // moves by a pixel every half minute, so it does not burn in.
+    void SetBluetoothIcon(bool shown, bool blink, OledCorner corner);
+    // Shows an add-on's screen over the screensaver, or instead of the device's own screen, until it is replaced
+    // or cleared with null; what was there before comes back after it. GG holds do not apply to it.
+    void SetOverlay(std::shared_ptr<IdleAnimation> overlay);
 
 private:
     static DWORD WINAPI ThreadProc(void* self);
     void Run();
-    bool Draw(const OledBitmap& frame, const OledBitmap* shown);
+    // interrupted: a hold began before the frame was sent whole.
+    bool Draw(const OledBitmap& frame, const OledBitmap* shown, bool& interrupted);
     bool SendRegion(const OledBitmap& frame, int x, int y, int width, int height);
     bool ReturnToDevice();
+    // Draws the icon of badge_ into the frame; returns the milliseconds until it changes.
+    static DWORD DrawBadge(OledBitmap& frame, uint8_t badge, ULONGLONG now);
 
     HANDLE handle_ = INVALID_HANDLE_VALUE;
     USHORT featureLength_ = 0;
@@ -84,6 +102,10 @@ private:
     HANDLE released_ = nullptr;  // Manual-reset: the device shows its own interface.
     std::atomic<bool> stop_{false};
     std::atomic<bool> playing_{false};
+    std::atomic<bool> holding_{false};
+    std::atomic<uint8_t> badge_{0};  // 0 none; otherwise bit 0 shown, bit 1 blinking, bits 2-3 the corner.
+    std::atomic<bool> overlaid_{false};
     SRWLOCK lock_ = SRWLOCK_INIT;
-    std::shared_ptr<IdleAnimation> requested_;  // Guarded by lock_.
+    std::shared_ptr<IdleAnimation> requested_;
+    std::shared_ptr<IdleAnimation> overlay_;  // Under lock_.
 };

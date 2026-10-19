@@ -9,12 +9,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cwctype>
+#include <limits>
 #include <memory>
 #include <thread>
 
 #include "../app.h"
 #include "../app_info.h"
 #include "panel_internal.h"
+#include "spring.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -49,7 +51,12 @@ void Panel::Show(Page page) {
     scroll_.clear();
     animations_.clear();
     hits_.clear();
+    focusables_.clear();
+    focusId_ = 0;
+    focusVisible_ = false;
     hotId_ = pressedId_ = 0;
+    tipId_ = 0;
+    tipShown_ = false;
     lastFrame_.QuadPart = 0;
     page_ = Page::Mixer;
     CreatePanelWindow();
@@ -109,10 +116,16 @@ void Panel::SetChatMuted(bool muted) {
     Invalidate();
 }
 
-void Panel::SetStatus(const std::wstring& device, const std::wstring& detail, bool connected,
-                      const std::wstring& warning) {
+void Panel::SetGameMuted(bool muted) {
+    gameMuted_ = muted;
+    Invalidate();
+}
+
+void Panel::SetStatus(const std::wstring& device, const std::wstring& detail, const std::wstring& connection,
+                      bool connected, const std::wstring& warning) {
     device_ = device;
     deviceDetail_ = detail;
+    connection_ = connection;
     deviceConnected_ = connected;
     warning_ = warning;
     Invalidate();
@@ -212,6 +225,8 @@ void Panel::CreatePanelWindow() {
     }
     ApplyWindowTheme();
     canvas_.Attach(window_, dpi_);
+    meters_ = {};
+    SetTimer(window_, kMeterTimer, kMeterIntervalMs, nullptr);
     ShowWindow(window_, SW_SHOW);
     SetForegroundWindow(window_);
 }
@@ -228,7 +243,8 @@ void Panel::ApplyWindowTheme() {
     case Backdrop::Mica: backdrop = DWMSBT_MAINWINDOW; break;
     case Backdrop::Solid: break;
     }
-    const bool applied = SUCCEEDED(DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop)));
+    const bool applied =
+        SUCCEEDED(DwmSetWindowAttribute(window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop)));
     backdrop_ = backdrop != DWMSBT_NONE && applied;
     const MARGINS margins{-1, -1, -1, -1};
     DwmExtendFrameIntoClientArea(window_, &margins);
@@ -257,9 +273,23 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
     auto dip = [this](int pixels) { return pixels * 96.0f / dpi_; };
 
     switch (message) {
+    case WM_TIMER:
+        if (wParam == kMeterTimer) {
+            TickMeters();
+            return 0;
+        }
+        if (wParam == kTooltipTimer) {
+            KillTimer(window, kTooltipTimer);
+            if (tipId_ && tipId_ == hotId_) {
+                tipShown_ = true;
+                Invalidate();
+            }
+            return 0;
+        }
+        break;
     case WM_ACTIVATE:
         // Deferred so the window is not destroyed in the middle of activation processing.
-        if (LOWORD(wParam) == WA_INACTIVE && autoHide_ && !browsing_) {
+        if (LOWORD(wParam) == WA_INACTIVE && autoHide_ && !pinned_ && !browsing_) {
             PostMessageW(window, WM_CLOSE, 0, 0);
         }
         // DefWindowProc gives the window keyboard focus; without it typing arrives as WM_SYSCHAR.
@@ -303,6 +333,7 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
         return 0;
     case WM_MOUSELEAVE:
         trackingMouse_ = false;
+        ArmTooltip(nullptr);
         if (hotId_) {
             hotId_ = 0;
             Invalidate();
@@ -359,20 +390,34 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
-float Panel::Animate(uint64_t key, float target, float speed) {
-    const auto [it, inserted] = animations_.try_emplace(key, target);
-    float& value = it->second;
-    if (inserted || settings_.appearance.reduceMotion) {
-        value = target;
-        return value;
+float Panel::Animate(uint64_t key, float target, design::Spring spring, bool essential) {
+    const auto [it, inserted] = animations_.try_emplace(key, Motion{target, 0.0f});
+    Motion& motion = it->second;
+    if (inserted || (settings_.appearance.reduceMotion && !essential)) {
+        motion = {target, 0.0f};
+        return target;
     }
-    value += (target - value) * (1.0f - std::exp(-speed * frameSeconds_));
-    if (std::fabs(target - value) < 0.0015f) {
-        value = target;
+    if (settings_.appearance.reduceMotion) {
+        spring = design::kSpringReduced;
+    }
+    StepSpring(motion.value, motion.velocity, target, spring, frameSeconds_);
+    // Normalized values settle finer than ones in DIPs or dB.
+    const float epsilon = std::fabs(target) <= 1.5f ? 0.002f : 0.05f;
+    if (std::fabs(motion.value - target) < epsilon && std::fabs(motion.velocity) < 20.0f * epsilon) {
+        motion = {target, 0.0f};
     } else {
         animating_ = true;
     }
-    return value;
+    return motion.value;
+}
+
+float Panel::AnimatedValue(uint64_t key, float fallback) const {
+    const auto found = animations_.find(key);
+    return found == animations_.end() ? fallback : found->second.value;
+}
+
+void Panel::SetAnimation(uint64_t key, float value) {
+    animations_[key] = {value, 0.0f};
 }
 
 void Panel::Render() {
@@ -388,10 +433,12 @@ void Panel::Render() {
     animating_ = false;
     hits_.clear();
     hitClip_.clear();
+    focusables_.clear();
+    pageScrollDepth_ = 0;
 
     canvas_.Begin();
     canvas_.Clear({0.0f, 0.0f, 0.0f, 0.0f});
-    canvas_.FillRect({0.0f, 0.0f, kWidth, kHeight}, Alpha(P().surface, backdrop_ ? kSurfaceAlpha : 1.0f));
+    canvas_.FillRect({0.0f, 0.0f, kWidth, kHeight}, Alpha(P().surface, backdrop_ ? P().surfaceAlpha : 1.0f));
     switch (page_) {
     case Page::Mixer: DrawMixer(); break;
     case Page::Equalizer: DrawEqualizerPage(); break;
@@ -408,10 +455,25 @@ void Panel::Render() {
     case Page::Notifications: DrawNotifications(); break;
     case Page::Profiles: DrawProfiles(); break;
     case Page::ProfileEdit: DrawProfileEdit(); break;
+    case Page::Microphone: DrawMicrophone(); break;
+    case Page::Outputs: DrawOutputs(); break;
+    case Page::General: DrawGeneral(); break;
+    case Page::Welcome: DrawWelcome(); break;
+    case Page::RoutingChannel: DrawRoutingChannel(); break;
+    case Page::AddOns: DrawAddOns(); break;
+    case Page::AddOnEdit: DrawAddOnEdit(); break;
+    case Page::AddOnEvent: DrawAddOnEvent(); break;
+    case Page::AddOnDisplay: DrawAddOnDisplay(); break;
     }
     DrawSnackbar();
-    DrawNavigationBar();
+    if (page_ != Page::Welcome) {
+        DrawNavigationBar();
+    }
+    drawingMenu_ = true;
     DrawMenu();
+    drawingMenu_ = false;
+    DrawTooltip();
+    DrawFocusRing();
     if (canvas_.End() == D2DERR_RECREATE_TARGET) {
         canvas_.Detach();
         icons_.clear();
@@ -435,14 +497,23 @@ Page Panel::ParentOf(Page page) {
     case Page::Audio:
     case Page::Hotkeys:
     case Page::Notifications:
-    case Page::Profiles: return Page::Settings;
+    case Page::Profiles:
+    case Page::Microphone:
+    case Page::Outputs:
+    case Page::AddOns:
+    case Page::General: return Page::Settings;
+    case Page::AddOnEdit: return Page::AddOns;
+    case Page::AddOnEvent: return Page::AddOnEdit;
+    case Page::AddOnDisplay: return Page::AddOnEvent;
     case Page::ColorPicker: return Page::Appearance;
-    case Page::PickDevice: return Page::Audio;
+    case Page::PickDevice:
+    case Page::RoutingChannel: return Page::Audio;
     case Page::ProfileEdit: return Page::Profiles;
     case Page::Mixer:
     case Page::Equalizer:
     case Page::Headset:
-    case Page::Settings: break;
+    case Page::Settings:
+    case Page::Welcome: break;
     }
     return page;
 }
@@ -458,17 +529,24 @@ Page Panel::TabOf(Page page) const {
 }
 
 float Panel::ContentBottom() const {
-    return kHeight - kNavHeight;
+    return page_ == Page::Welcome ? kHeight : kHeight - kNavHeight;
 }
 
 void Panel::GoTo(Page page) {
     StopRecording();
+    ArmTooltip(nullptr);
     CloseMenu();
+    CancelField();
+    drag_ = {};
     if ((page == Page::Headset && !HeadsetTabVisible()) ||
         ((page == Page::Equalizer || page == Page::EqPresets) && !settings_.equalizer)) {
         page = Page::Mixer;
     }
     // Pages opened from their parent or from the navigation bar start at the top.
+    if (page != page_) {
+        focusId_ = 0;
+        transferNote_.clear();
+    }
     const bool deeper = ParentOf(page) == page_ || ParentOf(page) == page;
     if (deeper && page != page_) {
         scroll_[page] = 0.0f;
@@ -492,15 +570,16 @@ void Panel::GoTo(Page page) {
         LoadEqLibrary(EqChannel::Game);
         break;
     case Page::PickDevice:
-        endpoints_ = host_.PlaybackDevices();
+        endpoints_ = pickSlot_ == RoutingSlot::MicInput ? host_.RecordingDevices() : host_.PlaybackDevices();
         scroll_[page] = 0.0f;
         animations_.erase(AnimKey(kIdPickList, 0));
         break;
     case Page::ColorPicker: {
         // The picker starts from the color in use.
-        const uint32_t seed = settings_.appearance.windowsAccent ? WindowsAccentColor() : settings_.appearance.accent;
+        const AppearanceSettings& appearance = settings_.appearance;
+        const uint32_t accent = appearance.windowsAccent ? WindowsAccentColor() : appearance.accent;
+        const uint32_t seed = pickerChat_ ? EffectiveChatSeed(accent, appearance.chatAccent) : accent;
         HueChromaOf(seed, pickerHue_, pickerChroma_);
-        pickerChroma_ = std::min(pickerChroma_, 0.20f);
         hexInput_ = HexColor(seed);
         break;
     }
@@ -510,6 +589,11 @@ void Panel::GoTo(Page page) {
         break;
     case Page::ProfileEdit:
         LoadEqLibrary(EqChannel::Game);
+        break;
+    case Page::Welcome:
+        if (page_ != Page::Welcome) {
+            tourStep_ = 0;
+        }
         break;
     default:
         break;
@@ -524,14 +608,21 @@ void Panel::GoBack() {
         GoTo(addTarget_ == AddTarget::Profile ? Page::Profiles : Page::Group);
         return;
     }
+    if (page_ == Page::PickDevice && MicSlot()) {
+        GoTo(Page::Microphone);
+        return;
+    }
+    if (page_ == Page::PickDevice && ChannelSlot()) {
+        GoTo(Page::RoutingChannel);
+        return;
+    }
     GoTo(ParentOf(page_));
 }
 
 void Panel::DrawNavigationBar() {
     const Palette& p = P();
     const float top = ContentBottom();
-    canvas_.FillRect({0.0f, top, kWidth, kHeight}, Alpha(p.surfaceContainerHighest, backdrop_ ? 0.94f : 1.0f));
-    canvas_.FillRect({0.0f, top, kWidth, top + 1.0f}, Alpha(p.outlineVariant, 0.5f));
+    canvas_.FillRect({0.0f, top, kWidth, kHeight}, Alpha(p.surfaceContainer, backdrop_ ? 0.94f : 1.0f));
     // Swallows clicks so nothing underneath reacts through the bar.
     AddHit({{0.0f, top, kWidth, kHeight}, kIdNavigation + 7, [] {}});
 
@@ -549,27 +640,32 @@ void Panel::DrawNavigationBar() {
     }
     destinations.push_back({Page::Settings, kGlyphSettings, Text::Settings});
 
+    // Material 3 Expressive navigation bar: the active indicator springs open around the icon.
     const Page current = TabOf(page_);
     const float width = kWidth / destinations.size();
+    const float indicatorTop = top + 6.0f;
+    const float indicatorHeight = 32.0f;
     for (size_t i = 0; i < destinations.size(); ++i) {
         const Destination& destination = destinations[i];
         const float center = width * (i + 0.5f);
         const uint32_t id = kIdNavigation + static_cast<uint32_t>(destination.page);
         const bool active = destination.page == current;
-        const float t = Animate(AnimKey(id, 0), active ? 1.0f : 0.0f, 20.0f);
-        const D2D1_RECT_F pill{center - 14.0f - 18.0f * t, top + 12.0f, center + 14.0f + 18.0f * t, top + 44.0f};
-        if (t > 0.01f) {
-            canvas_.FillRound(pill, 16.0f, Alpha(p.secondaryContainer, t));
+        const float open = Animate(AnimKey(id, 0), active ? 1.0f : 0.0f, design::kSpringFastSpatial);
+        const float fill = Animate(AnimKey(id, kSelectChannel), active ? 1.0f : 0.0f, design::kSpringDefaultEffects);
+        const float half = 16.0f + 12.0f * std::max(0.0f, open);
+        const D2D1_RECT_F indicator{center - half, indicatorTop, center + half, indicatorTop + indicatorHeight};
+        if (fill > 0.01f) {
+            canvas_.FillRound(indicator, indicatorHeight / 2.0f, Alpha(p.secondaryContainer, fill));
         }
-        const D2D1_RECT_F hover{center - 32.0f, top + 12.0f, center + 32.0f, top + 44.0f};
-        StateLayer(id, hover, 16.0f, p.onSurface);
-        canvas_.Glyph(destination.glyph, {center, top + 28.0f}, 18.0f,
-                      active ? p.onSecondaryContainer : p.onSurfaceVariant);
+        StateLayer(id, {center - 28.0f, indicatorTop, center + 28.0f, indicatorTop + indicatorHeight},
+                   indicatorHeight / 2.0f, p.onSurface);
+        canvas_.Glyph(destination.glyph, {center, indicatorTop + indicatorHeight / 2.0f}, design::kIconSize - 2.0f,
+                      Mix(p.onSurfaceVariant, p.onSecondaryContainer, fill));
         if (destination.page == Page::Settings && update_.state == UpdateView::State::Available) {
-            canvas_.FillCircle({center + 11.0f, top + 19.0f}, 4.0f, p.error);
+            canvas_.FillCircle({center + 12.0f, indicatorTop + 7.0f}, 4.0f, p.error);
         }
-        canvas_.Text(T(destination.label), {center - width / 2.0f, top + 46.0f, center + width / 2.0f, top + 64.0f},
-                     TextStyle::LabelMedium, active ? p.onSurface : p.onSurfaceVariant, TextAlign::Center);
+        canvas_.Text(T(destination.label), {center - width / 2.0f, top + 40.0f, center + width / 2.0f, top + 58.0f},
+                     TextStyle::LabelMedium, Mix(p.onSurfaceVariant, p.onSurface, fill), TextAlign::Center);
         AddHit({{center - width / 2.0f, top, center + width / 2.0f, kHeight}, id, [this, page = destination.page] {
                     GoTo(page);
                 }});
@@ -577,56 +673,101 @@ void Panel::DrawNavigationBar() {
 }
 
 void Panel::DrawHeader(const wchar_t* title, const wchar_t* subtitle, float trailing) {
-    IconButton(kIdBack, {36.0f, 32.0f}, kGlyphBack, P().onSurface, [this] { GoBack(); });
-    const float right = kWidth - 20.0f - trailing;
+    const float middle = kHeaderHeight / 2.0f;
+    IconButton(kIdBack, {kGutter + design::kIconButtonSize / 2.0f, middle}, kGlyphBack, P().onSurface,
+               [this] { GoBack(); });
+    Tooltip(kIdBack, T(Text::TipBack));
+    const float left = kGutter + design::kIconButtonSize + design::kSpace1;
+    const float right = kWidth - kGutter - trailing;
     if (subtitle && *subtitle) {
-        canvas_.Text(title, {64.0f, 10.0f, right, 36.0f}, TextStyle::TitleMedium, P().onSurface);
-        canvas_.Text(subtitle, {64.0f, 34.0f, right, 52.0f}, TextStyle::BodySmall, P().onSurfaceVariant);
+        canvas_.Text(title, {left, middle - 18.0f, right, middle + 2.0f}, TextStyle::TitleMedium, P().onSurface);
+        canvas_.Text(subtitle, {left, middle + 2.0f, right, middle + 18.0f}, TextStyle::BodySmall,
+                     P().onSurfaceVariant);
     } else {
-        canvas_.Text(title, {64.0f, 12.0f, right, 52.0f}, TextStyle::TitleLarge, P().onSurface);
+        canvas_.Text(title, {left, 0.0f, right, kHeaderHeight}, TextStyle::TitleLarge, P().onSurface);
     }
 }
 
 void Panel::DrawTitle(const wchar_t* title) {
-    canvas_.Text(title, {24.0f, 12.0f, kWidth - 20.0f, 52.0f}, TextStyle::TitleLarge, P().onSurface);
+    canvas_.Text(title, {kInset, 0.0f, kWidth - kGutter - design::kIconButtonSize, kHeaderHeight},
+                 TextStyle::TitleLarge, P().onSurface);
+    DrawPinButton();
 }
 
 float Panel::SectionTitle(const wchar_t* title, float y) {
-    canvas_.Text(title, {20.0f, y, kWidth - 20.0f, y + 20.0f}, TextStyle::TitleSmall, P().primary);
-    return y + 26.0f;
+    canvas_.Text(title, {kInset, y, kWidth - kInset, y + design::kSpace5}, TextStyle::TitleSmall, P().primary);
+    return y + design::kSectionTitleHeight;
+}
+
+float Panel::PageHint(const wchar_t* text, float y, std::optional<D2D1_COLOR_F> color) {
+    const float height = std::ceil(canvas_.MeasureHeight(text, TextStyle::BodySmall, kWidth - 2.0f * kInset));
+    canvas_.Text(text, {kInset, y, kWidth - kInset, y + height}, TextStyle::BodySmall,
+                 color.value_or(P().onSurfaceVariant), TextAlign::Leading, true);
+    return y + height + design::kPageHintGap;
 }
 
 D2D1_RECT_F Panel::Card(float top, float height) {
-    const D2D1_RECT_F card{16.0f, top, kWidth - 16.0f, top + height};
-    canvas_.FillRound(card, kCardRadius, Alpha(P().surfaceContainer, kCardAlpha));
+    const D2D1_RECT_F card{kGutter, top, kWidth - kGutter, top + height};
+    canvas_.FillRound(card, design::kRadiusGroup, Alpha(P().surfaceContainer, P().tileAlpha));
     return card;
+}
+
+void Panel::DrawTile(const D2D1_RECT_F& rect, uint32_t id, bool first, bool last, bool lifted) {
+    const Palette& p = P();
+    // Hovered and pressed tiles round their inner corners; the group's outer corners stay large.
+    const bool hot = id && hotId_ == id;
+    const float hover = id ? Animate(AnimKey(id, kShapeChannel), lifted ? 2.0f : hot ? 1.0f : 0.0f,
+                                     design::kSpringFastSpatial)
+                           : 0.0f;
+    float inner = design::kRadiusTile + (design::kRadiusTileHovered - design::kRadiusTile) * std::max(0.0f, hover);
+    if (hover > 1.0f) {
+        inner = design::kRadiusTileHovered + (design::kRadiusTileLifted - design::kRadiusTileHovered) * (hover - 1.0f);
+    }
+    const float top = first ? std::max(inner, design::kRadiusGroup) : inner;
+    const float bottom = last ? std::max(inner, design::kRadiusGroup) : inner;
+    const Corners corners = Corners::Vertical(top, bottom);
+    if (lifted) {
+        // Raised by tone, not by a shadow: the most raised surface and the drag layer.
+        canvas_.FillShape(rect, corners, p.surfaceContainerHighest);
+        canvas_.FillShape(rect, corners, Alpha(p.onSurface, design::kDragOpacity / 2.0f));
+        return;
+    }
+    canvas_.FillShape(rect, corners, Alpha(p.surfaceContainer, p.tileAlpha));
+    if (id) {
+        StateLayer(id, rect, corners, p.onSurface);
+    }
 }
 
 float Panel::BeginScroll(Page page, float top) {
     const D2D1_RECT_F area{0.0f, top, kWidth, ContentBottom()};
     const uint64_t key = AnimKey(kIdSettingsPage, static_cast<uint32_t>(page));
-    const float offset = Animate(key, scroll_[page], 22.0f);
+    const float offset = Animate(key, scroll_[page], design::kSpringScroll, true);
     Hit wheel;
     wheel.rect = area;
     wheel.id = kIdSettingsPage;
-    // The handler reads the limit computed at the end of this frame.
+    // Clamped to the limit of the last frame, so the content never runs past its end and springs back.
     wheel.wheel = [this, page](int notches) {
-        scroll_[page] -= notches * kRowHeight;
+        const auto limit = scrollMax_.find(page);
+        scroll_[page] = std::clamp(scroll_[page] - notches * kRowHeight, 0.0f,
+                                   limit == scrollMax_.end() ? std::numeric_limits<float>::max() : limit->second);
         Invalidate();
     };
     AddHit(std::move(wheel));
     canvas_.PushClip(area);
     hitClip_.push_back(area);
+    pageScrollDepth_ = hitClip_.size();
     return top + 4.0f - offset;
 }
 
 void Panel::EndScroll(Page page, float top, float y) {
     hitClip_.pop_back();
+    pageScrollDepth_ = 0;
     canvas_.PopClip();
     const D2D1_RECT_F area{0.0f, top, kWidth, ContentBottom()};
-    const float offset = animations_[AnimKey(kIdSettingsPage, static_cast<uint32_t>(page))];
+    const float offset = AnimatedValue(AnimKey(kIdSettingsPage, static_cast<uint32_t>(page)), 0.0f);
     const float content = y + offset - top + 12.0f;
     const float maxScroll = std::max(0.0f, content - (area.bottom - area.top));
+    scrollMax_[page] = maxScroll;
     float& scroll = scroll_[page];
     if (scroll < 0.0f || scroll > maxScroll) {
         scroll = std::clamp(scroll, 0.0f, maxScroll);
@@ -636,6 +777,22 @@ void Panel::EndScroll(Page page, float top, float y) {
 }
 
 void Panel::AddHit(Hit hit) {
+    // Anything that acts on a click or a drag is a focus stop. The menu's backdrop and list surface,
+    // the page's wheel area and the mixer card's wheel area are not.
+    const bool focusable = hit.id != 0 && (hit.click || hit.drag) && hit.id != kIdMenu && hit.id != kIdMenuList &&
+                           hit.id != kIdSettingsPage && hit.id != kIdMixCard;
+    if (focusable && std::none_of(focusables_.begin(), focusables_.end(),
+                                  [&](const Focusable& known) { return known.id == hit.id; })) {
+        Focusable stop;
+        stop.id = hit.id;
+        stop.rect = hit.rect;
+        stop.clip = hitClip_.empty() ? D2D1_RECT_F{0.0f, 0.0f, kWidth, kHeight} : hitClip_.back();
+        stop.pageScroll = pageScrollDepth_ != 0 && hitClip_.size() == pageScrollDepth_;
+        stop.inMenu = drawingMenu_;
+        stop.click = hit.click;
+        stop.wheel = hit.wheel;
+        focusables_.push_back(std::move(stop));
+    }
     if (!hitClip_.empty()) {
         const D2D1_RECT_F& clip = hitClip_.back();
         hit.rect = {std::max(hit.rect.left, clip.left), std::max(hit.rect.top, clip.top),
@@ -647,39 +804,206 @@ void Panel::AddHit(Hit hit) {
     hits_.push_back(std::move(hit));
 }
 
+void Panel::MoveFocus(int direction) {
+    // While a menu is open, focus stays among its items.
+    std::vector<const Focusable*> order;
+    for (const Focusable& stop : focusables_) {
+        if (stop.inMenu == menu_.open) {
+            order.push_back(&stop);
+        }
+    }
+    if (order.empty()) {
+        return;
+    }
+    const auto current =
+        std::find_if(order.begin(), order.end(), [this](const Focusable* stop) { return stop->id == focusId_; });
+    const size_t count = order.size();
+    const size_t index = current == order.end()
+                             ? (direction > 0 ? 0 : count - 1)
+                             : (static_cast<size_t>(current - order.begin()) + count + direction) % count;
+    const Focusable& next = *order[index];
+    focusId_ = next.id;
+    focusVisible_ = true;
+
+    // A stop out of view in the page's scrolling area scrolls in, with a little room around it.
+    const auto limit = scrollMax_.find(page_);
+    if (next.pageScroll && limit != scrollMax_.end()) {
+        const float margin = design::kSpace3;
+        float delta = 0.0f;
+        if (next.rect.top < next.clip.top + margin) {
+            delta = next.rect.top - (next.clip.top + margin);
+        } else if (next.rect.bottom > next.clip.bottom - margin) {
+            delta = std::min(next.rect.bottom - (next.clip.bottom - margin), next.rect.top - (next.clip.top + margin));
+        }
+        if (delta != 0.0f) {
+            const float offset = AnimatedValue(AnimKey(kIdSettingsPage, static_cast<uint32_t>(page_)), 0.0f);
+            scroll_[page_] = std::clamp(offset + delta, 0.0f, limit->second);
+        }
+    }
+    Invalidate();
+}
+
+bool Panel::ActivateFocus() {
+    if (!focusVisible_ || !focusId_) {
+        return false;
+    }
+    const auto stop = std::find_if(focusables_.begin(), focusables_.end(),
+                                   [this](const Focusable& known) { return known.id == focusId_; });
+    if (stop == focusables_.end() || !stop->click) {
+        return false;
+    }
+    // The click may change the page and with it the focus stops.
+    const std::function<void()> click = stop->click;
+    click();
+    Invalidate();
+    return true;
+}
+
+bool Panel::StepFocus(int notches) {
+    if (!focusVisible_ || !focusId_) {
+        return false;
+    }
+    const auto stop = std::find_if(focusables_.begin(), focusables_.end(),
+                                   [this](const Focusable& known) { return known.id == focusId_; });
+    if (stop == focusables_.end() || !stop->wheel) {
+        return false;
+    }
+    const std::function<void(int)> wheel = stop->wheel;
+    wheel(notches);
+    Invalidate();
+    return true;
+}
+
+void Panel::DrawFocusRing() {
+    if (!focusVisible_ || !focusId_) {
+        return;
+    }
+    const auto stop = std::find_if(focusables_.begin(), focusables_.end(),
+                                   [this](const Focusable& known) { return known.id == focusId_; });
+    if (stop == focusables_.end()) {
+        return;
+    }
+    // Material 3 focus indicator: a ring that follows the element's shape, a little outside it.
+    const float outset = design::kFocusRingOffset + design::kFocusRingWidth / 2.0f;
+    const D2D1_RECT_F ring = Inset(stop->rect, -outset, -outset);
+    const float radius = std::min((ring.bottom - ring.top) / 2.0f, design::kRadiusLarge + outset);
+    canvas_.PushClip(stop->clip);
+    canvas_.StrokeRound(ring, radius, P().secondary, design::kFocusRingWidth);
+    canvas_.PopClip();
+}
+
 void Panel::StateLayer(uint32_t id, const D2D1_RECT_F& rect, float radius, D2D1_COLOR_F content) {
+    StateLayer(id, rect, Corners::All(radius), content);
+}
+
+void Panel::StateLayer(uint32_t id, const D2D1_RECT_F& rect, const Corners& corners, D2D1_COLOR_F content) {
     const bool hot = hotId_ == id;
-    const float target = hot ? (pressedId_ == id ? 0.12f : 0.08f) : 0.0f;
-    const float alpha = Animate(AnimKey(id, kHoverChannel), target, 24.0f);
+    float target =
+        hot ? (pressedId_ == id ? design::kPressOpacity + design::kHoverOpacity : design::kHoverOpacity) : 0.0f;
+    if (focusVisible_ && focusId_ == id) {
+        target = std::max(target, design::kFocusOpacity);
+    }
+    const float alpha = Animate(AnimKey(id, kHoverChannel), target, design::kSpringFastEffects);
     if (alpha > 0.002f) {
-        canvas_.FillRound(rect, radius, Alpha(content, alpha));
+        canvas_.FillShape(rect, corners, Alpha(content, alpha));
     }
 }
 
 void Panel::IconButton(uint32_t id, D2D1_POINT_2F center, wchar_t glyph, D2D1_COLOR_F color,
                        std::function<void()> click) {
-    const D2D1_RECT_F rect{center.x - 20.0f, center.y - 20.0f, center.x + 20.0f, center.y + 20.0f};
-    StateLayer(id, rect, 20.0f, color);
-    canvas_.Glyph(glyph, center, 18.0f, color);
+    const float half = design::kIconButtonSize / 2.0f;
+    const D2D1_RECT_F rect{center.x - half, center.y - half, center.x + half, center.y + half};
+    StateLayer(id, rect, half, color);
+    canvas_.Glyph(glyph, center, design::kIconSize - 2.0f, color);
     AddHit({rect, id, std::move(click)});
+}
+
+void Panel::Tooltip(uint32_t id, const wchar_t* text) {
+    for (auto it = hits_.rbegin(); it != hits_.rend(); ++it) {
+        if (it->id == id) {
+            it->tooltip = text;
+            return;
+        }
+    }
+}
+
+void Panel::ArmTooltip(const Hit* hit) {
+    const uint32_t id = hit && hit->tooltip ? hit->id : 0;
+    if (id == tipId_ && (id == 0 || tipShown_)) {
+        return;
+    }
+    if (tipShown_) {
+        Invalidate();
+    }
+    tipId_ = id;
+    tipShown_ = false;
+    SetAnimation(AnimKey(kIdTooltip, 0), 0.0f);
+    if (!window_) {
+        return;
+    }
+    KillTimer(window_, kTooltipTimer);
+    if (id) {
+        SetTimer(window_, kTooltipTimer, kTooltipDelayMs, nullptr);
+    }
+}
+
+// Material 3 plain tooltip: one or two lines of BodySmall on inverseSurface below the control, or
+// above it where the page ends. It follows a resting pointer, or keyboard focus at once.
+void Panel::DrawTooltip() {
+    if (menu_.open) {
+        return;
+    }
+    const uint32_t id = tipShown_ && tipId_ == hotId_ ? tipId_ : focusVisible_ ? focusId_ : 0;
+    const Hit* anchor = nullptr;
+    for (const Hit& hit : hits_) {
+        if (id && hit.id == id && hit.tooltip) {
+            anchor = &hit;
+        }
+    }
+    if (!anchor) {
+        return;
+    }
+    const Palette& p = P();
+    const float opacity = std::clamp(Animate(AnimKey(kIdTooltip, 0), 1.0f, design::kSpringFastEffects), 0.0f, 1.0f);
+    constexpr float kPadding = 8.0f;
+    constexpr float kMaxWidth = 232.0f;
+    const float textWidth = std::min(std::ceil(canvas_.Measure(anchor->tooltip, TextStyle::BodySmall)) + 1.0f,
+                                     kMaxWidth - 2.0f * kPadding);
+    const float textHeight = std::ceil(canvas_.MeasureHeight(anchor->tooltip, TextStyle::BodySmall, textWidth));
+    const float width = textWidth + 2.0f * kPadding;
+    const float height = std::max(24.0f, textHeight + 8.0f);
+    const D2D1_RECT_F& at = anchor->rect;
+    const float left = std::clamp((at.left + at.right - width) / 2.0f, kGutter, kWidth - kGutter - width);
+    float top = at.bottom + design::kSpace1;
+    if (top + height > ContentBottom() - design::kSpace1 && at.top - design::kSpace1 - height >= design::kSpace1) {
+        top = at.top - design::kSpace1 - height;
+    }
+    const D2D1_RECT_F box{left, top, left + width, top + height};
+    canvas_.FillRound(box, design::kRadiusExtraSmall, Alpha(p.inverseSurface, opacity));
+    canvas_.Text(anchor->tooltip, {box.left + kPadding, box.top, box.right - kPadding + 1.0f, box.bottom},
+                 TextStyle::BodySmall, Alpha(p.inverseOnSurface, opacity), TextAlign::Center, textHeight > 20.0f);
 }
 
 void Panel::TextButton(uint32_t id, const D2D1_RECT_F& rect, wchar_t glyph, const wchar_t* label, bool tonal,
                        std::function<void()> click) {
     const Palette& p = P();
-    const float radius = (rect.bottom - rect.top) / 2.0f;
+    // Material 3 Expressive buttons morph from round toward square while pressed.
+    const float pressed = Animate(AnimKey(id, kPressChannel), pressedId_ == id ? 1.0f : 0.0f,
+                                  design::kSpringFastSpatial);
+    const float round = (rect.bottom - rect.top) / 2.0f;
+    const float radius = round + (design::kRadiusSmall - round) * std::clamp(pressed, 0.0f, 1.2f);
     const D2D1_COLOR_F content = tonal ? p.onSecondaryContainer : p.primary;
     if (tonal) {
         canvas_.FillRound(rect, radius, p.secondaryContainer);
     }
     StateLayer(id, rect, radius, content);
-    const float total = (glyph ? 18.0f + 8.0f : 0.0f) + canvas_.Measure(label, TextStyle::LabelLarge);
+    const float total = (glyph ? 16.0f + 8.0f : 0.0f) + canvas_.Measure(label, TextStyle::LabelLarge);
     const float start = (rect.left + rect.right - total) / 2.0f;
     const float centerY = (rect.top + rect.bottom) / 2.0f;
     if (glyph) {
-        canvas_.Glyph(glyph, {start + 9.0f, centerY}, 16.0f, content);
+        canvas_.Glyph(glyph, {start + 8.0f, centerY}, 16.0f, content);
     }
-    canvas_.Text(label, {start + (glyph ? 26.0f : 0.0f), rect.top, rect.right, rect.bottom}, TextStyle::LabelLarge,
+    canvas_.Text(label, {start + (glyph ? 24.0f : 0.0f), rect.top, rect.right, rect.bottom}, TextStyle::LabelLarge,
                  content);
     AddHit({rect, id, std::move(click)});
 }
@@ -687,53 +1011,89 @@ void Panel::TextButton(uint32_t id, const D2D1_RECT_F& rect, wchar_t glyph, cons
 void Panel::DrawSegmented(const D2D1_RECT_F& rect, uint32_t baseId, std::span<const wchar_t* const> labels,
                           int selected, D2D1_COLOR_F fill, D2D1_COLOR_F onFill,
                           const std::function<void(int)>& select) {
+    // A Material 3 Expressive connected button group: separate buttons 2 DIP apart, round on the
+    // outside and squarer inside; the selected one springs fully round and fills.
     const Palette& p = P();
-    const float radius = (rect.bottom - rect.top) / 2.0f;
-    const float width = (rect.right - rect.left) / labels.size();
-
-    // The selection slides between segments; clipping the pill keeps the outer corners round.
-    if (selected >= 0) {
-        const float position = Animate(AnimKey(baseId, 0), static_cast<float>(selected), 18.0f);
-        canvas_.PushClip({rect.left + position * width, rect.top, rect.left + (position + 1.0f) * width, rect.bottom});
-        canvas_.FillRound(rect, radius, fill);
-        canvas_.PopClip();
-    }
-
-    for (size_t index = 0; index < labels.size(); ++index) {
-        const D2D1_RECT_F segment{rect.left + index * width, rect.top, rect.left + (index + 1) * width, rect.bottom};
-        const uint32_t id = PartId(baseId, static_cast<uint32_t>(index) + 1);
-        canvas_.PushClip(segment);
-        StateLayer(id, rect, radius, p.onSurface);
-        canvas_.PopClip();
-        canvas_.Text(labels[index], Inset(segment, 4.0f, 0.0f), TextStyle::LabelMedium,
-                     static_cast<int>(index) == selected ? onFill : p.onSurface, TextAlign::Center);
-        if (index > 0) {
-            canvas_.FillRect({segment.left - 0.5f, rect.top, segment.left + 0.5f, rect.bottom}, p.outline);
+    const size_t count = labels.size();
+    const float round = (rect.bottom - rect.top) / 2.0f;
+    // Buttons share the width equally while every label fits. Otherwise each gets its label's width
+    // plus an equal share of what is left, and only then the labels shrink a size: a label in a button
+    // group is never cut off.
+    constexpr float kLabelPadding = 6.0f;
+    const float space = rect.right - rect.left - design::kButtonGroupGap * (count - 1);
+    TextStyle style = TextStyle::LabelMedium;
+    std::vector<float> natural(count);
+    auto measure = [&] {
+        float total = 0.0f;
+        for (size_t index = 0; index < count; ++index) {
+            natural[index] = canvas_.Measure(labels[index], style) + 2.0f * kLabelPadding;
+            total += natural[index];
         }
-        AddHit({segment, id, [select, index] { select(static_cast<int>(index)); }});
+        return total;
+    };
+    float naturalTotal = measure();
+    if (naturalTotal > space) {
+        style = TextStyle::LabelSmall;
+        naturalTotal = measure();
     }
-    canvas_.StrokeRound(Inset(rect, 0.5f, 0.5f), radius - 0.5f, p.outline, 1.0f);
+    const float equal = space / count;
+    const bool equalFits = std::all_of(natural.begin(), natural.end(), [equal](float w) { return w <= equal; });
+    const float extra = std::max(0.0f, space - naturalTotal) / count;
+    float left = rect.left;
+    for (size_t index = 0; index < count; ++index) {
+        const float width = equalFits ? equal : natural[index] + extra;
+        const D2D1_RECT_F button{left, rect.top, left + width, rect.bottom};
+        left += width + design::kButtonGroupGap;
+        const uint32_t id = PartId(baseId, static_cast<uint32_t>(index) + 1);
+        const bool chosen = static_cast<int>(index) == selected;
+        const float shape = Animate(AnimKey(id, kShapeChannel), chosen ? 1.0f : 0.0f, design::kSpringFastSpatial);
+        const float color = Animate(AnimKey(id, kSelectChannel), chosen ? 1.0f : 0.0f, design::kSpringDefaultEffects);
+        const float press = Animate(AnimKey(id, kPressChannel), pressedId_ == id && !chosen ? 1.0f : 0.0f,
+                                    design::kSpringFastSpatial);
+        float inner = design::kRadiusButtonGroupInner + (round - design::kRadiusButtonGroupInner) * shape;
+        inner += (design::kRadiusButtonGroupPressed - design::kRadiusButtonGroupInner) * press;
+        inner = std::clamp(inner, 2.0f, round);
+        const Corners corners = Corners::Horizontal(index == 0 ? round : inner, index + 1 == count ? round : inner);
+        canvas_.FillShape(button, corners, Mix(p.surfaceContainerHighest, fill, color));
+        StateLayer(id, button, corners, chosen ? onFill : p.onSurface);
+        canvas_.Text(labels[index], Inset(button, kLabelPadding, 0.0f), style, Mix(p.onSurfaceVariant, onFill, color),
+                     TextAlign::Center);
+        AddHit({button, id, [select, index] { select(static_cast<int>(index)); }});
+    }
 }
 
 void Panel::DrawSwitchRow(uint32_t id, float top, const wchar_t* label, bool on, std::function<void()> toggle) {
     const Palette& p = P();
-    const D2D1_RECT_F row{20.0f, top, kWidth - 20.0f, top + kRowHeight};
-    StateLayer(id, row, 16.0f, p.onSurface);
-    DrawRowLabel(label, {36.0f, top, kWidth - 100.0f, top + kRowHeight}, p.onSurface);
-    DrawSwitch({kWidth - 36.0f - 52.0f, top + 12.0f, kWidth - 36.0f, top + 44.0f}, on, id);
-    AddHit({row, id, std::move(toggle)});
+    const float switchLeft = kWidth - kInset - design::kSwitchWidth;
+    DrawRowLabel(label, {kInset, top, switchLeft - design::kSpace3, top + kRowHeight}, p.onSurface);
+    const float trackTop = top + (kRowHeight - design::kSwitchHeight) / 2.0f;
+    DrawSwitch({switchLeft, trackTop, kWidth - kInset, trackTop + design::kSwitchHeight}, on, id);
+    AddHit({TileRect(top, kRowHeight), id, std::move(toggle)});
 }
 
 void Panel::DrawSwitch(const D2D1_RECT_F& track, bool on, uint32_t id) {
     const Palette& p = P();
-    const float t = Animate(AnimKey(id, 1), on ? 1.0f : 0.0f, 18.0f);
-    canvas_.FillRound(track, 16.0f, Mix(p.surfaceContainerHighest, p.primary, t));
+    const float position = Animate(AnimKey(id, 1), on ? 1.0f : 0.0f, design::kSpringFastSpatial);
+    const float t = Animate(AnimKey(id, kSelectChannel), on ? 1.0f : 0.0f, design::kSpringDefaultEffects);
+    const float radius = (track.bottom - track.top) / 2.0f;
+    canvas_.FillRound(track, radius, Mix(p.surfaceContainerHighest, p.primary, t));
     if (t < 0.999f) {
-        canvas_.StrokeRound(Inset(track, 1.0f, 1.0f), 15.0f, Alpha(p.outline, 1.0f - t), 2.0f);
+        canvas_.StrokeRound(Inset(track, 1.0f, 1.0f), radius - 1.0f, Alpha(p.outline, 1.0f - t), 2.0f);
     }
-    const float radius = 8.0f + 4.0f * t;
-    const float x = track.left + 16.0f + t * (track.right - track.left - 32.0f);
-    canvas_.FillCircle({x, (track.top + track.bottom) / 2.0f}, radius, Mix(p.outline, p.onPrimary, t));
+    // The handle grows when on and grows further while pressed; on, it carries a check.
+    const bool pressed = pressedId_ == id && hotId_ == id;
+    const float size = Animate(AnimKey(id, kPressChannel), pressed ? 14.0f : on ? 12.0f : 8.0f,
+                               design::kSpringFastSpatial);
+    const float travel = track.right - track.left - 2.0f * radius;
+    const D2D1_POINT_2F center{track.left + radius + position * travel, (track.top + track.bottom) / 2.0f};
+    canvas_.FillCircle(center, size, Mix(p.outline, p.onPrimary, t));
+    if (t > 0.05f) {
+        canvas_.Glyph(kGlyphCheck, center, 11.0f, Alpha(p.primary, t));
+    }
+}
+
+D2D1_RECT_F Panel::TileRect(float top, float height) const {
+    return {kGutter, top, kWidth - kGutter, top + height};
 }
 
 void Panel::DrawRowLabel(std::wstring_view text, const D2D1_RECT_F& rect, D2D1_COLOR_F color) {
@@ -744,32 +1104,64 @@ void Panel::DrawRowLabel(std::wstring_view text, const D2D1_RECT_F& rect, D2D1_C
     }
 }
 
-void Panel::DrawStepperRow(uint32_t id, float top, const wchar_t* label, const std::wstring& value, float valueWidth,
-                           bool canPrevious, bool canNext, std::function<void()> previous, std::function<void()> next,
-                           std::function<void(const D2D1_RECT_F&)> menu) {
+void Panel::DrawNumberControl(uint32_t id, float right, float centerY, const std::wstring& value, bool canDecrease,
+                              bool canIncrease, std::function<void()> decrease, std::function<void()> increase,
+                              std::function<bool(const std::wstring&)> edit) {
+    // − [value] +: the buttons step, and the value can be typed.
     const Palette& p = P();
-    const float right = kWidth - 36.0f;
-    const float valueLeft = right - 40.0f - valueWidth;
-    const D2D1_COLOR_F disabled = Alpha(p.onSurfaceVariant, 0.38f);
-    DrawRowLabel(label, {36.0f, top, valueLeft - 40.0f, top + kRowHeight}, p.onSurface);
-    IconButton(PartId(id, 1), {valueLeft - 20.0f, top + kRowHeight / 2.0f}, kGlyphChevronLeft,
-               canPrevious ? p.onSurface : disabled, canPrevious ? std::move(previous) : [] {});
-    const D2D1_RECT_F valueRect{valueLeft, top, right - 40.0f, top + kRowHeight};
-    if (menu) {
-        // Value and a small chevron, centered together, act as the dropdown button.
-        const D2D1_RECT_F button{valueRect.left, top + 8.0f, valueRect.right, valueRect.bottom - 8.0f};
-        const uint32_t buttonId = PartId(id, 3);
-        StateLayer(buttonId, button, 10.0f, p.onSurface);
-        const float textWidth = std::min(canvas_.Measure(value, TextStyle::LabelLarge), valueWidth - 22.0f);
-        const float start = (valueRect.left + valueRect.right - textWidth - 16.0f) / 2.0f;
-        canvas_.Text(value, {start, top, start + textWidth + 1.0f, top + kRowHeight}, TextStyle::LabelLarge, p.onSurface);
-        canvas_.Glyph(kGlyphChevronDown, {start + textWidth + 10.0f, top + kRowHeight / 2.0f}, 10.0f, p.onSurfaceVariant);
-        AddHit({button, buttonId, [menu, button] { menu(button); }});
+    const D2D1_COLOR_F disabled = Alpha(p.onSurface, design::kDisabledOpacity);
+    const float button = design::kSmallIconButtonSize;
+    const float fieldWidth = 80.0f;
+    const float plusCenter = right - button / 2.0f;
+    const float fieldRight = right - button - design::kSpace1;
+    const float fieldLeft = fieldRight - fieldWidth;
+    const float minusCenter = fieldLeft - design::kSpace1 - button / 2.0f;
+    auto stepButton = [&](uint32_t part, float x, wchar_t glyph, bool enabled, std::function<void()> action) {
+        const D2D1_RECT_F rect{x - button / 2.0f, centerY - button / 2.0f, x + button / 2.0f, centerY + button / 2.0f};
+        canvas_.FillRound(rect, button / 2.0f, Alpha(p.surfaceContainerHighest, enabled ? 1.0f : 0.5f));
+        if (enabled) {
+            StateLayer(PartId(id, part), rect, button / 2.0f, p.onSurface);
+        }
+        canvas_.Glyph(glyph, {x, centerY}, design::kSmallIconSize, enabled ? p.onSurface : disabled);
+        AddHit({rect, PartId(id, part), enabled ? std::move(action) : std::function<void()>([] {})});
+    };
+    stepButton(1, minusCenter, kGlyphRemove, canDecrease, std::move(decrease));
+    const D2D1_RECT_F field{fieldLeft, centerY - design::kFieldHeight / 2.0f, fieldRight,
+                            centerY + design::kFieldHeight / 2.0f};
+    if (edit) {
+        DrawEditableValue(PartId(id, 4), field, value, std::move(edit));
     } else {
-        canvas_.Text(value, valueRect, TextStyle::LabelLarge, p.onSurface, TextAlign::Center);
+        canvas_.Text(value, field, TextStyle::LabelLarge, p.onSurface, TextAlign::Center);
     }
-    IconButton(PartId(id, 2), {right - 20.0f, top + kRowHeight / 2.0f}, kGlyphChevronRight,
-               canNext ? p.onSurface : disabled, canNext ? std::move(next) : [] {});
+    stepButton(2, plusCenter, kGlyphAdd, canIncrease, std::move(increase));
+}
+
+float Panel::NumberControlWidth() {
+    return 2.0f * design::kSmallIconButtonSize + 80.0f + 2.0f * design::kSpace1;
+}
+
+D2D1_RECT_F Panel::DrawDropdown(uint32_t id, float right, float centerY, const std::wstring& value, float maxWidth,
+                                std::function<void(const D2D1_RECT_F&)> open) {
+    // A tonal field with the value and a down arrow; it opens the menu of choices below itself.
+    const Palette& p = P();
+    const bool opened = menu_.open && menu_.ownerId == id;
+    const float textWidth = std::min(canvas_.Measure(value, TextStyle::LabelLarge), maxWidth - 44.0f);
+    const float width = textWidth + 44.0f;
+    const D2D1_RECT_F rect{right - width, centerY - design::kFieldHeight / 2.0f, right,
+                           centerY + design::kFieldHeight / 2.0f};
+    canvas_.FillRound(rect, design::kRadiusField, opened ? p.secondaryContainer : p.surfaceContainerHighest);
+    StateLayer(id, rect, design::kRadiusField, p.onSurface);
+    canvas_.Text(value,
+                 {rect.left + design::kSpace3, rect.top, rect.left + design::kSpace3 + textWidth + 1.0f, rect.bottom},
+                 TextStyle::LabelLarge, opened ? p.onSecondaryContainer : p.onSurface);
+    const float turn = Animate(AnimKey(id, kSelectChannel), opened ? 1.0f : 0.0f, design::kSpringFastSpatial);
+    canvas_.Glyph(turn > 0.5f ? kGlyphChevronUp : kGlyphChevronDown, {rect.right - 16.0f, centerY}, 10.0f,
+                  p.onSurfaceVariant);
+    AddHit({rect, id, [this, open, rect, id] {
+                open(rect);
+                menu_.ownerId = id;
+            }});
+    return rect;
 }
 
 void Panel::OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int selected,
@@ -781,6 +1173,7 @@ void Panel::OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int
     menu_.choose = std::move(choose);
     menu_.scroll = -1.0f;
     animations_.erase(AnimKey(kIdMenu, 0));
+    animations_.erase(AnimKey(kIdMenu, 1));
     hotId_ = pressedId_ = 0;
     Invalidate();
 }
@@ -798,7 +1191,7 @@ void Panel::DrawMenu() {
         return;
     }
     const Palette& p = P();
-    constexpr float kItemHeight = 44.0f;
+    constexpr float kItemHeight = 40.0f;
     constexpr float kTitleHeight = 32.0f;
     constexpr float kPadding = 8.0f;
     constexpr float kMargin = 12.0f;
@@ -833,21 +1226,19 @@ void Panel::DrawMenu() {
         menu_.scroll = offset - (height - kItemHeight) / 2.0f;
     }
     menu_.scroll = std::clamp(menu_.scroll, 0.0f, maxScroll);
-    const float scroll = Animate(AnimKey(kIdMenuList, 0), menu_.scroll, 24.0f);
+    const float scroll = Animate(AnimKey(kIdMenuList, 0), menu_.scroll, design::kSpringScroll, true);
 
     // Fades in while it grows from the anchor. The page behind dims, and the menu takes the most
     // raised surface with an outline and a soft shadow, so it never blends into the cards below.
-    const float appear = Animate(AnimKey(kIdMenu, 0), 1.0f, 22.0f);
-    const float reveal = height * (0.85f + 0.15f * appear);
+    const float appear = std::clamp(Animate(AnimKey(kIdMenu, 0), 1.0f, design::kSpringDefaultEffects), 0.0f, 1.0f);
+    const float grow = Animate(AnimKey(kIdMenu, 1), 1.0f, design::kSpringFastSpatial);
+    const float reveal = height * (0.8f + 0.2f * grow);
     const D2D1_RECT_F shown = down ? D2D1_RECT_F{rect.left, rect.top, rect.right, rect.top + reveal}
                                    : D2D1_RECT_F{rect.left, rect.bottom - reveal, rect.right, rect.bottom};
-    canvas_.FillRect({0.0f, 0.0f, kWidth, kHeight}, {0.0f, 0.0f, 0.0f, (p.dark ? 0.32f : 0.14f) * appear});
-    canvas_.FillRound({shown.left - 2.0f, shown.top + 1.0f, shown.right + 2.0f, shown.bottom + 9.0f}, 18.0f,
-                      {0.0f, 0.0f, 0.0f, 0.12f * appear});
-    canvas_.FillRound({shown.left, shown.top + 2.0f, shown.right, shown.bottom + 4.0f}, 16.0f,
-                      {0.0f, 0.0f, 0.0f, 0.22f * appear});
-    canvas_.FillRound(shown, 16.0f, Alpha(p.surfaceContainerHighest, appear));
-    canvas_.StrokeRound(Inset(shown, 0.5f, 0.5f), 15.5f, Alpha(p.outlineVariant, appear), 1.0f);
+    // The menu stands out by its raised tone over the dimmed page; it needs no shadow.
+    canvas_.FillRect({0.0f, 0.0f, kWidth, kHeight},
+                     {0.0f, 0.0f, 0.0f, design::kScrimOpacity * appear});
+    canvas_.FillRound(shown, design::kRadiusMenu, Alpha(p.surfaceContainerHighest, appear));
 
     Hit list;
     list.rect = shown;
@@ -874,9 +1265,9 @@ void Panel::DrawMenu() {
         const uint32_t id = PartId(kIdMenu, static_cast<uint32_t>(i) + 1);
         const bool chosen = static_cast<int>(i) == menu_.selected;
         if (chosen) {
-            canvas_.FillRound(row, 12.0f, Alpha(p.secondaryContainer, appear));
+            canvas_.FillRound(row, design::kRadiusMenuItem, Alpha(p.secondaryContainer, appear));
         }
-        StateLayer(id, row, 12.0f, p.onSurface);
+        StateLayer(id, row, design::kRadiusMenuItem, p.onSurface);
         const D2D1_COLOR_F color = chosen ? p.onSecondaryContainer : p.onSurface;
         canvas_.Text(item.text, {row.left + 12.0f, y, row.right - (chosen ? 36.0f : 12.0f), y + kItemHeight},
                      TextStyle::BodyLarge, Alpha(color, appear));
@@ -901,37 +1292,58 @@ void Panel::DrawMenu() {
     }
 }
 
+float Panel::NavRowHeight(wchar_t glyph, const std::wstring& subtitle, float trailing) {
+    if (subtitle.empty()) {
+        return kRowHeight;
+    }
+    const float width = design::kTrailingIconCenter - design::kSpace4 - trailing -
+                        (glyph ? design::kLeadingTextInset : kInset);
+    if (canvas_.Measure(subtitle, TextStyle::BodySmall) <= width) {
+        return design::kTwoLineRowHeight;
+    }
+    // A subtitle that does not fit on its line wraps, and the row grows by the extra lines.
+    const float lines = std::ceil(canvas_.MeasureHeight(subtitle, TextStyle::BodySmall, width));
+    return std::max(design::kTwoLineRowHeight, design::kSubtitleTop + lines + design::kHintBottomGap);
+}
+
 float Panel::DrawNavRow(uint32_t id, float top, wchar_t glyph, D2D1_COLOR_F glyphColor, const std::wstring& title,
-                        const std::wstring& subtitle, std::function<void()> click) {
+                        const std::wstring& subtitle, std::function<void()> click, float trailing, bool wrap) {
     const Palette& p = P();
-    const float height = subtitle.empty() ? kRowHeight : 64.0f;
-    const D2D1_RECT_F row{20.0f, top, kWidth - 20.0f, top + height};
-    StateLayer(id, row, 16.0f, p.onSurface);
-    const float textLeft = glyph ? 72.0f : 36.0f;
+    const float height = wrap ? NavRowHeight(glyph, subtitle, trailing)
+                              : subtitle.empty() ? kRowHeight
+                                                 : design::kTwoLineRowHeight;
+    const float textLeft = glyph ? design::kLeadingTextInset : kInset;
+    const float textRight = design::kTrailingIconCenter - design::kSpace4 - trailing;
     if (glyph) {
-        canvas_.Glyph(glyph, {46.0f, top + height / 2.0f}, 18.0f, glyphColor);
+        canvas_.Glyph(glyph, {design::kLeadingIconCenter, top + height / 2.0f}, design::kIconSize - 2.0f, glyphColor);
     }
     if (subtitle.empty()) {
-        canvas_.Text(title, {textLeft, top, kWidth - 56.0f, top + height}, TextStyle::BodyLarge, p.onSurface);
+        canvas_.Text(title, {textLeft, top, textRight, top + height}, TextStyle::BodyLarge, p.onSurface);
     } else {
-        canvas_.Text(title, {textLeft, top + 10.0f, kWidth - 56.0f, top + 32.0f}, TextStyle::BodyLarge, p.onSurface);
-        canvas_.Text(subtitle, {textLeft, top + 32.0f, kWidth - 56.0f, top + 52.0f}, TextStyle::BodySmall,
-                     p.onSurfaceVariant);
+        const bool wrapped = height > design::kTwoLineRowHeight;
+        canvas_.Text(title, {textLeft, top + 9.0f, textRight, top + design::kSubtitleTop}, TextStyle::BodyLarge,
+                     p.onSurface);
+        canvas_.Text(subtitle,
+                     {textLeft, top + design::kSubtitleTop, textRight,
+                      wrapped ? top + height - design::kHintBottomGap : top + 50.0f},
+                     TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Leading, wrapped);
     }
-    canvas_.Glyph(kGlyphChevronRight, {kWidth - 40.0f, top + height / 2.0f}, 14.0f, p.onSurfaceVariant);
-    AddHit({row, id, std::move(click)});
+    canvas_.Glyph(kGlyphChevronRight, {design::kTrailingIconCenter, top + height / 2.0f}, design::kSmallIconSize,
+                  p.onSurfaceVariant);
+    AddHit({TileRect(top, height), id, std::move(click)});
     return top + height;
 }
 
 void Panel::DrawHint(const wchar_t* text, float top, float height) {
-    canvas_.Text(text, {36.0f, top, kWidth - 36.0f, top + height}, TextStyle::BodySmall, P().onSurfaceVariant,
-                 TextAlign::Leading, true);
+    // height comes from HintHeight and includes the gap below the text.
+    canvas_.Text(text, {kInset, top, kWidth - kInset, top + height - design::kHintBottomGap}, TextStyle::BodySmall,
+                 P().onSurfaceVariant, TextAlign::Leading, true);
 }
 
 float Panel::HintHeight(const wchar_t* text, float width) {
-    // The default width matches DrawHint.
-    const float wrap = width > 0.0f ? width : kWidth - 72.0f;
-    return std::ceil(canvas_.MeasureHeight(text, TextStyle::BodySmall, wrap)) + 8.0f;
+    // The default width matches DrawHint; the height includes the gap to the tile's edge.
+    const float wrap = width > 0.0f ? width : kWidth - 2.0f * kInset;
+    return std::ceil(canvas_.MeasureHeight(text, TextStyle::BodySmall, wrap)) + design::kHintBottomGap;
 }
 
 void Panel::DrawScrollbar(const D2D1_RECT_F& area, float offset, float content) {
@@ -942,34 +1354,37 @@ void Panel::DrawScrollbar(const D2D1_RECT_F& area, float offset, float content) 
     const float trackTop = area.top + 14.0f;
     const float trackHeight = area.bottom - 14.0f - trackTop;
     const float thumbHeight = std::max(24.0f, trackHeight * visible / content);
-    const float thumbTop = trackTop + (trackHeight - thumbHeight) * std::clamp(offset / (content - visible), 0.0f, 1.0f);
+    const float thumbTop =
+        trackTop + (trackHeight - thumbHeight) * std::clamp(offset / (content - visible), 0.0f, 1.0f);
     canvas_.FillRound({area.right - 7.0f, thumbTop, area.right - 4.0f, thumbTop + thumbHeight}, 1.5f,
                       Alpha(P().onSurfaceVariant, 0.45f));
 }
 
-void Panel::DrawList(const D2D1_RECT_F& list, uint32_t id, float& scroll, size_t count,
-                     const std::function<void(size_t, float)>& drawRow) {
-    canvas_.FillRound(list, kCardRadius, Alpha(P().surfaceContainer, kCardAlpha));
+void Panel::DrawList(const D2D1_RECT_F& list, uint32_t id, float& scroll, size_t count, float rowHeight,
+                     const std::function<uint32_t(size_t)>& idOf, const std::function<void(size_t, float)>& drawRow) {
+    // A scrolling segmented list: one tile per row.
+    const float pitch = rowHeight + design::kSegmentGap;
     const float visible = list.bottom - list.top;
-    const float content = count * kRowHeight + 2.0f * kListPadding;
+    const float content = count * pitch - design::kSegmentGap;
     const float maxScroll = std::max(0.0f, content - visible);
     scroll = std::clamp(scroll, 0.0f, maxScroll);
-    const float offset = Animate(AnimKey(id, 0), scroll, 22.0f);
+    const float offset = Animate(AnimKey(id, 0), scroll, design::kSpringScroll, true);
 
     Hit wheel;
     wheel.rect = list;
     wheel.id = id;
-    wheel.wheel = [this, &scroll, maxScroll](int notches) {
-        scroll = std::clamp(scroll - notches * kRowHeight, 0.0f, maxScroll);
+    wheel.wheel = [this, &scroll, maxScroll, pitch](int notches) {
+        scroll = std::clamp(scroll - notches * pitch, 0.0f, maxScroll);
         Invalidate();
     };
     AddHit(std::move(wheel));
 
-    canvas_.PushRoundClip(list, kCardRadius);
+    canvas_.PushRoundClip(list, design::kRadiusGroup);
     hitClip_.push_back(list);
     for (size_t index = 0; index < count; ++index) {
-        const float top = list.top + kListPadding + index * kRowHeight - offset;
-        if (top + kRowHeight >= list.top && top <= list.bottom) {
+        const float top = list.top + index * pitch - offset;
+        if (top + rowHeight >= list.top && top <= list.bottom) {
+            DrawTile(TileRect(top, rowHeight), idOf(index), index == 0, index + 1 == count);
             drawRow(index, top);
         }
     }
@@ -1004,7 +1419,8 @@ std::vector<AppItem> Panel::FilteredRunningApps() const {
     const std::wstring needle = ToLower(filter_);
     std::vector<AppItem> result;
     for (const auto& app : running_) {
-        if (ToLower(app.name).find(needle) != std::wstring::npos || ToLower(app.exe).find(needle) != std::wstring::npos) {
+        if (ToLower(app.name).find(needle) != std::wstring::npos ||
+            ToLower(app.exe).find(needle) != std::wstring::npos) {
             result.push_back(app);
         }
     }
@@ -1058,12 +1474,19 @@ void Panel::OnMouseMove(float x, float y) {
     const uint32_t hot = hit ? hit->id : 0;
     if (hot != hotId_) {
         hotId_ = hot;
+        ArmTooltip(hit);
         Invalidate();
     }
 }
 
 void Panel::OnMouseDown(float x, float y, bool doubleClick) {
     const Hit* hit = HitAt(x, y, false);
+    ArmTooltip(nullptr);
+    // A press anywhere but on the field being edited applies its text.
+    if (field_.id && (!hit || hit->id != field_.id)) {
+        CommitField();
+        hit = HitAt(x, y, false);
+    }
     if (!hit) {
         return;
     }
@@ -1073,10 +1496,14 @@ void Panel::OnMouseDown(float x, float y, bool doubleClick) {
         return;
     }
     pressedId_ = hotId_ = hit->id;
+    focusId_ = hit->id;
+    focusVisible_ = false;
     SetCapture(window_);
     if (hit->drag) {
         const auto drag = hit->drag;
+        pressStarting_ = true;
         drag(x, y);
+        pressStarting_ = false;
     }
     Invalidate();
 }
@@ -1089,11 +1516,21 @@ void Panel::OnMouseUp(float x, float y) {
     pressedId_ = 0;
     dragId_ = 0;
     std::function<void()> click;
+    std::function<void()> release;
+    for (const auto& hit : hits_) {
+        if (hit.id == pressed && hit.release) {
+            release = hit.release;
+            break;
+        }
+    }
     if (const Hit* hit = HitAt(x, y, false); hit && hit->id == pressed && hit->click) {
         click = hit->click;
     }
     Invalidate();
-    // The action may close the panel, so it runs last.
+    // The actions may close the panel, so they run last.
+    if (release) {
+        release();
+    }
     if (click) {
         click();
     }
@@ -1139,6 +1576,9 @@ bool Panel::OnKey(UINT key, bool down) {
     if (!down) {
         return false;
     }
+    if (field_.id) {
+        return FieldKey(key);
+    }
     if (key == VK_ESCAPE && menu_.open) {
         CloseMenu();
         return true;
@@ -1156,6 +1596,19 @@ bool Panel::OnKey(UINT key, bool down) {
         }
         return true;
     }
+    if (key == VK_TAB) {
+        MoveFocus(GetKeyState(VK_SHIFT) < 0 ? -1 : 1);
+        return true;
+    }
+    // Space types into the pages with a text field; Enter activates everywhere.
+    const bool typing = page_ == Page::AddApp || page_ == Page::ColorPicker;
+    if ((key == VK_RETURN || (key == VK_SPACE && !typing)) && ActivateFocus()) {
+        return true;
+    }
+    if ((key == VK_LEFT || key == VK_DOWN || key == VK_RIGHT || key == VK_UP) &&
+        StepFocus(key == VK_RIGHT || key == VK_UP ? 1 : -1)) {
+        return true;
+    }
     if (page_ == Page::Mixer && (key == VK_LEFT || key == VK_RIGHT)) {
         // Arrow keys move by one percent without a headset dial, for fine adjustments.
         NudgeBalance(key == VK_RIGHT ? 1 : -1, kBalanceRange);
@@ -1166,6 +1619,10 @@ bool Panel::OnKey(UINT key, bool down) {
 
 void Panel::OnChar(wchar_t ch) {
     if (recording_ >= 0) {
+        return;
+    }
+    if (field_.id) {
+        FieldChar(ch);
         return;
     }
     std::wstring* field = page_ == Page::AddApp ? &filter_ : page_ == Page::ColorPicker ? &hexInput_ : nullptr;
@@ -1195,11 +1652,7 @@ void Panel::OnChar(wchar_t ch) {
         if (digits.size() == 6) {
             const uint32_t rgb = static_cast<uint32_t>(wcstoul(digits.c_str(), nullptr, 16)) & 0xFFFFFF;
             HueChromaOf(rgb, pickerHue_, pickerChroma_);
-            pickerChroma_ = std::min(pickerChroma_, 0.20f);
-            Edit([rgb](Settings& s) {
-                s.appearance.windowsAccent = false;
-                s.appearance.accent = rgb;
-            });
+            SetPickedColor(rgb);
         }
     }
     Invalidate();
@@ -1242,6 +1695,7 @@ void Panel::RunFileDialog(FileDialog kind) {
         std::wstring fileName;
         bool save = false;
         bool json = false;
+        std::wstring extension;  // Added to a typed name without one.
     };
     Request request{kind};
     switch (kind) {
@@ -1249,6 +1703,16 @@ void Panel::RunFileDialog(FileDialog kind) {
         request.title = T(Text::BrowseTitle);
         request.filterName = T(Text::BrowseFilter);
         request.pattern = L"*.exe";
+        break;
+    case FileDialog::AddOn:
+        request.title = T(Text::AddOnBrowseTitle);
+        request.filterName = T(Text::BrowseFilter);
+        request.pattern = L"*.exe";
+        break;
+    case FileDialog::AddOnImage:
+        request.title = T(Text::IdleImageTitle);
+        request.filterName = T(Text::ImageFilter);
+        request.pattern = L"*.gif;*.png;*.jpg;*.jpeg;*.bmp";
         break;
     case FileDialog::ImportPreset:
     case FileDialog::ImportEqPreset:
@@ -1272,6 +1736,35 @@ void Panel::RunFileDialog(FileDialog kind) {
         request.filterName = T(Text::ImageFilter);
         request.pattern = L"*.gif;*.png;*.jpg;*.jpeg;*.bmp";
         break;
+    case FileDialog::ExportSettings: {
+        request.title = T(Text::SettingsExportTitle);
+        request.filterName = T(Text::SettingsFilter);
+        request.pattern = L"*.zip";
+        SYSTEMTIME now{};
+        GetLocalTime(&now);
+        wchar_t date[16];
+        swprintf_s(date, L" %04u-%02u-%02u", now.wYear, now.wMonth, now.wDay);
+        request.fileName = std::wstring(T(Text::SettingsFilter)) + date + L".zip";
+        request.extension = L"zip";
+        request.save = true;
+        break;
+    }
+    case FileDialog::ImportSettings:
+        request.title = T(Text::SettingsImportTitle);
+        request.filterName = T(Text::SettingsFilter);
+        request.pattern = L"*.zip";
+        break;
+    case FileDialog::Plugin: {
+        request.title = T(Text::PluginTitle);
+        request.filterName = T(Text::PluginFilter);
+        request.pattern = L"*.vst3;*.dll";
+        // Where installers put VST 3 plugins; a bundle folder is opened to pick the .vst3 inside.
+        wchar_t common[MAX_PATH] = {};
+        if (GetEnvironmentVariableW(L"CommonProgramFiles", common, MAX_PATH)) {
+            request.folder = std::wstring(common) + L"\\VST3";
+        }
+        break;
+    }
     }
     browsing_ = true;
     // The shell file dialogs need an STA thread; the UI thread runs in the MTA for audio notifications.
@@ -1286,6 +1779,8 @@ void Panel::RunFileDialog(FileDialog kind) {
             dialog->SetTitle(request.title.c_str());
             if (request.json) {
                 dialog->SetDefaultExtension(L"json");
+            } else if (!request.extension.empty()) {
+                dialog->SetDefaultExtension(request.extension.c_str());
             }
             ComPtr<IShellItem> folder;
             if (!request.folder.empty() &&
@@ -1343,6 +1838,32 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
         }
         break;
     }
+    case FileDialog::AddOnImage: {
+        const std::wstring chosen = *owned;
+        const size_t index = addOnDisplay_;
+        EditAddOnScreen([chosen, index](AddOnEventScreen& s) {
+            if (index < s.displays.size()) {
+                s.displays[index].image = chosen;
+            }
+        });
+        break;
+    }
+    case FileDialog::AddOn: {
+        const std::wstring chosen = *owned;
+        Edit([chosen](Settings& s) {
+            const bool known = std::any_of(s.addOns.begin(), s.addOns.end(), [&](const AddOnSettings& addOn) {
+                return _wcsicmp(addOn.path.c_str(), chosen.c_str()) == 0;
+            });
+            if (!known) {
+                AddOnSettings addOn;
+                addOn.path = chosen;
+                s.addOns.push_back(std::move(addOn));
+            }
+        });
+        addOnPath_ = chosen;
+        GoTo(Page::AddOnEdit);
+        break;
+    }
     case FileDialog::SavePreset: {
         std::wstring name = FileNameOf(*owned);
         name = name.substr(0, name.find_last_of(L'.'));
@@ -1365,7 +1886,7 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
         name = name.substr(0, name.find_last_of(L'.'));
         WriteParametricPreset(*owned, {name, EqChannelState().eq});
         Edit([this, name](Settings& s) {
-            (eqChannel_ == EqChannel::Game ? s.gameEq : s.chatEq).preset = name;
+            EqStateOf(s, eqChannel_).preset = name;
         });
         eqLibrary_[2] = LoadParametricPresets();
         break;
@@ -1380,6 +1901,19 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
         break;
     case FileDialog::IdleImage:
         host_.OnIdleImage(*owned);
+        break;
+    case FileDialog::Plugin:
+        host_.OnMicPluginAdd(*owned);
+        break;
+    case FileDialog::ExportSettings:
+        transferNote_ = host_.OnSettingsExport(*owned) ? std::wstring(T(Text::SettingsExported)) + L" " + FileNameOf(*owned)
+                                                       : T(Text::SettingsExportFailed);
+        Invalidate();
+        break;
+    case FileDialog::ImportSettings:
+        // On success the app restarts; the note shows only when the file was refused.
+        transferNote_ = host_.OnSettingsImport(*owned) ? L"" : T(Text::SettingsImportFailed);
+        Invalidate();
         break;
     }
 }

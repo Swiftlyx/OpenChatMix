@@ -21,7 +21,7 @@ body:
     id: headset
     attributes:
       label: Headset
-      description: Model, or "none" without a SteelSeries headset.
+      description: Headset or speakers, any brand; for SteelSeries the exact model.
   - type: input
     id: windows
     attributes:

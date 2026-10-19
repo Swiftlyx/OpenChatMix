@@ -5,9 +5,14 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cwchar>
+#include <cwctype>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "../app_info.h"
 #include "panel.h"
 #include "panel_internal.h"
 
@@ -69,16 +74,76 @@ float RoundFrequency(float hz) {
     return std::round(hz / step) * step;
 }
 
+struct ChannelColors {
+    D2D1_COLOR_F accent, onAccent, container, onContainer;
+};
+
+ChannelColors ColorsOf(const Palette& p, EqChannel channel) {
+    switch (channel) {
+    case EqChannel::Chat: return {p.tertiary, p.onTertiary, p.tertiaryContainer, p.onTertiaryContainer};
+    // The palette has no plain secondary tone; the container pair stands in for it.
+    case EqChannel::Mic: return {p.onSecondaryContainer, p.secondaryContainer, p.primary, p.onPrimary};
+    case EqChannel::Media: return {p.onSurfaceVariant, p.surfaceContainerHighest, p.secondaryContainer, p.onSecondaryContainer};
+    case EqChannel::Game: break;
+    }
+    return {p.primary, p.onPrimary, p.primaryContainer, p.onPrimaryContainer};
+}
+
+const wchar_t* ChannelName(EqChannel channel) {
+    switch (channel) {
+    case EqChannel::Chat: return T(Text::Chat);
+    case EqChannel::Mic: return T(Text::Microphone);
+    case EqChannel::Media: return T(Text::Media);
+    case EqChannel::Game: break;
+    }
+    return T(Text::Game);
+}
+
+// A typed value: digits with an optional sign and point, and k for thousands ("1.5k" is 1500).
+std::optional<float> ParseTyped(std::wstring text) {
+    float scale = 1.0f;
+    while (!text.empty() && iswspace(text.back())) {
+        text.pop_back();
+    }
+    if (!text.empty() && (text.back() == L'k' || text.back() == L'K')) {
+        scale = 1000.0f;
+        text.pop_back();
+    }
+    if (text.empty()) {
+        return std::nullopt;
+    }
+    wchar_t* end = nullptr;
+    const float value = std::wcstof(text.c_str(), &end);
+    if (end == text.c_str() || *end != L'\0' || !std::isfinite(value)) {
+        return std::nullopt;
+    }
+    return value * scale;
+}
+
 }  // namespace
 
+std::vector<EqChannel> Panel::EqChannels() const {
+    std::vector<EqChannel> channels;
+    if (routing_.enabled) {
+        channels = {EqChannel::Game, EqChannel::Chat};
+        if (routing_.mediaRouted) {
+            channels.push_back(EqChannel::Media);
+        }
+    }
+    if (settings_.mic.enabled) {
+        channels.push_back(EqChannel::Mic);
+    }
+    return channels;
+}
+
 EqChannelSettings& Panel::EqChannelState() {
-    return eqChannel_ == EqChannel::Game ? settings_.gameEq : settings_.chatEq;
+    return EqStateOf(settings_, eqChannel_);
 }
 
 void Panel::EditEq(const std::function<void(ParametricEq&)>& edit) {
     const EqChannel channel = eqChannel_;
     Edit([channel, edit](Settings& s) {
-        EqChannelSettings& state = channel == EqChannel::Game ? s.gameEq : s.chatEq;
+        EqChannelSettings& state = EqStateOf(s, channel);
         edit(state.eq);
         state.preset.clear();
     });
@@ -86,13 +151,13 @@ void Panel::EditEq(const std::function<void(ParametricEq&)>& edit) {
 
 void Panel::EditEffects(const std::function<void(EqEffects&)>& edit) {
     const EqChannel channel = eqChannel_;
-    Edit([channel, edit](Settings& s) { edit((channel == EqChannel::Game ? s.gameEq : s.chatEq).eq.effects); });
+    Edit([channel, edit](Settings& s) { edit(EqStateOf(s, channel).eq.effects); });
 }
 
 void Panel::ApplyEqPreset(const NamedEq& preset) {
     const EqChannel channel = eqChannel_;
     Edit([channel, preset](Settings& s) {
-        EqChannelSettings& state = channel == EqChannel::Game ? s.gameEq : s.chatEq;
+        EqChannelSettings& state = EqStateOf(s, channel);
         AssignBands(state.eq, preset.eq);
         state.preset = preset.name;
         state.enabled = true;
@@ -151,38 +216,56 @@ void Panel::OpenEqPresetMenu(const D2D1_RECT_F& anchor) {
 void Panel::DrawEqualizerPage() {
     const Palette& p = P();
     DrawTitle(T(Text::Equalizers));
-    if (!routing_.enabled) {
-        const D2D1_RECT_F card = Card(kHeaderHeight + 4.0f, 172.0f);
+    const std::vector<EqChannel> channels = EqChannels();
+    if (channels.empty()) {
+        const D2D1_RECT_F card = Card(kHeaderHeight, 172.0f);
         canvas_.Glyph(kGlyphEqualizer, {kWidth / 2.0f, card.top + 34.0f}, 24.0f, p.primary);
-        canvas_.Text(T(Text::EqNeedsRouting), {card.left + 24.0f, card.top + 56.0f, card.right - 24.0f, card.top + 120.0f},
+        canvas_.Text(T(Text::EqNeedsRouting),
+                     {card.left + 24.0f, card.top + 56.0f, card.right - 24.0f, card.top + 120.0f},
                      TextStyle::BodyMedium, p.onSurfaceVariant, TextAlign::Center, true);
-        TextButton(kIdEqOpenAudio, {kWidth / 2.0f - 100.0f, card.top + 126.0f, kWidth / 2.0f + 100.0f, card.top + 158.0f},
-                   kGlyphVolume, T(Text::OpenAudioSettings), true, [this] { GoTo(Page::Audio); });
+        TextButton(kIdEqOpenAudio,
+                   {kWidth / 2.0f - 100.0f, card.top + 126.0f, kWidth / 2.0f + 100.0f, card.top + 158.0f}, kGlyphVolume,
+                   T(Text::OpenAudioSettings), true, [this] { GoTo(Page::Audio); });
         return;
     }
 
     // The channel switch and the graph stay in place; the band editor and effects scroll below them,
     // so every change shows on the graph.
-    const bool chat = eqChannel_ == EqChannel::Chat;
-    const D2D1_COLOR_F accent = chat ? p.tertiary : p.primary;
-    const wchar_t* channels[] = {T(Text::Game), T(Text::Chat)};
-    DrawSegmented({kWidth - 16.0f - 176.0f, 14.0f, kWidth - 16.0f, 46.0f}, kIdEqChannel, channels, chat ? 1 : 0,
-                  chat ? p.tertiaryContainer : p.primaryContainer, chat ? p.onTertiaryContainer : p.onPrimaryContainer,
-                  [this](int index) {
-                      eqChannel_ = index ? EqChannel::Chat : EqChannel::Game;
+    if (std::find(channels.begin(), channels.end(), eqChannel_) == channels.end()) {
+        eqChannel_ = channels.front();
+        eqBand_ = 0;
+        LoadEqLibrary(eqChannel_);
+    }
+    const ChannelColors colors = ColorsOf(p, eqChannel_);
+    const D2D1_COLOR_F accent = colors.accent;
+    std::vector<const wchar_t*> labels;
+    for (const EqChannel channel : channels) {
+        labels.push_back(channel == EqChannel::Game    ? T(Text::Game)
+                         : channel == EqChannel::Chat  ? T(Text::Chat)
+                         : channel == EqChannel::Media ? T(Text::Media)
+                                                       : T(Text::MicShort));
+    }
+    // Narrower segments when three or four channels share the title row.
+    const float segmentsWidth = (labels.size() > 3 ? 54.0f : labels.size() > 2 ? 60.0f : 72.0f) * labels.size();
+    const int selected = static_cast<int>(std::find(channels.begin(), channels.end(), eqChannel_) - channels.begin());
+    // The channel switch sits left of the pin.
+    const float segmentsRight = kWidth - kGutter - design::kIconButtonSize - design::kSpace1;
+    DrawSegmented({segmentsRight - segmentsWidth, (kHeaderHeight - design::kControlHeight) / 2.0f, segmentsRight,
+                   (kHeaderHeight + design::kControlHeight) / 2.0f},
+                  kIdEqChannel, labels, selected,
+                  colors.container, colors.onContainer, [this, channels](int index) {
+                      eqChannel_ = channels[index];
                       eqBand_ = 0;
                       LoadEqLibrary(eqChannel_);
                       Invalidate();
                   });
 
     const EqChannelSettings& state = EqChannelState();
-    const D2D1_RECT_F card{16.0f, kHeaderHeight + 4.0f, kWidth - 16.0f,
-                           kHeaderHeight + 4.0f + kGraphHeaderHeight + kGraphHeight};
-    canvas_.FillRound(card, kCardRadius, Alpha(p.surfaceContainer, kCardAlpha));
+    const D2D1_RECT_F card = Card(kHeaderHeight, kGraphHeaderHeight + kGraphHeight);
 
     // Header row: the preset as a dropdown, and the channel's on/off switch.
     const D2D1_RECT_F presetButton{card.left + 8.0f, card.top + 8.0f, card.right - 84.0f, card.top + 48.0f};
-    StateLayer(kIdEqPresetButton, presetButton, 20.0f, p.onSurface);
+    StateLayer(kIdEqPresetButton, presetButton, design::kRadiusMedium, p.onSurface);
     canvas_.Glyph(kGlyphEqualizer, {presetButton.left + 20.0f, (presetButton.top + presetButton.bottom) / 2.0f}, 16.0f,
                   accent);
     const std::wstring presetName = state.preset.empty() ? T(Text::EqCustom) : state.preset;
@@ -191,79 +274,80 @@ void Panel::DrawEqualizerPage() {
     canvas_.Text(presetName, {presetButton.left + 40.0f, presetButton.top, presetButton.left + 41.0f + nameWidth,
                               presetButton.bottom},
                  TextStyle::TitleSmall, p.onSurface);
-    canvas_.Glyph(kGlyphChevronDown, {presetButton.left + 52.0f + nameWidth, (presetButton.top + presetButton.bottom) / 2.0f},
-                  10.0f, p.onSurfaceVariant);
+    canvas_.Glyph(kGlyphChevronDown,
+                  {presetButton.left + 52.0f + nameWidth, (presetButton.top + presetButton.bottom) / 2.0f}, 10.0f,
+                  p.onSurfaceVariant);
     AddHit({presetButton, kIdEqPresetButton, [this, presetButton] { OpenEqPresetMenu(presetButton); }});
-    const D2D1_RECT_F track{card.right - 16.0f - 52.0f, card.top + 12.0f, card.right - 16.0f, card.top + 44.0f};
+    const D2D1_RECT_F track{card.right - design::kItemPadding - design::kSwitchWidth, card.top + 12.0f,
+                            card.right - design::kItemPadding, card.top + 12.0f + design::kSwitchHeight};
     DrawSwitch(track, state.enabled, kIdEqToggle);
     AddHit({Inset(track, -8.0f, -8.0f), kIdEqToggle, [this] {
                 const EqChannel channel = eqChannel_;
                 Edit([channel](Settings& s) {
-                    EqChannelSettings& target = channel == EqChannel::Game ? s.gameEq : s.chatEq;
+                    EqChannelSettings& target = EqStateOf(s, channel);
                     target.enabled = !target.enabled;
                 });
             }});
 
     DrawEqGraph({card.left, card.top + kGraphHeaderHeight, card.right, card.bottom}, state.eq);
 
-    const float scrollTop = card.bottom + 8.0f;
+    const float scrollTop = card.bottom + design::kSpace1;
     float y = BeginScroll(Page::Equalizer, scrollTop);
-    y = DrawBandEditor(y, state.eq);
+    y = DrawBandEditor(y + design::kSpace2, state.eq);
     y = DrawEqEffects(y, state.eq);
-    EndScroll(Page::Equalizer, scrollTop, y - 12.0f);
+    EndScroll(Page::Equalizer, scrollTop, y - design::kGroupGap);
 }
 
 float Panel::DrawEqEffects(float y, const ParametricEq& eq) {
-    const Palette& p = P();
     y = SectionTitle(T(Text::EqEffects), y);
-    const float smartHint = HintHeight(T(Text::SmartVolumeHint));
-    const D2D1_RECT_F card = Card(y, 2.0f * kListPadding + 4.0f * kRowHeight + smartHint);
-    float top = card.top + kListPadding;
     const EqEffects& effects = eq.effects;
-
-    auto boostRow = [&](uint32_t id, Text label, float value, float EqEffects::*field) {
-        const std::wstring text = value < 0.05f ? std::wstring(T(Text::EffectOff)) : FormatDecibels(value);
-        DrawStepperRow(id, top, T(label), text, 88.0f, value > 0.0f, value < kEffectMaxGain,
-                       [this, field] {
-                           EditEffects([field](EqEffects& target) {
-                               target.*field = std::max(0.0f, target.*field - kEffectStep);
-                           });
-                       },
-                       [this, field] {
-                           EditEffects([field](EqEffects& target) {
-                               target.*field = std::min(kEffectMaxGain, target.*field + kEffectStep);
-                           });
-                       });
-        top += kRowHeight;
+    std::vector<CardRow> rows;
+    auto boost = [this](uint32_t id, Text label, float value, float EqEffects::*field) {
+        return NumberItem(
+            id, T(label), value < 0.05f ? std::wstring(T(Text::EffectOff)) : FormatDecibels(value), value > 0.0f,
+            value < kEffectMaxGain,
+            [this, field] {
+                EditEffects(
+                    [field](EqEffects& target) { target.*field = std::max(0.0f, target.*field - kEffectStep); });
+            },
+            [this, field] {
+                EditEffects([field](EqEffects& target) {
+                    target.*field = std::min(kEffectMaxGain, target.*field + kEffectStep);
+                });
+            },
+            [this, field](const std::wstring& text) {
+                const std::optional<float> typed = text.empty() ? std::optional<float>(0.0f) : ParseTyped(text);
+                if (!typed) {
+                    return false;
+                }
+                EditEffects([field, value = std::clamp(*typed, 0.0f, kEffectMaxGain)](EqEffects& target) {
+                    target.*field = value;
+                });
+                return true;
+            });
     };
-    boostRow(kIdEqBass, Text::BassBoost, effects.bassBoost, &EqEffects::bassBoost);
-    boostRow(kIdEqVoice, Text::VoiceClarity, effects.voiceClarity, &EqEffects::voiceClarity);
-    boostRow(kIdEqTreble, Text::TrebleBoost, effects.trebleBoost, &EqEffects::trebleBoost);
-
-    const int smart = static_cast<int>(effects.smartVolume);
-    auto setSmart = [this](int index) {
-        EditEffects([index](EqEffects& target) { target.smartVolume = static_cast<SmartVolume>(index); });
-    };
-    DrawStepperRow(kIdEqSmart, top, T(Text::SmartVolume), T(kSmartVolumeLabels[smart]), 112.0f, smart > 0,
-                   smart < kSmartVolumeCount - 1, [setSmart, smart] { setSmart(smart - 1); },
-                   [setSmart, smart] { setSmart(smart + 1); },
-                   [this, smart, setSmart](const D2D1_RECT_F& anchor) {
-                       std::vector<MenuItem> items;
-                       for (const Text label : kSmartVolumeLabels) {
-                           items.push_back({T(label)});
-                       }
-                       OpenMenu(anchor, std::move(items), smart, setSmart);
-                   });
-    DrawHint(T(Text::SmartVolumeHint), top + kRowHeight - 8.0f, smartHint);
-    (void)p;
-    return card.bottom + 12.0f;
+    rows.push_back(boost(kIdEqBass, Text::BassBoost, effects.bassBoost, &EqEffects::bassBoost));
+    rows.push_back(boost(kIdEqVoice, Text::VoiceClarity, effects.voiceClarity, &EqEffects::voiceClarity));
+    rows.push_back(boost(kIdEqTreble, Text::TrebleBoost, effects.trebleBoost, &EqEffects::trebleBoost));
+    // Four short options: all in view as a button group.
+    std::vector<std::wstring> smartLabels;
+    for (const Text label : kSmartVolumeLabels) {
+        smartLabels.push_back(T(label));
+    }
+    rows.push_back(ChoiceItem(
+        kIdEqSmart, T(Text::SmartVolume), std::move(smartLabels), static_cast<int>(effects.smartVolume),
+        [this](int index) {
+            EditEffects([index](EqEffects& target) { target.smartVolume = static_cast<SmartVolume>(index); });
+        },
+        T(Text::SmartVolumeHint)));
+    return DrawCard(y, rows) + design::kGroupGap;
 }
 
 void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
     const Palette& p = P();
-    const bool chat = eqChannel_ == EqChannel::Chat;
-    const D2D1_COLOR_F accent = chat ? p.tertiary : p.primary;
-    const D2D1_COLOR_F onAccent = chat ? p.onTertiary : p.onPrimary;
+    const ChannelColors colors = ColorsOf(p, eqChannel_);
+    const D2D1_COLOR_F accent = colors.accent;
+    const D2D1_COLOR_F onAccent = colors.onAccent;
     const bool enabled = EqChannelState().enabled;
 
     const D2D1_RECT_F plot{rect.left + 40.0f, rect.top + 16.0f, rect.right - 16.0f, rect.bottom - 28.0f};
@@ -278,15 +362,17 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
         return static_cast<float>(std::pow(10.0, kLogMin + t * (kLogMax - kLogMin)));
     };
     auto yOf = [&](double db) {
-        return mid - static_cast<float>(std::clamp(db, -static_cast<double>(kGraphRange), static_cast<double>(kGraphRange)) /
-                                        kGraphRange) *
-                         half;
+        return mid -
+               static_cast<float>(std::clamp(db, -static_cast<double>(kGraphRange), static_cast<double>(kGraphRange)) /
+                                  kGraphRange) *
+                   half;
     };
     auto dbOf = [=](float y) { return (mid - y) / half * kGraphRange; };
 
     // Grid with octave-ish frequency marks and 6 dB steps.
-    constexpr std::pair<double, const wchar_t*> kMarks[] = {{50, L"50"},   {100, L"100"}, {200, L"200"}, {500, L"500"},
-                                                            {1000, L"1k"}, {2000, L"2k"}, {5000, L"5k"}, {10000, L"10k"}};
+    constexpr std::pair<double, const wchar_t*> kMarks[] = {{50, L"50"},   {100, L"100"},  {200, L"200"},
+                                                            {500, L"500"}, {1000, L"1k"},  {2000, L"2k"},
+                                                            {5000, L"5k"}, {10000, L"10k"}};
     for (const auto& [hz, label] : kMarks) {
         const float x = xOf(hz);
         canvas_.Line({x, plot.top}, {x, plot.bottom}, Alpha(p.outlineVariant, 0.7f), 1.0f);
@@ -327,7 +413,8 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
         const float y = UsesGain(settings.type) ? yOf(settings.gain) : yOf(0);
         const bool selected = band == eqBand_;
         const uint32_t id = PartId(kIdEqGraph, static_cast<uint32_t>(band) + 1);
-        const float grow = Animate(AnimKey(id, 0), selected ? 1.0f : (hotId_ == id ? 0.5f : 0.0f), 22.0f);
+        const float grow =
+            Animate(AnimKey(id, 0), selected ? 1.0f : (hotId_ == id ? 0.5f : 0.0f), design::kSpringFastEffects);
         const float radius = kNodeRadius + 2.0f * grow;
         if (selected) {
             canvas_.FillCircle({x, y}, radius + 4.0f, Alpha(accent, 0.25f));
@@ -355,7 +442,8 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
                 return;
             }
             const float frequency = RoundFrequency(hzOf(pointerX + dragOffsetX_));
-            const float gain = std::clamp(std::round(dbOf(pointerY + dragOffsetY_) * 2.0f) / 2.0f, -kEqMaxGain, kEqMaxGain);
+            const float gain =
+                std::clamp(std::round(dbOf(pointerY + dragOffsetY_) * 2.0f) / 2.0f, -kEqMaxGain, kEqMaxGain);
             EditEq([band, frequency, gain](ParametricEq& target) {
                 EqBand& edited = target.bands[band];
                 edited.frequency = frequency;
@@ -368,8 +456,9 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
             eqBand_ = band;
             EditEq([band, notches](ParametricEq& target) {
                 EqBand& edited = target.bands[band];
-                edited.q = std::clamp(std::round(edited.q * std::pow(kQStep, static_cast<float>(notches)) * 100.0f) / 100.0f,
-                                      kEqMinQ, kEqMaxQ);
+                edited.q =
+                    std::clamp(std::round(edited.q * std::pow(kQStep, static_cast<float>(notches)) * 100.0f) / 100.0f,
+                               kEqMinQ, kEqMaxQ);
             });
         };
         hit.doubleClick = [this, band] {
@@ -384,137 +473,139 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
     const Palette& p = P();
     const int band = eqBand_;
     const EqBand& settings = eq.bands[band];
-    const D2D1_RECT_F card = Card(y, 2.0f * kListPadding + 6.0f * kRowHeight + 52.0f);
-    float top = card.top + kListPadding;
+    // A typed value, clamped to its range, applied by apply.
+    auto typedValue = [](float low, float high, std::function<void(float)> apply) {
+        return [low, high, apply = std::move(apply)](const std::wstring& text) {
+            const std::optional<float> typed = ParseTyped(text);
+            if (!typed) {
+                return false;
+            }
+            apply(std::clamp(*typed, low, high));
+            return true;
+        };
+    };
+    auto editBand = [this, band](std::function<void(EqBand&)> change) {
+        EditEq([band, change](ParametricEq& target) { change(target.bands[band]); });
+    };
+    std::vector<CardRow> rows;
 
     // Band selector with its on/off switch.
-    const std::wstring title = std::wstring(T(Text::Band)) + L" " + std::to_wstring(band + 1);
-    canvas_.Text(title, {36.0f, top, 180.0f, top + kRowHeight}, TextStyle::BodyLarge, p.onSurface);
-    const float switchLeft = kWidth - 36.0f - 52.0f;
-    IconButton(PartId(kIdEqBandSelect, 1), {switchLeft - 76.0f, top + kRowHeight / 2.0f}, kGlyphChevronLeft, p.onSurface,
-               [this] {
-                   eqBand_ = (eqBand_ + kParametricBands - 1) % kParametricBands;
-                   Invalidate();
-               });
-    IconButton(PartId(kIdEqBandSelect, 2), {switchLeft - 32.0f, top + kRowHeight / 2.0f}, kGlyphChevronRight, p.onSurface,
-               [this] {
-                   eqBand_ = (eqBand_ + 1) % kParametricBands;
-                   Invalidate();
-               });
-    const D2D1_RECT_F track{switchLeft, top + 12.0f, kWidth - 36.0f, top + 44.0f};
-    DrawSwitch(track, settings.enabled, kIdEqBandToggle);
-    AddHit({Inset(track, -6.0f, -6.0f), kIdEqBandToggle, [this, band] {
-                EditEq([band](ParametricEq& target) { target.bands[band].enabled = !target.bands[band].enabled; });
-            }});
-    top += kRowHeight;
+    rows.push_back({kRowHeight,
+                    [this, &p, band, enabled = settings.enabled](float top) {
+                        const std::wstring title = std::wstring(T(Text::Band)) + L" " + std::to_wstring(band + 1);
+                        canvas_.Text(title, {kInset, top, 180.0f, top + kRowHeight}, TextStyle::BodyLarge, p.onSurface);
+                        const float switchLeft = kWidth - kInset - design::kSwitchWidth;
+                        const float middle = top + kRowHeight / 2.0f;
+                        IconButton(PartId(kIdEqBandSelect, 1), {switchLeft - 72.0f, middle}, kGlyphChevronLeft,
+                                   p.onSurface, [this] {
+                                       eqBand_ = (eqBand_ + kParametricBands - 1) % kParametricBands;
+                                       Invalidate();
+                                   });
+                        Tooltip(PartId(kIdEqBandSelect, 1), T(Text::TipPreviousBand));
+                        IconButton(PartId(kIdEqBandSelect, 2), {switchLeft - 32.0f, middle}, kGlyphChevronRight,
+                                   p.onSurface, [this] {
+                                       eqBand_ = (eqBand_ + 1) % kParametricBands;
+                                       Invalidate();
+                                   });
+                        Tooltip(PartId(kIdEqBandSelect, 2), T(Text::TipNextBand));
+                        const D2D1_RECT_F track{switchLeft, middle - design::kSwitchHeight / 2.0f, kWidth - kInset,
+                                                middle + design::kSwitchHeight / 2.0f};
+                        DrawSwitch(track, enabled, kIdEqBandToggle);
+                        AddHit({Inset(track, -6.0f, -6.0f), kIdEqBandToggle, [this, band] {
+                                    EditEq([band](ParametricEq& target) {
+                                        target.bands[band].enabled = !target.bands[band].enabled;
+                                    });
+                                }});
+                    }});
 
-    const int type = static_cast<int>(settings.type);
-    auto setType = [this, band](int index) {
-        EditEq([band, index](ParametricEq& target) { target.bands[band].type = static_cast<FilterType>(index); });
-    };
-    DrawStepperRow(kIdEqType, top, T(Text::FilterType), T(kFilterLabels[type]), 112.0f, type > 0,
-                   type < kFilterTypeCount - 1, [setType, type] { setType(type - 1); },
-                   [setType, type] { setType(type + 1); },
-                   [this, type, setType](const D2D1_RECT_F& anchor) {
-                       std::vector<MenuItem> items;
-                       for (const Text label : kFilterLabels) {
-                           items.push_back({T(label)});
-                       }
-                       OpenMenu(anchor, std::move(items), type, setType);
-                   });
-    top += kRowHeight;
+    rows.push_back(DropdownItem(
+        kIdEqType, T(Text::FilterType), static_cast<int>(settings.type), kFilterTypeCount,
+        [](int i) { return std::wstring(T(kFilterLabels[i])); },
+        [editBand](int index) {
+            editBand([index](EqBand& target) { target.type = static_cast<FilterType>(index); });
+        }));
 
-    DrawStepperRow(kIdEqFrequency, top, T(Text::Frequency), FormatFrequency(settings.frequency), 88.0f,
-                   settings.frequency > kEqMinFrequency, settings.frequency < kEqMaxFrequency,
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].frequency = RoundFrequency(target.bands[band].frequency / kFrequencyStep);
-                       });
-                   },
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].frequency = RoundFrequency(target.bands[band].frequency * kFrequencyStep);
-                       });
-                   });
-    top += kRowHeight;
+    rows.push_back(NumberItem(
+        kIdEqFrequency, T(Text::Frequency), FormatFrequency(settings.frequency), settings.frequency > kEqMinFrequency,
+        settings.frequency < kEqMaxFrequency,
+        [editBand] {
+            editBand([](EqBand& target) { target.frequency = RoundFrequency(target.frequency / kFrequencyStep); });
+        },
+        [editBand] {
+            editBand([](EqBand& target) { target.frequency = RoundFrequency(target.frequency * kFrequencyStep); });
+        },
+        typedValue(
+            kEqMinFrequency, kEqMaxFrequency,
+            [editBand](float value) { editBand([value](EqBand& target) { target.frequency = value; }); })));
 
     const bool gainUsed = UsesGain(settings.type);
-    DrawStepperRow(kIdEqGain, top, T(Text::Level), gainUsed ? FormatDecibels(settings.gain) : L"—", 88.0f,
-                   gainUsed && settings.gain > -kEqMaxGain, gainUsed && settings.gain < kEqMaxGain,
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].gain = std::max(-kEqMaxGain, target.bands[band].gain - 0.5f);
-                       });
-                   },
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].gain = std::min(kEqMaxGain, target.bands[band].gain + 0.5f);
-                       });
-                   });
-    top += kRowHeight;
+    rows.push_back(NumberItem(
+        kIdEqGain, T(Text::Level), gainUsed ? FormatDecibels(settings.gain) : L"—",
+        gainUsed && settings.gain > -kEqMaxGain, gainUsed && settings.gain < kEqMaxGain,
+        [editBand] { editBand([](EqBand& target) { target.gain = std::max(-kEqMaxGain, target.gain - 0.5f); }); },
+        [editBand] { editBand([](EqBand& target) { target.gain = std::min(kEqMaxGain, target.gain + 0.5f); }); },
+        gainUsed ? typedValue(-kEqMaxGain, kEqMaxGain,
+                              [editBand](float value) { editBand([value](EqBand& target) { target.gain = value; }); })
+                 : std::function<bool(const std::wstring&)>()));
 
-    DrawStepperRow(kIdEqQ, top, L"Q", FormatQ(settings.q), 88.0f, settings.q > kEqMinQ, settings.q < kEqMaxQ,
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].q =
-                               std::max(kEqMinQ, std::round(target.bands[band].q / kQStep * 100.0f) / 100.0f);
-                       });
-                   },
-                   [this, band] {
-                       EditEq([band](ParametricEq& target) {
-                           target.bands[band].q =
-                               std::min(kEqMaxQ, std::round(target.bands[band].q * kQStep * 100.0f) / 100.0f);
-                       });
-                   });
-    top += kRowHeight;
+    rows.push_back(NumberItem(
+        kIdEqQ, L"Q", FormatQ(settings.q), settings.q > kEqMinQ, settings.q < kEqMaxQ,
+        [editBand] {
+            editBand(
+                [](EqBand& target) { target.q = std::max(kEqMinQ, std::round(target.q / kQStep * 100.0f) / 100.0f); });
+        },
+        [editBand] {
+            editBand(
+                [](EqBand& target) { target.q = std::min(kEqMaxQ, std::round(target.q * kQStep * 100.0f) / 100.0f); });
+        },
+        typedValue(
+            kEqMinQ, kEqMaxQ, [editBand](float value) { editBand([value](EqBand& target) { target.q = value; }); })));
 
-    DrawStepperRow(kIdEqPreamp, top, T(Text::Preamp), FormatDecibels(eq.preamp), 88.0f, eq.preamp > -kEqMaxGain,
-                   eq.preamp < kEqMaxGain,
-                   [this] { EditEq([](ParametricEq& target) { target.preamp = std::max(-kEqMaxGain, target.preamp - 0.5f); }); },
-                   [this] { EditEq([](ParametricEq& target) { target.preamp = std::min(kEqMaxGain, target.preamp + 0.5f); }); });
-    top += kRowHeight;
+    rows.push_back(NumberItem(
+        kIdEqPreamp, T(Text::Preamp), FormatDecibels(eq.preamp), eq.preamp > -kEqMaxGain, eq.preamp < kEqMaxGain,
+        [this] { EditEq([](ParametricEq& target) { target.preamp = std::max(-kEqMaxGain, target.preamp - 0.5f); }); },
+        [this] { EditEq([](ParametricEq& target) { target.preamp = std::min(kEqMaxGain, target.preamp + 0.5f); }); },
+        typedValue(-kEqMaxGain, kEqMaxGain, [this](float value) {
+            EditEq([value](ParametricEq& target) { target.preamp = value; });
+        })));
 
-    const float buttonWidth = (kWidth - 64.0f) / 3.0f;
-    const float buttonsTop = top + 8.0f;
-    TextButton(kIdEqReset2, {32.0f, buttonsTop, 32.0f + buttonWidth, buttonsTop + 32.0f}, kGlyphReset, T(Text::EqReset),
-               false, [this] { EditEq([](ParametricEq& target) { AssignBands(target, FlatEq()); }); });
-    TextButton(kIdEqSaveFile, {32.0f + buttonWidth, buttonsTop, 32.0f + 2.0f * buttonWidth, buttonsTop + 32.0f},
-               kGlyphSave, T(Text::EqSave), false, [this] { RunFileDialog(FileDialog::SaveEqPreset); });
-    TextButton(kIdEqImportFile, {32.0f + 2.0f * buttonWidth, buttonsTop, kWidth - 32.0f, buttonsTop + 32.0f},
-               kGlyphImport, T(Text::EqImport), false, [this] { RunFileDialog(FileDialog::ImportEqPreset); });
-    return card.bottom + 12.0f;
+    rows.push_back({kRowHeight, [this](float top) {
+                        const float width = (kWidth - 2.0f * kInset) / 3.0f;
+                        const float buttonTop = top + (kRowHeight - design::kControlHeight) / 2.0f;
+                        const float bottom = buttonTop + design::kControlHeight;
+                        TextButton(kIdEqReset2, {kInset, buttonTop, kInset + width, bottom}, kGlyphReset,
+                                   T(Text::EqReset), false,
+                                   [this] { EditEq([](ParametricEq& target) { AssignBands(target, FlatEq()); }); });
+                        TextButton(kIdEqSaveFile, {kInset + width, buttonTop, kInset + 2.0f * width, bottom},
+                                   kGlyphSave, T(Text::EqSave), false,
+                                   [this] { RunFileDialog(FileDialog::SaveEqPreset); });
+                        TextButton(kIdEqImportFile, {kInset + 2.0f * width, buttonTop, kWidth - kInset, bottom},
+                                   kGlyphImport, T(Text::EqImport), false,
+                                   [this] { RunFileDialog(FileDialog::ImportEqPreset); });
+                    }});
+    return DrawCard(y, rows) + design::kSectionGap;
 }
 
 void Panel::DrawEqPresets() {
     const Palette& p = P();
-    DrawHeader(T(Text::Presets), eqChannel_ == EqChannel::Game ? T(Text::Game) : T(Text::Chat));
+    DrawHeader(T(Text::Presets), ChannelName(eqChannel_));
     float y = BeginScroll(Page::EqPresets, kHeaderHeight);
 
-    constexpr float kGap = 8.0f;
-    const float buttonWidth = (kWidth - 32.0f - 2.0f * kGap) / 3.0f;
-    const float second = 16.0f + buttonWidth + kGap;
-    const float third = second + buttonWidth + kGap;
-    TextButton(kIdEqSaveFile, {16.0f, y, 16.0f + buttonWidth, y + 32.0f}, kGlyphSave, T(Text::EqSave), true,
+    // Three tonal buttons as a standard button group: 8 DIP apart.
+    const float buttonWidth = (kWidth - 2.0f * kGutter - 2.0f * design::kSpace2) / 3.0f;
+    const float second = kGutter + buttonWidth + design::kSpace2;
+    const float third = second + buttonWidth + design::kSpace2;
+    const float bottom = y + design::kButtonHeight;
+    TextButton(kIdEqSaveFile, {kGutter, y, kGutter + buttonWidth, bottom}, kGlyphSave, T(Text::EqSave), true,
                [this] { RunFileDialog(FileDialog::SaveEqPreset); });
-    TextButton(kIdEqImportFile, {second, y, second + buttonWidth, y + 32.0f}, kGlyphImport, T(Text::EqImport), true,
+    TextButton(kIdEqImportFile, {second, y, second + buttonWidth, bottom}, kGlyphImport, T(Text::EqImport), true,
                [this] { RunFileDialog(FileDialog::ImportEqPreset); });
-    TextButton(kIdEqFolder2, {third, y, kWidth - 16.0f, y + 32.0f}, kGlyphFolder, T(Text::EqFolder),
-               true, [] {
-                   // explorer.exe needs no COM apartment, unlike ShellExecute on this MTA thread.
-                   std::wstring command = L"explorer.exe \"" + ParametricPresetDirectory() + L"\"";
-                   STARTUPINFOW startup{};
-                   startup.cb = sizeof(startup);
-                   PROCESS_INFORMATION process{};
-                   if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup,
-                                      &process)) {
-                       CloseHandle(process.hThread);
-                       CloseHandle(process.hProcess);
-                   }
-               });
-    y += 48.0f;
+    TextButton(kIdEqFolder2, {third, y, kWidth - kGutter, bottom}, kGlyphFolder, T(Text::EqFolder),
+               true, [] { OpenWithExplorer(ParametricPresetDirectory()); });
+    y = bottom + design::kSectionGap;
 
     const std::wstring current = EqChannelState().preset;
-    const D2D1_COLOR_F accent = eqChannel_ == EqChannel::Chat ? p.tertiary : p.primary;
+    const D2D1_COLOR_F accent = ColorsOf(p, eqChannel_).accent;
     constexpr Text kSections[] = {Text::PresetsBuiltin, Text::PresetsSonar, Text::MyPresets};
     for (int section = 0; section < 3; ++section) {
         const std::vector<NamedEq>& presets = eqLibrary_[section];
@@ -522,25 +613,27 @@ void Panel::DrawEqPresets() {
             continue;
         }
         y = SectionTitle(T(kSections[section]), y);
-        const D2D1_RECT_F card = Card(y, 2.0f * kListPadding + presets.size() * kRowHeight);
-        float top = card.top + kListPadding;
+        std::vector<CardRow> rows;
         for (const auto& preset : presets) {
             const uint32_t id = HashId(kKindEqPreset, std::to_wstring(section) + preset.name);
-            const D2D1_RECT_F row{20.0f, top, kWidth - 20.0f, top + kRowHeight};
             const bool chosen = _wcsicmp(preset.name.c_str(), current.c_str()) == 0;
-            StateLayer(id, row, 16.0f, p.onSurface);
-            canvas_.Text(preset.name, {36.0f, top, kWidth - 64.0f, top + kRowHeight}, TextStyle::BodyLarge,
-                         chosen ? accent : p.onSurface);
-            if (chosen) {
-                canvas_.Glyph(kGlyphCheck, {kWidth - 44.0f, top + kRowHeight / 2.0f}, 16.0f, accent);
-            }
-            AddHit({row, id, [this, preset] {
-                        ApplyEqPreset(preset);
-                        GoBack();
-                    }});
-            top += kRowHeight;
+            rows.push_back({kRowHeight,
+                            [this, &p, &preset, id, chosen, accent](float top) {
+                                canvas_.Text(preset.name, {kInset, top, design::kTrailingIconCenter - design::kSpace4,
+                                                           top + kRowHeight},
+                                             TextStyle::BodyLarge, chosen ? accent : p.onSurface);
+                                if (chosen) {
+                                    canvas_.Glyph(kGlyphCheck, {design::kTrailingIconCenter, top + kRowHeight / 2.0f},
+                                                  design::kSmallIconSize + 2.0f, accent);
+                                }
+                                AddHit({TileRect(top, kRowHeight), id, [this, preset] {
+                                            ApplyEqPreset(preset);
+                                            GoBack();
+                                        }});
+                            },
+                            id});
         }
-        y = card.bottom + 16.0f;
+        y = DrawCard(y, rows) + design::kSectionGap;
     }
     EndScroll(Page::EqPresets, kHeaderHeight, y);
 }

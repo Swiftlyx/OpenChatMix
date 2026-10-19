@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <appmodel.h>
 #include <dwmapi.h>
 
 #include <algorithm>
@@ -57,7 +58,88 @@ bool IsAltTabWindow(HWND window) {
     return cloaked == 0;
 }
 
+bool FileExists(const std::wstring& path) {
+    const DWORD attributes = GetFileAttributesW(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && !(attributes & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Discord's launcher in its install folder, or the newest app-<version> folder when the launcher is missing.
+std::wstring DiscordPath() {
+    wchar_t local[MAX_PATH];
+    const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH) {
+        return {};
+    }
+    const std::wstring root = std::wstring(local) + L"\\Discord\\";
+    if (FileExists(root + L"Discord.exe")) {
+        return root + L"Discord.exe";
+    }
+    std::wstring newest;
+    FILETIME newestTime{};
+    WIN32_FIND_DATAW found{};
+    HANDLE search = FindFirstFileW((root + L"app-*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) {
+        return {};
+    }
+    do {
+        const std::wstring path = root + found.cFileName + L"\\Discord.exe";
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && FileExists(path) &&
+            (newest.empty() || CompareFileTime(&found.ftCreationTime, &newestTime) > 0)) {
+            newest = path;
+            newestTime = found.ftCreationTime;
+        }
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+    return newest;
+}
+
+// The file inside an installed package of the given family, for the current user.
+std::wstring PackageFile(const wchar_t* family, const std::wstring& file) {
+    UINT32 count = 0;
+    UINT32 bufferLength = 0;
+    if (GetPackagesByPackageFamily(family, &count, nullptr, &bufferLength, nullptr) != ERROR_INSUFFICIENT_BUFFER ||
+        count == 0) {
+        return {};
+    }
+    std::vector<PWSTR> names(count);
+    std::vector<wchar_t> buffer(bufferLength);
+    if (GetPackagesByPackageFamily(family, &count, names.data(), &bufferLength, buffer.data()) != ERROR_SUCCESS) {
+        return {};
+    }
+    for (UINT32 index = 0; index < count; ++index) {
+        UINT32 pathLength = 0;
+        if (GetPackagePathByFullName(names[index], &pathLength, nullptr) != ERROR_INSUFFICIENT_BUFFER) {
+            continue;
+        }
+        std::wstring root(pathLength, L'\0');
+        if (GetPackagePathByFullName(names[index], &pathLength, root.data()) != ERROR_SUCCESS) {
+            continue;
+        }
+        root.resize(wcslen(root.c_str()));
+        const std::wstring path = root + L"\\" + file;
+        if (FileExists(path)) {
+            return path;
+        }
+    }
+    return {};
+}
+
 }  // namespace
+
+std::wstring InstalledAppPath(const std::wstring& exe) {
+    if (_wcsicmp(exe.c_str(), L"Discord.exe") == 0) {
+        return DiscordPath();
+    }
+    if (_wcsicmp(exe.c_str(), L"XboxPartyChatHost.exe") == 0) {
+        // The party chat host ships with the Xbox app; older systems had it in the Game Bar package.
+        for (const wchar_t* family : {L"Microsoft.GamingApp_8wekyb3d8bbwe", L"Microsoft.XboxGamingOverlay_8wekyb3d8bbwe"}) {
+            if (std::wstring path = PackageFile(family, exe); !path.empty()) {
+                return path;
+            }
+        }
+    }
+    return {};
+}
 
 std::wstring FileNameOf(const std::wstring& path) {
     return path.substr(path.find_last_of(L"\\/") + 1);
@@ -119,4 +201,15 @@ std::vector<ProcessApp> WindowedApps() {
         }
     }
     return apps;
+}
+
+void OpenWithExplorer(const std::wstring& target) {
+    std::wstring command = L"explorer.exe \"" + target + L"\"";
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process)) {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
 }

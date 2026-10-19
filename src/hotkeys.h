@@ -17,8 +17,12 @@ enum HotkeyAction : int {
     kHotkeyTowardGame,
     kHotkeyTowardChat,
     kHotkeyCenter,
-    kHotkeyMuteChat,    // Silences the Chat side until pressed again; the balance stays.
-    kHotkeyNextPreset,  // Next equalizer preset.
+    kHotkeyMuteGame,    // Silences the Game side until pressed again; the balance stays.
+    kHotkeyMuteChat,    // The same for the Chat side,
+    kHotkeyMuteMedia,   // ...and for the Media group, which ChatMix otherwise leaves alone.
+    kHotkeyNextOutput,  // Sends the sound to the next playback device, virtual cables left out.
+    kHotkeyNextMicrophone,  // Feeds the microphone chain from the next microphone, virtual cables left out.
+    kHotkeyScreensaver,  // Shows the headset display's screensaver now, or hides it.
     kHotkeyCount,
 };
 
@@ -30,6 +34,12 @@ Hotkey UnpackHotkey(uint32_t packed);
 std::wstring HotkeyText(Hotkey hotkey);
 std::wstring ModifiersText(UINT modifiers);
 std::wstring KeyText(UINT key);
+
+// Modifier combinations offered for turning the balance with the mouse wheel; 0 turns it off.
+// None of them is a common shortcut with the wheel: Ctrl and Ctrl + Alt zoom (browsers, the Windows
+// Magnifier), Shift scrolls sideways.
+inline constexpr UINT kWheelModifierChoices[] = {0, MOD_CONTROL | MOD_WIN, MOD_ALT | MOD_WIN,
+                                                 MOD_CONTROL | MOD_ALT | MOD_SHIFT};
 
 bool IsModifierKey(UINT key);
 // Modifier keys currently held, as MOD_* flags.

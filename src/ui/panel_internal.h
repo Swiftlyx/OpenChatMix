@@ -11,21 +11,26 @@
 
 #include "../i18n.h"
 #include "../settings.h"
+#include "design.h"
 
 namespace ui::detail {
 
 inline constexpr wchar_t kWindowClass[] = L"OpenChatMix.Panel";
-inline constexpr float kWidth = 400.0f;
-inline constexpr float kHeight = 640.0f;
-inline constexpr float kHeaderHeight = 60.0f;
-inline constexpr float kNavHeight = 72.0f;  // Navigation bar at the bottom.
-inline constexpr float kScreenMargin = 12.0f;
-inline constexpr float kRowHeight = 56.0f;
-inline constexpr float kListPadding = 4.0f;
-inline constexpr float kCardRadius = 20.0f;
-inline constexpr float kSurfaceAlpha = 0.62f;  // Lets the acrylic backdrop show through.
-inline constexpr float kCardAlpha = 0.72f;
-inline constexpr ULONGLONG kReopenGuardMs = 400;  // A tray click that closed the panel must not reopen it.
+// Short names for the design tokens used everywhere in the panel (see design.h).
+inline constexpr float kWidth = design::kPanelWidth;
+inline constexpr float kHeight = design::kPanelHeight;
+inline constexpr float kHeaderHeight = design::kHeaderHeight;
+inline constexpr float kNavHeight = design::kNavHeight;
+inline constexpr float kScreenMargin = design::kScreenMargin;
+inline constexpr float kRowHeight = design::kRowHeight;
+inline constexpr float kRowHintTop = design::kHintTopInRow;
+inline constexpr float kGutter = design::kPageGutter;
+inline constexpr float kInset = design::kContentInset;
+inline constexpr ULONGLONG kReopenGuardMs = 400;
+inline constexpr UINT_PTR kMeterTimer = 1;     // Panel window timer that reads the level meters.
+inline constexpr UINT_PTR kTooltipTimer = 2;   // Panel window timer for the tooltip delay.
+inline constexpr UINT kTooltipDelayMs = 500;
+inline constexpr UINT kMeterIntervalMs = 33;  // A tray click that closed the panel must not reopen it.
 
 // Segoe Fluent Icons / Segoe MDL2 Assets code points.
 inline constexpr wchar_t kGlyphSettings = 0xE713;
@@ -55,10 +60,20 @@ inline constexpr wchar_t kGlyphBell = 0xEA8F;
 inline constexpr wchar_t kGlyphDelete = 0xE74D;
 inline constexpr wchar_t kGlyphMute = 0xE74F;
 inline constexpr wchar_t kGlyphEdit = 0xE70F;
-inline constexpr wchar_t kGlyphSun = 0xE706;
-inline constexpr wchar_t kGlyphMoon = 0xE708;
+inline constexpr wchar_t kGlyphCopy = 0xE8C8;
 inline constexpr wchar_t kGlyphContrast = 0xE793;
 inline constexpr wchar_t kGlyphChevronDown = 0xE70D;
+inline constexpr wchar_t kGlyphChevronUp = 0xE70E;
+inline constexpr wchar_t kGlyphRemove = 0xE738;  // Minus.
+inline constexpr wchar_t kGlyphMicrophone = 0xE720;
+inline constexpr wchar_t kGlyphOpenWindow = 0xE8A7;
+inline constexpr wchar_t kGlyphPlugin = 0xEA86;
+inline constexpr wchar_t kGlyphDragHandle = 0xE76F;  // GripperBarHorizontal.
+inline constexpr wchar_t kGlyphPin = 0xE718;
+inline constexpr wchar_t kGlyphPinFill = 0xE842;  // The pin's filled head without its needle; drawn over kGlyphPin.
+inline constexpr wchar_t kGlyphBlocked = 0xE733;
+inline constexpr wchar_t kGlyphUndo = 0xE7A7;
+inline constexpr wchar_t kGlyphInfo = 0xE946;
 
 // Parts of a widget (segments, stepper arrows) get IDs above all fixed ones, so they never collide.
 inline constexpr uint32_t PartId(uint32_t id, uint32_t part) {
@@ -67,23 +82,17 @@ inline constexpr uint32_t PartId(uint32_t id, uint32_t part) {
 
 // Fixed widget IDs; per-item widgets use HashId() with the high bit set.
 enum : uint32_t {
-    kIdSettings = 1,
-    kIdBack,
+    kIdBack = 1,
     kIdMark,
     kIdMixCard,
     kIdSlider,
-    kIdAddButton,
-    kIdAppList,
     kIdRunningList,
     kIdSettingsPage,
     kIdBrowse,
     kIdAutostart,
     kIdShowPopup,
-    kIdTranslucent,
     kIdQuit,
     kIdWarnGg,
-    kIdHeadsetButton,
-    kIdHeadsetPage,
     kIdEqReset,
     kIdSnackbar,
     kIdRoutingToggle,
@@ -111,12 +120,13 @@ enum : uint32_t {
     kIdEqImportFile,
     kIdEqFolder2,
     kIdEqOpenAudio,
-    kIdEqPresetList,
     kIdTheme = 170,
     kIdBackdrop,
     kIdTray,
     kIdReduceMotion,
-    kIdSwatch = 180,  // + swatch
+    kIdContrast,
+    kIdSwatch = 180,      // + swatch
+    kIdChatSwatch = 190,  // + swatch
     kIdHueSlider = 200,
     kIdChromaSlider,
     kIdMediaGroup,
@@ -144,6 +154,57 @@ enum : uint32_t {
     kIdGamePresets,
     kIdCheckUpdates,
     kIdUpdateAction,
+    kIdTrayBalanced,
+    kIdWheelControl,
+    kIdMicToggle,
+    kIdMicKeepLevels,
+    kIdMicNoise,
+    kIdMicCompressor,
+    kIdMicEqEdit,
+    kIdAddPlugin,
+    kIdMicInputRow,
+    kIdMicOutputRow,
+    kIdSwitchOnLoss,
+    kIdReturnToPreferred,
+    kIdPin,
+    kIdMicMonitor,
+    kIdChainList,
+    kIdPluginList,
+    kIdOutputList,
+    kIdGameVolume,
+    kIdChatVolume,
+    kIdMicLevel,
+    kIdTourNext,
+    kIdTourBack,
+    kIdTourSkip,
+    kIdTourStep,
+    kIdTourShow,
+    kIdTooltip,
+    kIdProfileChatEq,
+    kIdProfileMediaEq,
+    kIdIdleTest,
+    kIdAddAddOn,
+    kIdAddOnEnabled,
+    kIdRemoveAddOn,
+    kIdAddOnEventEnabled,
+    kIdAddOnTimes,
+    kIdAddOnDisplayList,
+    kIdAddOnAddDisplay,
+    kIdAddOnPreview,
+    kIdAddOnReset,
+    kIdAddOnDisplayKind,
+    kIdAddOnLength,
+    kIdAddOnImage,
+    kIdAddOnIcons,
+    kIdAddOnHeading,
+    kIdAddOnText,
+    kIdAddOnRemoveDisplay,
+    kIdVisualizer,
+    kIdVisualizerFor,
+    kIdBatteryTint,
+    kIdTrayBatteryTint,
+    kIdSettingsExport,
+    kIdSettingsImport,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,
@@ -162,9 +223,18 @@ enum : uint32_t {
     kKindNav = 7,
     kKindProfile = 8,
     kKindEqPreset = 9,
+    kKindPlugin = 10,
+    kKindOutput = 11,
+    kKindStage = 12,
+    kKindAppRemove = 13,
+    kKindOutputExclude = 14,
+    kKindAddOn = 15,
 };
 
-inline constexpr uint32_t kHoverChannel = 0xF0;
+inline constexpr uint32_t kHoverChannel = 0xF0;  // Animation channels shared by the components.
+inline constexpr uint32_t kShapeChannel = 0xF1;
+inline constexpr uint32_t kPressChannel = 0xF2;
+inline constexpr uint32_t kSelectChannel = 0xF3;
 
 inline constexpr AppGroup kGroups[] = {AppGroup::Game, AppGroup::Chat, AppGroup::Media};
 inline constexpr AppGroup kAddGroups[] = {AppGroup::Chat, AppGroup::Media};
@@ -201,15 +271,6 @@ inline std::wstring HexColor(uint32_t rgb) {
     wchar_t text[16];
     swprintf_s(text, L"#%06X", rgb & 0xFFFFFF);
     return text;
-}
-
-inline int GroupIndex(AppGroup group) {
-    switch (group) {
-    case AppGroup::Chat: return 1;
-    case AppGroup::Media: return 2;
-    case AppGroup::Game: break;
-    }
-    return 0;
 }
 
 }  // namespace ui::detail

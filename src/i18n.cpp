@@ -15,8 +15,6 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Game",                                                               // Game
     L"Chat",                                                               // Chat
     L"Media",                                                              // Media
-    L"Apps",                                                               // Apps
-    L"Media apps ignore ChatMix",                                          // MediaHint
     L"Add",                                                                // Add
     L"Apps show up here as soon as they play sound. Others can be added manually.",  // AppsEmpty
     L"not running",                                                        // NotRunning
@@ -44,10 +42,10 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Language",                                                           // LanguageLabel
     L"Start with Windows",                                                 // StartWithWindows
     L"Show popup for hotkeys",                                             // ShowPopup
-    L"Translucent background",                                             // Translucent
     L"Quit OpenChatMix",                                                   // Quit
-    L"Supports Arctis Nova Pro Wired and Wireless, Nova 7, 7X, 7 Gen 2, Arctis 7+ and Nova 5X. "
-    L"Without a headset the balance applies to the default output and is controlled with hotkeys.",  // SupportFooter
+    L"Works with any headset or speakers: the balance applies to the default output and is controlled with hotkeys "
+    L"or the mouse wheel. The ChatMix dial and native settings work on Arctis Nova Pro Wired and Wireless, Nova 7, "
+    L"7X, 7 Gen 2, Arctis 7+ and Nova 5X.",  // SupportFooter
     L"Open",                                                               // TrayOpen
     L"Settings",                                                           // TraySettings
     L"Reconnect headset",                                                  // TrayReconnect
@@ -75,7 +73,6 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Turn on with the headset",  // BluetoothPowerOn
     L"Lower game audio during calls",  // BluetoothAutoMute
     L"Off",  // OptOff
-    L"On",  // OptOn
     L"Low",  // OptLow
     L"Medium",  // OptMedium
     L"High",  // OptHigh
@@ -100,10 +97,9 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Not selected",  // NotSelected
     L"Headset (automatic)",  // AutomaticHeadset
     L"Running",  // RoutingRunning
-    L"Choose a Game device, a Chat device and an output",  // RoutingNeedsDevices
-    L"Game, Chat and Output must be different devices",  // RoutingSameDevice
+    L"Choose a device for Game and Chat and an output",  // RoutingNeedsDevices
+    L"Each channel needs a device of its own, and no channel may play into another's device",  // RoutingSameDevice
     L"A selected device is not available",  // RoutingDeviceMissing
-    L"Send games to the Game device and voice chat to the Chat device. Apps that play straight to the output are not affected.",  // RoutingCardHint
     L"Hide",  // Dismiss
     L"No playback devices found",  // NoPlaybackDevices
     L"Save",  // EqSave
@@ -117,7 +113,6 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Screensaver",  // IdleScreen
     L"Animation",  // IdleAnimation
     L"Stars",  // IdleStars
-    L"Headphones",  // IdleBounce
     L"Clock",  // IdleClock
     L"Game of Life",  // IdleLife
     L"Screen off",  // IdleBlank
@@ -141,8 +136,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Apps here follow the Chat side of the balance.",  // GroupChatHint
     L"Apps here keep their full volume and ignore ChatMix.",  // GroupMediaHint
     L"Plays on",  // PlaysOn
-    L"Add app",  // AddToGroup
-    L"The equalizer works in virtual device mode: Game and Chat pass through OpenChatMix there, so they can be equalized for any headset.",  // EqNeedsRouting
+    L"The equalizer works in virtual device mode, where Game and Chat pass through OpenChatMix, and on the processed microphone.",  // EqNeedsRouting
     L"Audio settings",  // OpenAudioSettings
     L"Presets",  // Presets
     L"Band",  // Band
@@ -164,18 +158,26 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Groups, virtual devices, ducking",  // AudioSummary
     L"Notifications",  // Notifications
     L"Popups, battery, SteelSeries GG",  // NotificationsSummary
-    L"Game profiles",  // Profiles
-    L"Settings that apply while a game runs",  // ProfilesSummary
+    L"App profiles",  // Profiles
+    L"Balance and equalizers that apply while an app runs",  // ProfilesSummary
     L"Theme",  // Theme
     L"Auto",  // ThemeAuto
     L"Light",  // ThemeLight
     L"Dark",  // ThemeDark
+    L"Contrast",  // Contrast
+    L"Standard",  // ContrastStandard
+    L"Medium",  // ContrastMedium
+    L"High",  // ContrastHigh
     L"Color",  // Color
     L"Windows accent color",  // WindowsColor
     L"Custom color",  // CustomColor
     L"Hue",  // Hue
     L"Saturation",  // Saturation
     L"Type a HEX code, e.g. #3B82F6",  // HexHint
+    L"Game color",  // GameColor
+    L"Chat color",  // ChatColor
+    L"Paired with the Game color",  // ChatColorAuto
+    L"Colors stay soft, and Chat always keeps a hue of its own next to Game, so both sides are easy to tell apart.",  // ColorsHint
     L"Background",  // Background
     L"Acrylic",  // Acrylic
     L"Mica",  // Mica
@@ -185,7 +187,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Color",  // TrayColor
     L"Monochrome",  // TrayMono
     L"Media group",  // MediaGroupToggle
-    L"Apps in Media keep full volume and ignore ChatMix. Not used in virtual device mode.",  // MediaGroupHint
+    L"Apps in Media keep full volume and ignore ChatMix. In virtual device mode Media needs a virtual device of its own.",  // MediaGroupHint
     L"Send apps to their device",  // AutoRoute
     L"Chat apps play on the Chat device, all others on the Game device. Some apps switch only after a restart.",  // AutoRouteHint
     L"Lower game during chat",  // Ducking
@@ -195,20 +197,18 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Shows the balance when the ChatMix wheel turns, on headsets without a display.",  // DialPopupHint
     L"Low battery warning",  // BatteryAlert
     L"Warn at",  // BatteryThreshold
-    L"Headset battery is low",  // BatteryLowTitle
-    L"Battery at",  // BatteryLowText
+    L"Low battery",  // BatteryLowTitle
+    L"charge it soon",  // BatteryLowText
     L"Mute chat",  // MuteChat
-    L"Next EQ preset",  // NextPreset
     L"Chat muted",  // ChatMuted
     L"Chat unmuted",  // ChatUnmuted
     L"Add game",  // AddGame
-    L"Add a game: its settings apply while it runs and are undone when it closes.",  // NoProfiles
+    L"Add an app or a game: its balance and equalizers apply while it runs and are undone when it closes.",  // NoProfiles
     L"Balance",  // ProfileBalance
     L"Game equalizer",  // ProfileGameEq
     L"Headset equalizer",  // ProfileHeadsetEq
     L"Unchanged",  // Unchanged
     L"Remove profile",  // RemoveProfile
-    L"Running now",  // ProfileRunning
     L"Equalizer",  // Equalizers
     L"Effects",  // EqEffects
     L"Bass boost",  // BassBoost
@@ -220,9 +220,8 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Quiet",  // SmartQuiet
     L"Balanced",  // SmartBalanced
     L"Loud",  // SmartLoud
-    L"Adds the Equalizer tab: Game and Chat can be equalized in virtual device mode.",  // EqFeatureHint
+    L"Adds the Equalizer tab: Game, Chat and Media can be equalized in virtual device mode, the microphone always.",  // EqFeatureHint
     L"Manage presets…",  // ManagePresets
-    L"Preset",  // Preset
     L"Game presets",  // GamePresets
     L"Applied as the custom curve. An unsaved custom curve is kept in My presets first.",  // GamePresetsHint
     L"Custom curve backup",  // CurveBackup
@@ -240,6 +239,238 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Open page",  // UpdateOpenPage
     L"A new version is ready to install in Settings.",  // UpdateBalloonText
     L"Version",  // VersionLabel
+    L"Icon when balanced",  // TrayBalancedIcon
+    L"hotkeys",  // HotkeysOnly
+    L"Next output device",  // NextOutput
+    L"Output device",  // OutputDevice
+    L"No other output device",  // NoOtherOutput
+    L"Mouse wheel",  // WheelControl
+    L"Hold the keys and turn the wheel: up for more chat, down for more game. Click the wheel for an even balance. Only this exact combination is taken, so zooming with Ctrl or Ctrl + Alt and the wheel keeps working.",  // WheelControlHint
+    L"Mic",  // MicShort
+    L"Noise suppression, compressor, equalizer, plugins",  // MicSummary
+    L"Process the microphone",  // MicProcessing
+    L"The processed microphone plays into a virtual cable. Choose its other end, such as CABLE Output, as the microphone in Discord, OBS or the game.",  // MicProcessingHint
+    L"Microphone",  // MicInput
+    L"Virtual cable",  // MicOutput
+    L"Windows default",  // MicDefaultInput
+    L"Automatic (CABLE Input)",  // MicAutomaticCable
+    L"No virtual cable for the microphone. Install VB-Audio Virtual Cable or choose a cable.",  // MicNoCable
+    L"Keep levels at 100%",  // MicKeepLevels
+    L"Windows and call apps lower microphone levels on their own. This keeps the microphone and both ends of the cable at 100%.",  // MicKeepLevelsHint
+    L"Noise suppression",  // NoiseSuppressionLabel
+    L"Standard",  // NoiseStandard
+    L"Strong",  // NoiseStrong
+    L"Standard removes fans, keyboards and room noise; Strong also silences the microphone while you do not speak.",  // NoiseHint
+    L"Compressor",  // CompressorLabel
+    L"Light",  // CompressorLight
+    L"Medium",  // CompressorMedium
+    L"Strong",  // CompressorStrong
+    L"Makes quiet speech louder and loud speech quieter.",  // CompressorHint
+    L"Equalizer",  // MicEqualizer
+    L"VST plugins",  // Plugins
+    L"VST 2 and VST 3 effects run after the built-in ones, top to bottom. Click a plugin to open its window.",  // PluginsHint
+    L"Add plugin",  // AddPlugin
+    L"Choose a VST plugin",  // PluginTitle
+    L"VST plugins",  // PluginFilter
+    L"could not be loaded",  // PluginNotLoaded
+    L"Output devices",  // OutputDevices
+    L"Priority, switching on disconnect",  // OutputDevicesSummary
+    L"Switch when a device disconnects",  // SwitchOnLoss
+    L"The sound goes to the highest device below that is still connected.",  // SwitchOnLossHint
+    L"Return to a device that reconnects",  // ReturnToPreferred
+    L"When the top device of the list connects again, the sound goes back to it.",  // ReturnToPreferredHint
+    L"Priority",  // Priority
+    L"Disconnected and disabled devices are not shown here. To manage one, first turn it on in the Windows sound settings (System → Sound → All sound devices). Virtual cables are left out. Click a device to use it now; the Next output device hotkey follows this order.",  // PriorityHint
+    L"adds",  // AddsLatency
+    L"Language, start with Windows, backup, quit",  // GeneralSummary
+    L"Processing order",  // ProcessingOrder
+    L"Drag the steps to change the order the microphone passes through them.",  // ProcessingOrderHint
+    L"Listen to the microphone",  // MicMonitor
+    L"Plays the processed microphone on your headphones, to try settings and plugins. Others still hear it only through the cable.",  // MicMonitorHint
+    L"Only connected devices are shown; virtual cables are hidden. To use a disabled device, turn it on in the Windows sound settings.",  // HiddenDevicesHint
+    L"Only connected devices are shown. To use a disabled device, turn it on in the Windows sound settings.",  // DisabledDevicesHint
+    L"Colors",  // TrayIconColors
+    L"Changes happen at once instead of moving; scrolling keeps a short glide.",  // ReduceMotionHint
+    L"Level",  // MicLevel
+    L"Speech peaking around −12 dB sounds right; keep the peaks below 0 dB or it distorts.",  // MicLevelHint
+    L"copy",  // CopySuffix
+    L"Never switch to",  // NeverSwitchTo
+    L"Switching after a disconnect and the Next output device hotkey skip these devices. You can still use one by clicking it.",  // NeverSwitchToHint
+    L"Every connected device is in Never switch to.",  // AllOutputsExcluded
+    L"At the even balance the icon shows the headset's charge, with a bolt while it charges. Headsets that report no battery keep the bars.",  // TrayBatteryHint
+    L"Welcome to OpenChatMix",  // TourWelcomeTitle
+    L"Balance game and chat with one control, on any headset or speakers.",  // TourWelcomeText
+    L"Ctrl + Alt + ← / → move the balance, Ctrl + Alt + ↓ evens it out. Change them in Settings → Hotkeys.",  // TourHotkeys
+    L"On a SteelSeries headset with a ChatMix dial, the dial works too.",  // TourDial
+    L"Click the icon in the tray to open this panel; the icon shows the balance.",  // TourTray
+    L"Apps in groups",  // TourGroupsTitle
+    L"ChatMix turns down one side: Game or Chat.",  // TourGroupsText
+    L"Apps follow Game unless you put them in another group.",  // TourGroupsGame
+    L"Discord and the Xbox party chat start in Chat.",  // TourGroupsChat
+    L"Open a group on the Mixer page to add an app; the trash icon takes it out again.",  // TourGroupsAdd
+    L"Extras when you need them",  // TourExtrasTitle
+    L"OpenChatMix stays light: extras are off until you turn them on, and only then use memory.",  // TourExtrasText
+    L"The Media group and the equalizer are off. Turn them on in Settings → Audio.",  // TourExtrasEq
+    L"Virtual device mode gives Game and Chat devices of their own, for streams and recordings.",  // TourExtrasRouting
+    L"The microphone chain adds noise suppression, an equalizer and VST plugins.",  // TourExtrasMic
+    L"Make it yours",  // TourYoursTitle
+    L"A few places worth a look.",  // TourYoursText
+    L"Settings → Appearance: theme, colors and what the tray icon shows at the even balance, such as the battery.",  // TourYoursLook
+    L"A SteelSeries headset gets a Headset tab with its own settings, from the equalizer to the microphone.",  // TourYoursHeadset
+    L"OpenChatMix starts with Windows. Change that, or open this tour again, in Settings → General.",  // TourYoursStart
+    L"Skip",  // TourSkip
+    L"Back",  // TourBack
+    L"Next",  // TourNext
+    L"Get started",  // TourDone
+    L"Show the tour",  // TourShow
+    L"A short look at what OpenChatMix can do",  // TourShowHint
+    L"Back",  // TipBack
+    L"Keep the panel open",  // TipPin
+    L"Let the panel hide again",  // TipUnpin
+    L"Previous band",  // TipPreviousBand
+    L"Next band",  // TipNextBand
+    L"Remove the plugin",  // TipRemovePlugin
+    L"Remove from the group; the app follows Game again",  // TipRemoveFromGroup
+    L"Never switch to this device on its own",  // TipNeverSwitch
+    L"Switch to this device again",  // TipSwitchAgain
+    L"Rename",  // TipRename
+    L"Make a copy",  // TipCopy
+    L"Delete (to the Recycle Bin)",  // TipDelete
+    L"Bars",  // TipMarkBars
+    L"Square",  // TipMarkSquare
+    L"Ring",  // TipMarkRing
+    L"Equals sign",  // TipMarkEquals
+    L"Headset battery",  // TipMarkBattery
+    L"Same as the output",  // SameAsOutput
+    L"None · Media plays with Game",  // RoutingMediaNone
+    L"Virtual device",  // RoutingDevice
+    L"Plays on",  // RoutingPlaysOn
+    L"Media device",  // RoutingMediaDevice
+    L"Apps that are not in Chat or Media play into this device. While the mode runs it is the default output, so the taskbar slider and the volume keys control it and the channels that play with it.",  // RoutingGameHint
+    L"Apps in the Chat group play into this device. While the mode runs it is the default communications device, so calls land here too. ChatMix balances it against Game.",  // RoutingChatHint
+    L"Media gets a virtual cable of its own, for example a third VB-Audio or Virtual Audio Cable; choosing one is up to you. ChatMix never changes it, its own Windows volume does. Don't pick the cable your microphone plays into. Without one, Media plays with Game.",  // RoutingMediaHint
+    L"Line out",  // LineOut
+    L"Line out plays",  // LineOutMode
+    L"Speakers",  // OptSpeakers
+    L"Streaming",  // OptStreaming
+    L"Stream: main sound",  // StreamMain
+    L"Stream: aux input",  // StreamAux
+    L"Stream: microphone",  // StreamMic
+    L"Screensaver now",  // StartScreensaver
+    L"No screensaver",  // ScreensaverOffTitle
+    L"Choose one on the Headset tab",  // ScreensaverOffText
+    L"Mute game",  // MuteGame
+    L"Game muted",  // GameMuted
+    L"Game unmuted",  // GameUnmuted
+    L"Only virtual audio cables are listed: a channel plays from a cable, never from a headset or speakers. To use a disabled cable, turn it on in the Windows sound settings.",  // ChannelDevicesHint
+    L"Chat equalizer",  // ProfileChatEq
+    L"Media equalizer",  // ProfileMediaEq
+    L"Try it on the headset",  // IdleTest
+    L"Shows it for a few seconds",  // IdleTestHint
+    L"Test",  // IdleTestButton
+    L"Mute media",  // MuteMedia
+    L"Media muted",  // MediaMuted
+    L"Media unmuted",  // MediaUnmuted
+    L"Gives way while these SteelSeries GG apps show something on the screen: ",  // IdleGgApps
+    L"Bluetooth icon",  // IdleBluetoothIcon
+    L"Shows on the screensaver while the base station's Bluetooth is on, and blinks while it pairs.",  // IdleBluetoothIconHint
+    L"Top left",  // CornerTopLeft
+    L"Top right",  // CornerTopRight
+    L"Bottom left",  // CornerBottomLeft
+    L"Bottom right",  // CornerBottomRight
+    L"3rd party add-ons",  // AddOns
+    L"GameSense programs on the GameDAC screen without GG",  // AddOnsSummary
+    L"Programs made for SteelSeries GameSense can show messages and more on the GameDAC screen through OpenChatMix while SteelSeries GG is closed. OpenChatMix includes no such programs: you add one you already have by choosing its file, and OpenChatMix starts it and shows what it sends.",  // AddOnsHint
+    L"SteelSeries GG is running, so it shows these programs itself. The add-ons start once GG is closed through its tray icon.",  // AddOnsGgHint
+    L"Add-ons need a headset with a screen, such as the Arctis Nova Pro.",  // AddOnsNoDisplayHint
+    L"File not found",  // AddOnMissing
+    L"Running",  // AddOnRunning
+    L"Waits until GG is closed",  // AddOnsWaitGg
+    L"Needs a headset with a screen",  // AddOnsNoDisplay
+    L"Not running",  // AddOnNotRunning
+    L"Start with OpenChatMix",  // AddOnEnabled
+    L"Runs while SteelSeries GG is closed and stops when GG starts.",  // AddOnEnabledHint
+    L"Shows the screens the program describes for SteelSeries displays.",  // AddOnGenericHint
+    L"Remove add-on",  // AddOnRemove
+    L"Choose a GameSense program",  // AddOnBrowseTitle
+    L"Mic muted",  // CardMuted
+    L"You joined",  // CardSelfJoined
+    L"You left",  // CardSelfLeft
+    L"Joins the channel",  // CardJoins
+    L"Leaves the channel",  // CardLeaves
+    L"Events",  // AddOnEvents
+    L"What each Discord event puts on the GameDAC screen, as in SteelSeries GG.",  // AddOnEventsHint
+    L"Message",  // EventMessage
+    L"Someone talking",  // EventVoiceActivity
+    L"You talking",  // EventYourVoice
+    L"Your mic muted",  // EventMuted
+    L"Someone joins your channel",  // EventUserJoined
+    L"Someone leaves your channel",  // EventUserLeft
+    L"You join a channel",  // EventYouJoined
+    L"You leave the channel",  // EventYouLeft
+    L"Show on the screen",  // AddOnShowEvent
+    L"Repeat",  // AddOnRepeat
+    L"Once",  // RepeatOnce
+    L"Several times",  // RepeatTimes
+    L"While it lasts",  // RepeatWhileOn
+    L"The displays below play in turn, then the usual screen comes back.",  // RepeatHint
+    L"The displays below play in turn for as long as the event lasts.",  // RepeatWhileOnHint
+    L"Times",  // AddOnTimes
+    L"Displays",  // AddOnDisplays
+    L"Shown one after another, each for its time. Drag one to move it.",  // AddOnDisplaysHint
+    L"Display",  // AddOnDisplay
+    L"Add a display",  // AddOnAddDisplay
+    L"Show on the headset",  // AddOnPreview
+    L"Shows while the add-ons run, with sample names and text.",  // AddOnPreviewHint
+    L"Reset to default",  // AddOnReset
+    L"Shows",  // AddOnDisplayKind
+    L"Text",  // AddOnKindText
+    L"Image",  // AddOnKindImage
+    L"Time",  // AddOnLength
+    L"Icon",  // AddOnIcon
+    L"Words",  // AddOnWords
+    L"The heading is bold beside the icon, the text below it. Add a field and the event fills it in.",  // AddOnFieldsHint
+    L"Heading",  // AddOnHeading
+    L"Text",  // AddOnText
+    L"Title",  // FieldTitle
+    L"Message",  // FieldMessage
+    L"User",  // FieldUser
+    L"Channel",  // FieldChannel
+    L"Image file",  // AddOnImageFile
+    L"A picture or GIF, in black and white across the whole screen.",  // AddOnImageHint
+    L"Remove display",  // AddOnRemoveDisplay
+    L"Alex (#general)",  // PreviewTitle
+    L"This is how a message looks on the GameDAC.",  // PreviewMessage
+    L"Alex",  // PreviewUser
+    L"General",  // PreviewChannel
+    L"Visualizer",  // Visualizer
+    L"Show while something plays",  // VisualizerShow
+    L"Bars that follow the sound fill the whole GameDAC screen, like an equalizer. Turning the knob shows the usual screen for a moment; add-on screens such as Discord messages show on top.",  // VisualizerHint
+    L"Shows for",  // VisualizerFor
+    L"Music and video",  // VisualizerMedia
+    L"Any sound",  // VisualizerSound
+    L"While an app tells Windows it plays, as the media controls in Windows show it: players, YouTube in the browser and the like.",  // VisualizerMediaHint
+    L"Whenever the headset plays sound, games and calls too.",  // VisualizerSoundHint
+    L"2.4 GHz",  // Link24Ghz
+    L"3.5 mm",  // LinkJack
+    L"Battery color",  // BatteryColor
+    L"Theme",  // BatteryByTheme
+    L"Charge",  // BatteryByCharge
+    L"The battery takes the theme's accent color.",  // BatteryThemeHint
+    L"From green when full to red when empty.",  // BatteryChargeHint
+    L"Backup",  // SettingsBackup
+    L"Export",  // SettingsExport
+    L"Import",  // SettingsImport
+    L"Settings, presets and plugins in one ZIP file. Import restarts OpenChatMix and keeps the current ones in Backups.",  // SettingsTransferHint
+    L"Export settings",  // SettingsExportTitle
+    L"Import settings",  // SettingsImportTitle
+    L"OpenChatMix settings",  // SettingsFilter
+    L"Saved:",  // SettingsExported
+    L"The file could not be saved.",  // SettingsExportFailed
+    L"This file holds no OpenChatMix settings.",  // SettingsImportFailed
+    L"Next microphone",  // NextMicrophone
+    L"No other microphone",  // NoOtherMicrophone
+    L"Microphone processing is off",  // MicProcessingOff
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -251,8 +482,6 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Гра",
     L"Чат",
     L"Медіа",
-    L"Програми",
-    L"Медіа не залежить від ChatMix",
     L"Додати",
     L"Програми з'являться тут, щойно відтворять звук. Інші можна додати вручну.",
     L"не запущена",
@@ -280,10 +509,10 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Мова",
     L"Запускати разом з Windows",
     L"Спливаюче вікно для гарячих клавіш",
-    L"Напівпрозорий фон",
     L"Вийти з OpenChatMix",
-    L"Підтримка: Arctis Nova Pro Wired і Wireless, Nova 7, 7X, 7 Gen 2, Arctis 7+, Nova 5X. "
-    L"Без гарнітури баланс діє на вихід за замовчуванням і керується клавішами.",
+    L"Працює з будь-якими навушниками чи колонками: баланс діє на типовий вихід і керується клавішами або колесом "
+    L"миші. Коліщатко ChatMix і власні налаштування працюють на Arctis Nova Pro Wired і Wireless, Nova 7, 7X, "
+    L"7 Gen 2, Arctis 7+ і Nova 5X.",
     L"Відкрити",
     L"Налаштування",
     L"Перепідключити гарнітуру",
@@ -311,7 +540,6 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Вмикати разом з гарнітурою",
     L"Приглушувати гру під час дзвінків",
     L"Вимк.",
-    L"Увімк.",
     L"Низький",
     L"Середній",
     L"Високий",
@@ -336,10 +564,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Не вибрано",
     L"Гарнітура (автоматично)",
     L"Працює",
-    L"Оберіть пристрої для гри, чату й вихід",
-    L"Гра, чат і вихід мають бути різними пристроями",
+    L"Оберіть пристрої для гри й чату та вихід",
+    L"Кожному каналу потрібен свій пристрій, і жоден канал не може грати в пристрій іншого",
     L"Вибраний пристрій недоступний",
-    L"Направте ігри на пристрій для гри, а голосовий чат — на пристрій для чату. Програми, що грають прямо на вихід, не змінюються.",
     L"Сховати",
     L"Аудіопристроїв не знайдено",
     L"Зберегти",
@@ -353,7 +580,6 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Заставка",
     L"Анімація",
     L"Зорі",
-    L"Навушники",
     L"Годинник",
     L"Гра «Життя»",
     L"Чорний екран",
@@ -377,8 +603,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Програми тут ідуть за стороною чату.",
     L"Програми тут зберігають повну гучність і не залежать від ChatMix.",
     L"Грає на",
-    L"Додати програму",
-    L"Еквалайзер працює в режимі віртуальних пристроїв: там гра й чат проходять через OpenChatMix, тож їх можна налаштувати для будь-яких навушників.",
+    L"Еквалайзер працює в режимі віртуальних пристроїв, де гра й чат проходять через OpenChatMix, а також на обробленому мікрофоні.",
     L"Налаштування звуку",
     L"Пресети",
     L"Смуга",
@@ -400,18 +625,26 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Групи, віртуальні пристрої, приглушення",
     L"Сповіщення",
     L"Спливаючі вікна, батарея, SteelSeries GG",
-    L"Ігрові профілі",
-    L"Налаштування, що діють під час гри",
+    L"Профілі програм",
+    L"Баланс і еквалайзери, що діють, поки програма запущена",
     L"Тема",
     L"Авто",
     L"Світла",
     L"Темна",
+    L"Контраст",
+    L"Звичайний",
+    L"Середній",
+    L"Високий",
     L"Колір",
     L"Колір акценту Windows",
     L"Власний колір",
     L"Відтінок",
     L"Насиченість",
     L"Введіть HEX-код, наприклад #3B82F6",
+    L"Колір гри",
+    L"Колір чату",
+    L"Підібраний до кольору гри",
+    L"Кольори лишаються м'якими, а чат завжди має власний відтінок поруч із грою, тож обидві сторони легко розрізнити.",
     L"Фон",
     L"Акрил",
     L"Mica",
@@ -421,7 +654,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Кольоровий",
     L"Монохромний",
     L"Група «Медіа»",
-    L"Програми з «Медіа» мають повну гучність і не залежать від ChatMix. У режимі віртуальних пристроїв не діє.",
+    L"Програми з «Медіа» мають повну гучність і не залежать від ChatMix. У режимі віртуальних пристроїв «Медіа» потребує окремого віртуального пристрою.",
     L"Направляти програми на їхній пристрій",
     L"Програми чату грають на пристрої чату, решта — на пристрої гри. Деякі програми перемкнуться лише після перезапуску.",
     L"Приглушувати гру під час чату",
@@ -431,20 +664,18 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Показує баланс, коли крутиться коліщатко ChatMix, на гарнітурах без екрана.",
     L"Попередження про низький заряд",
     L"Попереджати при",
-    L"Низький заряд гарнітури",
-    L"Заряд",
+    L"Низький заряд",
+    L"скоро зарядіть",
     L"Вимкнути чат",
-    L"Наступний пресет EQ",
     L"Чат вимкнено",
     L"Чат увімкнено",
     L"Додати гру",
-    L"Додайте гру: її налаштування діятимуть, поки вона запущена, і скасуються, коли вона закриється.",
+    L"Додайте програму чи гру: її баланс і еквалайзери діятимуть, поки вона запущена, і скасуються, коли вона закриється.",
     L"Баланс",
     L"Еквалайзер гри",
     L"Еквалайзер гарнітури",
     L"Без змін",
     L"Видалити профіль",
-    L"Зараз запущена",
     L"Еквалайзер",
     L"Ефекти",
     L"Підсилення басів",
@@ -454,11 +685,10 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Вирівнює гучні й тихі моменти.",
     L"Вимк.",
     L"Тихо",
-    L"Збалансовано",
+    L"Помірно",
     L"Гучно",
-    L"Додає вкладку «Еквалайзер»: у режимі віртуальних пристроїв гру й чат можна налаштувати еквалайзером.",
+    L"Додає вкладку «Еквалайзер»: у режимі віртуальних пристроїв — для гри, чату й медіа, для мікрофона — завжди.",
     L"Керувати пресетами…",
-    L"Пресет",
     L"Ігрові пресети",
     L"Застосовується як власна крива. Незбережена власна крива спершу зберігається в «Мої пресети».",
     L"Резервна власна крива",
@@ -476,6 +706,238 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Сторінка",
     L"Нову версію можна встановити в налаштуваннях.",
     L"Версія",
+    L"Іконка в балансі",
+    L"гарячі клавіші",
+    L"Наступний пристрій виводу",
+    L"Пристрій виводу",
+    L"Іншого пристрою виводу немає",
+    L"Колесо миші",
+    L"Затисніть клавіші й крутіть колесо: вгору — більше чату, вниз — більше гри. Натискання на колесо вирівнює баланс. Перехоплюється лише ця комбінація, тож зум через Ctrl чи Ctrl + Alt з колесом працює як раніше.",
+    L"Мік",
+    L"Шумодав, компресор, еквалайзер, VST-плагіни",
+    L"Обробляти мікрофон",
+    L"Оброблений мікрофон грає у віртуальний кабель. Оберіть його інший кінець, наприклад CABLE Output, як мікрофон у Discord, OBS чи грі.",
+    L"Мікрофон",
+    L"Віртуальний кабель",
+    L"Типовий у Windows",
+    L"Автоматично (CABLE Input)",
+    L"Немає віртуального кабелю для мікрофона. Встановіть VB-Audio Virtual Cable або оберіть кабель.",
+    L"Тримати рівні на 100%",
+    L"Windows і програми для дзвінків самі зменшують рівень мікрофона. Це тримає мікрофон і обидва кінці кабелю на 100%.",
+    L"Шумодав",
+    L"Звичайний",
+    L"Сильний",
+    L"Звичайний прибирає вентилятори, клавіатуру та шум кімнати; сильний ще й глушить мікрофон, поки ви не говорите.",
+    L"Компресор",
+    L"Легкий",
+    L"Середній",
+    L"Сильний",
+    L"Тихе мовлення робить гучнішим, а гучне тихішим.",
+    L"Еквалайзер",
+    L"VST-плагіни",
+    L"Ефекти VST 2 і VST 3 працюють після вбудованих, згори донизу. Натисніть на плагін, щоб відкрити його вікно.",
+    L"Додати плагін",
+    L"Оберіть VST-плагін",
+    L"VST-плагіни",
+    L"не вдалося завантажити",
+    L"Пристрої виводу",
+    L"Пріоритет, перемикання при відключенні",
+    L"Перемикати, коли пристрій відключається",
+    L"Звук перейде на найвищий пристрій зі списку нижче, що лишився підключеним.",
+    L"Повертатися на пристрій, коли він підключається",
+    L"Коли перший пристрій зі списку знову підключається, звук повертається на нього.",
+    L"Пріоритет",
+    L"Відключені й вимкнені пристрої тут не показуються. Щоб керувати таким пристроєм, спершу увімкніть його в параметрах звуку Windows (Система → Звук → Усі звукові пристрої). Віртуальні кабелі приховано. Натисніть на пристрій, щоб увімкнути його зараз; хоткей «Наступний пристрій виводу» йде в цьому порядку.",
+    L"додає",
+    L"Мова, запуск з Windows, резервна копія, вихід",
+    L"Порядок обробки",
+    L"Перетягуйте кроки, щоб змінити порядок, у якому їх проходить мікрофон.",
+    L"Слухати мікрофон",
+    L"Відтворює оброблений мікрофон у навушниках, щоб перевіряти налаштування й плагіни. Інші й далі чують його лише через кабель.",
+    L"Показано лише підключені пристрої; віртуальні кабелі приховано. Щоб використати вимкнений пристрій, увімкніть його в параметрах звуку Windows.",
+    L"Показано лише підключені пристрої. Щоб використати вимкнений пристрій, увімкніть його в параметрах звуку Windows.",
+    L"Кольори",
+    L"Зміни відбуваються одразу, без руху; прокрутка лишає коротке плавне ковзання.",
+    L"Рівень",
+    L"Голос із піками близько −12 дБ звучить добре; тримайте піки нижче 0 дБ, інакше звук спотворюється.",
+    L"копія",
+    L"Не перемикатися на",
+    L"Перемикання після відключення й хоткей «Наступний пристрій виводу» оминають ці пристрої. Увімкнути такий пристрій можна, натиснувши на нього.",
+    L"Усі підключені пристрої в списку «Не перемикатися на».",
+    L"При рівному балансі значок показує заряд гарнітури, під час заряджання — з блискавкою. Гарнітури, що не повідомляють заряд, лишають смужки.",
+    L"Вітаємо в OpenChatMix",
+    L"Баланс гри й чату одним рухом — на будь-яких навушниках чи колонках.",
+    L"Ctrl + Alt + ← / → змінюють баланс, Ctrl + Alt + ↓ вирівнює його. Змінити їх можна в Налаштування → Гарячі клавіші.",
+    L"На гарнітурі SteelSeries з коліщатком ChatMix працює й коліщатко.",
+    L"Натисніть значок у треї, щоб відкрити цю панель; значок показує баланс.",
+    L"Програми в групах",
+    L"ChatMix приглушує одну зі сторін: гру або чат.",
+    L"Програми йдуть за грою, доки ви не перенесете їх в іншу групу.",
+    L"Discord і чат вечірки Xbox одразу в чаті.",
+    L"Відкрийте групу на сторінці «Мікшер», щоб додати програму; кошик прибирає її.",
+    L"Більше — коли потрібно",
+    L"OpenChatMix лишається легким: додаткові функції вимкнені, доки ви їх не ввімкнете, і лише тоді займають пам'ять.",
+    L"Група «Медіа» й еквалайзер вимкнені. Увімкніть їх у Налаштування → Звук.",
+    L"Режим віртуальних пристроїв дає грі й чату окремі пристрої — для стрімів і записів.",
+    L"Обробка мікрофона додає шумодав, еквалайзер і VST-плагіни.",
+    L"Під себе",
+    L"Кілька місць, які варто переглянути.",
+    L"Налаштування → Вигляд: тема, кольори й те, що значок у треї показує в балансі, наприклад заряд батареї.",
+    L"Гарнітура SteelSeries отримує вкладку «Гарнітура» з її власними налаштуваннями — від еквалайзера до мікрофона.",
+    L"OpenChatMix запускається разом з Windows. Змінити це чи відкрити знайомство знову можна в Налаштування → Загальне.",
+    L"Пропустити",
+    L"Назад",
+    L"Далі",
+    L"Почати",
+    L"Показати знайомство",
+    L"Коротко про те, що вміє OpenChatMix",
+    L"Назад",
+    L"Не ховати панель",
+    L"Знову ховати панель",
+    L"Попередня смуга",
+    L"Наступна смуга",
+    L"Прибрати плагін",
+    L"Прибрати з групи; програма знову йде за грою",
+    L"Ніколи не перемикатися на цей пристрій самостійно",
+    L"Знову перемикатися на цей пристрій",
+    L"Перейменувати",
+    L"Створити копію",
+    L"Видалити (у Кошик)",
+    L"Смужки",
+    L"Квадрат",
+    L"Кільце",
+    L"Знак «=»",
+    L"Батарея гарнітури",
+    L"Як основний вихід",
+    L"Немає · медіа грає разом із грою",
+    L"Віртуальний пристрій",
+    L"Грає на",
+    L"Пристрій для медіа",
+    L"Програми, що не в чаті й не в «Медіа», грають у цей пристрій. Поки режим працює, він типовий вихід, тож повзунок на панелі завдань і клавіші гучності керують ним і каналами, що грають разом із ним.",
+    L"Програми з групи «Чат» грають у цей пристрій. Поки режим працює, він типовий пристрій зв'язку, тож дзвінки теж ідуть сюди. ChatMix урівноважує його з грою.",
+    L"«Медіа» отримує власний віртуальний кабель, наприклад третій VB-Audio чи Virtual Audio Cable; який саме — обираєте ви. ChatMix його не змінює, а його власна гучність у Windows — так. Не обирайте кабель, у який грає мікрофон. Без нього медіа грає разом із грою.",
+    L"Лінійний вихід",
+    L"Лінійний вихід грає",
+    L"Колонки",
+    L"Стрімінг",
+    L"Стрім: основний звук",
+    L"Стрім: aux-вхід",
+    L"Стрім: мікрофон",
+    L"Заставка зараз",
+    L"Заставку не вибрано",
+    L"Оберіть її на вкладці «Гарнітура»",
+    L"Вимкнути гру",
+    L"Гру вимкнено",
+    L"Гру увімкнено",
+    L"Тут лише віртуальні аудіокабелі: канал грає з кабелю, а не з навушників чи колонок. Щоб використати вимкнений кабель, увімкніть його в параметрах звуку Windows.",
+    L"Еквалайзер чату",
+    L"Еквалайзер медіа",
+    L"Спробувати на гарнітурі",
+    L"Показує її кілька секунд",
+    L"Тест",
+    L"Вимкнути медіа",
+    L"Медіа вимкнено",
+    L"Медіа увімкнено",
+    L"Поступається, поки ці програми SteelSeries GG щось показують на екрані: ",
+    L"Значок Bluetooth",
+    L"Видно на заставці, поки Bluetooth базової станції увімкнений; блимає під час сполучення.",
+    L"Угорі ліворуч",
+    L"Угорі праворуч",
+    L"Унизу ліворуч",
+    L"Унизу праворуч",
+    L"Сторонні доповнення",
+    L"Програми GameSense на екрані GameDAC без GG",
+    L"Програми, зроблені для SteelSeries GameSense, можуть показувати повідомлення та інше на екрані GameDAC через OpenChatMix, поки SteelSeries GG закритий. OpenChatMix не містить таких програм: ви додаєте наявну, вибравши її файл, а OpenChatMix запускає її й показує те, що вона надсилає.",
+    L"SteelSeries GG працює, тож показує ці програми сам. Доповнення запустяться, щойно GG закриють через його значок у треї.",
+    L"Доповненням потрібна гарнітура з екраном, як-от Arctis Nova Pro.",
+    L"Файл не знайдено",
+    L"Працює",
+    L"Чекає, поки закриють GG",
+    L"Потрібна гарнітура з екраном",
+    L"Не працює",
+    L"Запускати з OpenChatMix",
+    L"Працює, поки SteelSeries GG закритий, і зупиняється, коли GG запускається.",
+    L"Показує екрани, які програма описує для дисплеїв SteelSeries.",
+    L"Прибрати доповнення",
+    L"Виберіть програму GameSense",
+    L"Мікрофон вимкнено",
+    L"Ви приєдналися",
+    L"Ви вийшли",
+    L"Заходить у канал",
+    L"Виходить з каналу",
+    L"Події",
+    L"Що кожна подія Discord показує на екрані GameDAC, як у SteelSeries GG.",
+    L"Повідомлення",
+    L"Хтось говорить",
+    L"Ви говорите",
+    L"Ваш мікрофон вимкнено",
+    L"Хтось заходить у ваш канал",
+    L"Хтось виходить з вашого каналу",
+    L"Ви заходите в канал",
+    L"Ви виходите з каналу",
+    L"Показувати на екрані",
+    L"Повтор",
+    L"Один раз",
+    L"Кілька разів",
+    L"Поки триває",
+    L"Кадри нижче показуються по черзі, потім повертається звичайний екран.",
+    L"Кадри нижче показуються по черзі, поки триває подія.",
+    L"Скільки разів",
+    L"Кадри",
+    L"Показуються один за одним, кожен свій час. Перетягніть кадр, щоб пересунути.",
+    L"Кадр",
+    L"Додати кадр",
+    L"Показати на гарнітурі",
+    L"Показує, поки працюють доповнення, з прикладовими іменами й текстом.",
+    L"Скинути до типових",
+    L"Показує",
+    L"Текст",
+    L"Зображення",
+    L"Час",
+    L"Значок",
+    L"Слова",
+    L"Заголовок жирний поруч зі значком, текст під ним. Додайте поле, і подія підставить його значення.",
+    L"Заголовок",
+    L"Текст",
+    L"Заголовок",
+    L"Повідомлення",
+    L"Користувач",
+    L"Канал",
+    L"Файл зображення",
+    L"Картинка чи GIF, чорно-білі на весь екран.",
+    L"Прибрати кадр",
+    L"Олекса (#загальний)",
+    L"Ось так повідомлення виглядає на GameDAC.",
+    L"Олекса",
+    L"Загальний",
+    L"Візуалізатор",
+    L"Показувати, поки щось грає",
+    L"Стовпчики, що йдуть за звуком, заповнюють увесь екран GameDAC, як еквалайзер. Поворот коліщатка на мить показує звичайний екран; екрани доповнень, як-от повідомлення Discord, з'являються поверх.",
+    L"Показувати для",
+    L"Музики й відео",
+    L"Будь-якого звуку",
+    L"Поки програма повідомляє Windows, що грає, як показують медіаелементи керування Windows: плеєри, YouTube у браузері тощо.",
+    L"Щоразу, коли гарнітура грає звук, зокрема в іграх і дзвінках.",
+    L"2,4 ГГц",
+    L"3,5 мм",
+    L"Колір батареї",
+    L"Тема",
+    L"Заряд",
+    L"Батарея має акцентний колір теми.",
+    L"Від зеленого, коли повна, до червоного, коли порожня.",
+    L"Резервна копія",
+    L"Експорт",
+    L"Імпорт",
+    L"Налаштування, пресети й плагіни в одному ZIP-файлі. Імпорт перезапускає OpenChatMix, поточні зберігаються в Backups.",
+    L"Експорт налаштувань",
+    L"Імпорт налаштувань",
+    L"Налаштування OpenChatMix",
+    L"Збережено:",
+    L"Не вдалося зберегти файл.",
+    L"У цьому файлі немає налаштувань OpenChatMix.",
+    L"Наступний мікрофон",
+    L"Немає іншого мікрофона",
+    L"Обробку мікрофона вимкнено",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

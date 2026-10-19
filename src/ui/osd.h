@@ -20,8 +20,9 @@ public:
     Osd& operator=(const Osd&) = delete;
 
     void Show(Levels levels);
-    // A short notice in place of the balance, e.g. "Chat muted".
-    void ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail);
+    // A short notice in place of the balance, e.g. "Chat muted". A warning (low battery) uses the
+    // error colors and stays longer.
+    void ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail, bool warning = false);
     void Hide();
     void SetReduceMotion(bool reduce) { reduceMotion_ = reduce; }
 
@@ -50,6 +51,7 @@ private:
     wchar_t messageGlyph_ = 0;
     std::wstring messageTitle_;
     std::wstring messageDetail_;
+    bool warning_ = false;
     bool reduceMotion_ = false;
     float position_ = 0.0f;  // Animated slider position in steps.
     float opacity_ = 0.0f;

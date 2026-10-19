@@ -38,6 +38,75 @@ public:
 
 class DECLSPEC_UUID("870af99c-171d-4f9e-af0d-e63df40c2bc9") CPolicyConfigClient;
 
+// PKEY_AudioEndpoint_FormFactor, an EndpointFormFactor value.
+constexpr PROPERTYKEY kFormFactorKey = {
+    {0x1da5d803, 0xd492, 0x4edd, {0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e}}, 0};
+
+// The adapter's connector that an endpoint is wired to.
+ComPtr<IConnector> AdapterConnector(IMMDevice* device) {
+    ComPtr<IDeviceTopology> endpointTopology;
+    ComPtr<IConnector> endpointConnector;
+    ComPtr<IConnector> adapterConnector;
+    if (FAILED(device->Activate(__uuidof(IDeviceTopology), CLSCTX_ALL, nullptr, &endpointTopology)) ||
+        FAILED(endpointTopology->GetConnector(0, &endpointConnector)) ||
+        FAILED(endpointConnector->GetConnectedTo(&adapterConnector))) {
+        return nullptr;
+    }
+    return adapterConnector;
+}
+
+std::optional<UINT> FormFactorOf(IMMDevice* device) {
+    ComPtr<IPropertyStore> store;
+    if (FAILED(device->OpenPropertyStore(STGM_READ, &store))) {
+        return std::nullopt;
+    }
+    std::optional<UINT> formFactor;
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    if (SUCCEEDED(store->GetValue(kFormFactorKey, &value)) && value.vt == VT_UI4) {
+        formFactor = value.ulVal;
+    }
+    PropVariantClear(&value);
+    return formFactor;
+}
+
+// The jack behind an endpoint as its sound card describes it: Unknown for built-in speakers, nothing when
+// the card describes no jack.
+std::optional<EndpointLink> JackLinkOf(IMMDevice* device) {
+    ComPtr<IConnector> connector = AdapterConnector(device);
+    ComPtr<IPart> part;
+    ComPtr<IKsJackDescription> jacks;
+    UINT count = 0;
+    if (!connector || FAILED(connector.As(&part)) ||
+        FAILED(part->Activate(CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&jacks))) || FAILED(jacks->GetJackCount(&count)) ||
+        count == 0) {
+        return std::nullopt;
+    }
+    for (UINT i = 0; i < count; ++i) {
+        KSJACK_DESCRIPTION jack{};
+        if (FAILED(jacks->GetJackDescription(i, &jack)) || jack.PortConnection == ePortConnIntegratedDevice ||
+            jack.GenLocation == eGenLocInternal) {
+            continue;
+        }
+        // Laptops share one endpoint between the speakers and the headphone jack.
+        if (jack.PortConnection == ePortConnBothIntegratedAndJack && !jack.IsConnected) {
+            continue;
+        }
+        switch (jack.ConnectionType) {
+        case eConnType3Point5mm:
+        case eConnTypeQuarter:
+        case eConnTypeCombination:
+        case eConnTypeOtherAnalog:
+            return EndpointLink::Jack;
+        case eConnTypeOptical:
+            return EndpointLink::Spdif;
+        default:
+            break;
+        }
+    }
+    return EndpointLink::Unknown;
+}
+
 ComPtr<IPolicyConfig> PolicyConfig() {
     ComPtr<IPolicyConfig> config;
     if (FAILED(CoCreateInstance(__uuidof(CPolicyConfigClient), nullptr, CLSCTX_ALL, __uuidof(IPolicyConfig), &config))) {
@@ -74,16 +143,10 @@ std::wstring EndpointIdOf(IMMDevice* device) {
 }
 
 std::wstring EndpointAdapterId(IMMDevice* device) {
-    ComPtr<IDeviceTopology> endpointTopology;
-    if (FAILED(device->Activate(__uuidof(IDeviceTopology), CLSCTX_ALL, nullptr, &endpointTopology))) {
-        return {};
-    }
-    ComPtr<IConnector> endpointConnector;
-    ComPtr<IConnector> adapterConnector;
+    ComPtr<IConnector> adapterConnector = AdapterConnector(device);
     ComPtr<IPart> adapterPart;
     ComPtr<IDeviceTopology> adapterTopology;
-    if (FAILED(endpointTopology->GetConnector(0, &endpointConnector)) ||
-        FAILED(endpointConnector->GetConnectedTo(&adapterConnector)) || FAILED(adapterConnector.As(&adapterPart)) ||
+    if (!adapterConnector || FAILED(adapterConnector.As(&adapterPart)) ||
         FAILED(adapterPart->GetTopologyObject(&adapterTopology))) {
         return {};
     }
@@ -96,14 +159,53 @@ std::wstring EndpointAdapterId(IMMDevice* device) {
     return result;
 }
 
-std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled) {
+EndpointLink EndpointLinkOf(const std::wstring& endpointId) {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IMMDevice> device;
+    if (endpointId.empty() ||
+        FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
+        FAILED(enumerator->GetDevice(endpointId.c_str(), &device))) {
+        return EndpointLink::Unknown;
+    }
+    std::wstring adapter = EndpointAdapterId(device.Get());
+    std::transform(adapter.begin(), adapter.end(), adapter.begin(), [](wchar_t c) { return std::towlower(c); });
+    // The bus starts the adapter's device path: usb#, bthenum# (bthhfenum#, bthledevice#), hdaudio# and
+    // the like for sound cards, root# or swd# for virtual devices.
+    if (adapter.find(L"\\usb#") != std::wstring::npos) {
+        return EndpointLink::Usb;
+    }
+    if (adapter.find(L"\\bth") != std::wstring::npos || adapter.find(L"#bth") != std::wstring::npos) {
+        return EndpointLink::Bluetooth;
+    }
+    if (adapter.empty() || adapter.find(L"\\root#") != std::wstring::npos ||
+        adapter.find(L"\\swd#") != std::wstring::npos) {
+        return EndpointLink::Unknown;
+    }
+    const std::optional<UINT> formFactor = FormFactorOf(device.Get());
+    auto is = [&formFactor](EndpointFormFactor kind) { return formFactor == static_cast<UINT>(kind); };
+    if (is(DigitalAudioDisplayDevice)) {
+        return EndpointLink::Hdmi;
+    }
+    if (is(SPDIF)) {
+        return EndpointLink::Spdif;
+    }
+    if (const std::optional<EndpointLink> jack = JackLinkOf(device.Get())) {
+        return *jack;
+    }
+    // Without a jack description, only headphones and headsets surely plug into one.
+    return is(Headphones) || is(Headset) ? EndpointLink::Jack : EndpointLink::Unknown;
+}
+
+namespace {
+
+std::vector<AudioEndpoint> ListEndpoints(EDataFlow flow, bool includeDisabled) {
     std::vector<AudioEndpoint> endpoints;
     ComPtr<IMMDeviceEnumerator> enumerator;
     ComPtr<IMMDeviceCollection> devices;
     UINT count = 0;
     const DWORD states = DEVICE_STATE_ACTIVE | (includeDisabled ? DEVICE_STATE_DISABLED : 0);
     if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
-        FAILED(enumerator->EnumAudioEndpoints(eRender, states, &devices)) || FAILED(devices->GetCount(&count))) {
+        FAILED(enumerator->EnumAudioEndpoints(flow, states, &devices)) || FAILED(devices->GetCount(&count))) {
         return endpoints;
     }
     for (UINT i = 0; i < count; ++i) {
@@ -119,14 +221,93 @@ std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled) {
     return endpoints;
 }
 
-std::wstring DefaultRenderEndpoint(ERole role) {
+std::wstring DefaultEndpoint(EDataFlow flow, ERole role) {
     ComPtr<IMMDeviceEnumerator> enumerator;
     ComPtr<IMMDevice> device;
     if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
-        FAILED(enumerator->GetDefaultAudioEndpoint(eRender, role, &device))) {
+        FAILED(enumerator->GetDefaultAudioEndpoint(flow, role, &device))) {
         return {};
     }
     return EndpointIdOf(device.Get());
+}
+
+// Called on audio service threads; only posts to the window.
+class VolumeNotifier final : public IAudioEndpointVolumeCallback {
+public:
+    VolumeNotifier(HWND window, UINT message) : window_(window), message_(message) {}
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&refs_); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG refs = InterlockedDecrement(&refs_);
+        if (refs == 0) {
+            delete this;
+        }
+        return refs;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IAudioEndpointVolumeCallback)) {
+            *out = static_cast<IAudioEndpointVolumeCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    HRESULT STDMETHODCALLTYPE OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA) override {
+        PostMessageW(window_, message_, 0, 0);
+        return S_OK;
+    }
+
+private:
+    LONG refs_ = 1;
+    HWND window_;
+    UINT message_;
+};
+
+}  // namespace
+
+std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled) {
+    return ListEndpoints(eRender, includeDisabled);
+}
+
+std::vector<AudioEndpoint> ListCaptureEndpoints() {
+    return ListEndpoints(eCapture, false);
+}
+
+std::wstring DefaultCaptureEndpoint(ERole role) {
+    return DefaultEndpoint(eCapture, role);
+}
+
+IAudioEndpointVolumeCallback* CreateVolumeNotifier(HWND window, UINT message) {
+    return new VolumeNotifier(window, message);
+}
+
+std::optional<AudioEndpoint> FindMicCable(const std::vector<AudioEndpoint>& endpoints) {
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.name.rfind(L"CABLE Input", 0) == 0) {
+            return endpoint;
+        }
+    }
+    return std::nullopt;
+}
+
+std::wstring PairedCaptureEndpoint(const AudioEndpoint& render, const std::vector<AudioEndpoint>& captures) {
+    std::wstring wanted = render.name;
+    if (const size_t at = wanted.find(L" Input"); at != std::wstring::npos) {
+        wanted.replace(at, 6, L" Output");
+    } else if (const size_t in = wanted.find(L" In "); in != std::wstring::npos) {
+        wanted.replace(in, 4, L" Out ");
+    }
+    for (const auto& capture : captures) {
+        if (capture.name == wanted) {
+            return capture.id;
+        }
+    }
+    return {};
+}
+
+std::wstring DefaultRenderEndpoint(ERole role) {
+    return DefaultEndpoint(eRender, role);
 }
 
 bool SetDefaultRenderEndpoint(const std::wstring& id, ERole role) {
@@ -183,4 +364,11 @@ std::optional<VirtualDevicePair> FindVirtualDevices(const std::vector<AudioEndpo
 
 bool IsSonarEndpoint(const AudioEndpoint& endpoint) {
     return endpoint.name.find(L"SteelSeries Sonar") != std::wstring::npos;
+}
+
+bool IsVirtualEndpoint(const AudioEndpoint& endpoint) {
+    constexpr std::wstring_view kMarks[] = {L"CABLE", L"VB-Audio", L"Virtual Audio Cable", L"Voicemeeter", L"VoiceMeeter"};
+    return IsSonarEndpoint(endpoint) || std::any_of(std::begin(kMarks), std::end(kMarks), [&](std::wstring_view mark) {
+               return endpoint.name.find(mark) != std::wstring::npos;
+           });
 }

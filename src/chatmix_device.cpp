@@ -281,7 +281,8 @@ void ChatMixDevice::Start(Levels levels) {
     // Read-only queries; their answers arrive as headset updates.
     const HeadsetFeatures& features = FeaturesFor(model_->family);
     for (const uint8_t query : {features.stateQuery, features.batteryQuery}) {
-        if (query) {
+        // The dongles' battery comes with the status request sent above.
+        if (query && !(model_->protocol == DeviceProtocol::NovaStatus && query == kNovaStatusRequest)) {
             Sleep(kCommandGapMs);
             Send({query});
         }

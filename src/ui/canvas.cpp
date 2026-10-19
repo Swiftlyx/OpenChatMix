@@ -207,6 +207,56 @@ void Canvas::StrokeRound(const D2D1_RECT_F& rect, float radius, D2D1_COLOR_F col
     target_->DrawRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), brush_.Get(), width);
 }
 
+void Canvas::FillShape(const D2D1_RECT_F& rect, const Corners& corners, D2D1_COLOR_F color) {
+    const float limit = std::min(rect.right - rect.left, rect.bottom - rect.top) / 2.0f;
+    if (limit <= 0.0f) {
+        return;
+    }
+    const float tl = std::clamp(corners.topLeft, 0.0f, limit);
+    const float tr = std::clamp(corners.topRight, 0.0f, limit);
+    const float br = std::clamp(corners.bottomRight, 0.0f, limit);
+    const float bl = std::clamp(corners.bottomLeft, 0.0f, limit);
+    if (tl == tr && tr == br && br == bl) {
+        FillRound(rect, tl, color);
+        if (tl <= 0.0f) {
+            FillRect(rect, color);
+        }
+        return;
+    }
+    ComPtr<ID2D1PathGeometry> path;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(d2d_->CreatePathGeometry(&path)) || FAILED(path->Open(&sink))) {
+        return;
+    }
+    // Each corner is a quarter circle drawn as a cubic Bézier (handles at 0.5523 of the radius), from
+    // where the straight edge ends, around the rectangle's corner point, to where the next edge starts.
+    constexpr float kHandle = 0.5523f;
+    auto corner = [&](D2D1_POINT_2F from, D2D1_POINT_2F cornerPoint, D2D1_POINT_2F to) {
+        if (from.x == to.x && from.y == to.y) {
+            return;
+        }
+        sink->AddBezier({{from.x + (cornerPoint.x - from.x) * kHandle, from.y + (cornerPoint.y - from.y) * kHandle},
+                         {to.x + (cornerPoint.x - to.x) * kHandle, to.y + (cornerPoint.y - to.y) * kHandle},
+                         to});
+    };
+    const float l = rect.left, t = rect.top, r = rect.right, b = rect.bottom;
+    sink->BeginFigure({l + tl, t}, D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine({r - tr, t});
+    corner({r - tr, t}, {r, t}, {r, t + tr});
+    sink->AddLine({r, b - br});
+    corner({r, b - br}, {r, b}, {r - br, b});
+    sink->AddLine({l + bl, b});
+    corner({l + bl, b}, {l, b}, {l, b - bl});
+    sink->AddLine({l, t + tl});
+    corner({l, t + tl}, {l, t}, {l + tl, t});
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    if (FAILED(sink->Close())) {
+        return;
+    }
+    brush_->SetColor(color);
+    target_->FillGeometry(path.Get(), brush_.Get());
+}
+
 void Canvas::FillCircle(D2D1_POINT_2F center, float radius, D2D1_COLOR_F color) {
     brush_->SetColor(color);
     target_->FillEllipse(D2D1::Ellipse(center, radius, radius), brush_.Get());
@@ -277,9 +327,10 @@ void Canvas::Text(std::wstring_view text, const D2D1_RECT_F& rect, TextStyle sty
                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
 }
 
-void Canvas::FillRoundGradient(const D2D1_RECT_F& rect, float radius, std::span<const D2D1_COLOR_F> colors) {
+ComPtr<ID2D1LinearGradientBrush> Canvas::Gradient(float left, float right, float y,
+                                                  std::span<const D2D1_COLOR_F> colors) {
     if (colors.size() < 2) {
-        return;
+        return nullptr;
     }
     std::vector<D2D1_GRADIENT_STOP> stops(colors.size());
     for (size_t i = 0; i < colors.size(); ++i) {
@@ -287,14 +338,25 @@ void Canvas::FillRoundGradient(const D2D1_RECT_F& rect, float radius, std::span<
     }
     ComPtr<ID2D1GradientStopCollection> collection;
     ComPtr<ID2D1LinearGradientBrush> gradient;
-    const float middle = (rect.top + rect.bottom) / 2.0f;
     if (FAILED(target_->CreateGradientStopCollection(stops.data(), static_cast<UINT32>(stops.size()), D2D1_GAMMA_2_2,
                                                    D2D1_EXTEND_MODE_CLAMP, &collection)) ||
-        FAILED(target_->CreateLinearGradientBrush({{rect.left, middle}, {rect.right, middle}}, collection.Get(),
-                                                  &gradient))) {
-        return;
+        FAILED(target_->CreateLinearGradientBrush({{left, y}, {right, y}}, collection.Get(), &gradient))) {
+        return nullptr;
     }
-    target_->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), gradient.Get());
+    return gradient;
+}
+
+void Canvas::FillRoundGradient(const D2D1_RECT_F& rect, float radius, std::span<const D2D1_COLOR_F> colors) {
+    if (const auto gradient = Gradient(rect.left, rect.right, (rect.top + rect.bottom) / 2.0f, colors)) {
+        target_->FillRoundedRectangle(D2D1::RoundedRect(rect, radius, radius), gradient.Get());
+    }
+}
+
+void Canvas::StrokeCircleGradient(D2D1_POINT_2F center, float radius, std::span<const D2D1_COLOR_F> colors,
+                                  float width) {
+    if (const auto gradient = Gradient(center.x - radius, center.x + radius, center.y, colors)) {
+        target_->DrawEllipse(D2D1::Ellipse(center, radius, radius), gradient.Get(), width);
+    }
 }
 
 float Canvas::Measure(std::wstring_view text, TextStyle style) {

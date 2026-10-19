@@ -1,6 +1,7 @@
 #include "headset.h"
 
 #include <algorithm>
+#include <optional>
 
 namespace {
 
@@ -18,6 +19,7 @@ constexpr SettingOption kMinuteTimeouts[] = {{0, OptNever},      {1, OptNever, 1
                                              {45, OptNever, 45}, {60, OptNever, 60}, {75, OptNever, 75},
                                              {90, OptNever, 90}};
 constexpr SettingOption kWirelessMode[] = {{0, OptSpeed}, {1, OptRange}};
+constexpr SettingOption kLineOutModes[] = {{1, OptSpeakers}, {2, OptStreaming}};
 constexpr SettingOption kNova5XMicLed[] = {{0, OptOff}, {1, OptLow}, {4, OptMedium}, {10, OptHigh}};
 constexpr SettingOption kCallMute[] = {{0, OptOff}, {1, OptOff, 0, L"−12 dB"}, {2, OptMute}};
 
@@ -33,9 +35,19 @@ constexpr SettingSpec kNovaProDisplay[] = {
     {0x85, Brightness, SettingKind::Slider, 1, 10},
     {0x83, ScreenDim, SettingKind::Choice, 0, 6, kNovaProTimeouts},
 };
+// The GameDAC's line out: the headset sound for speakers, or a stream mix of its own.
+constexpr uint8_t kLineOutCommand = 0x43;
+constexpr uint8_t kLineOutStreaming = 2;
+constexpr SettingSpec kNovaProLineOut[] = {
+    {kLineOutCommand, LineOutMode, SettingKind::Choice, 1, 2, kLineOutModes},
+    {kStreamMain, StreamMain, SettingKind::Slider, 0, 100, {}, kLineOutCommand, kLineOutStreaming},
+    {kStreamAux, StreamAux, SettingKind::Slider, 0, 100, {}, kLineOutCommand, kLineOutStreaming},
+    {kStreamMic, StreamMic, SettingKind::Slider, 0, 100, {}, kLineOutCommand, kLineOutStreaming},
+};
 constexpr SettingSection kNovaProWiredSections[] = {
     {Microphone, kNovaProMicrophone},
     {Sound, kNovaProSound},
+    {LineOut, kNovaProLineOut},
     {Display, kNovaProDisplay},
 };
 
@@ -54,6 +66,7 @@ constexpr SettingSpec kNovaProWirelessRadio[] = {
 constexpr SettingSection kNovaProWirelessSections[] = {
     {Microphone, kNovaProWirelessMicrophone},
     {Sound, kNovaProSound},
+    {LineOut, kNovaProLineOut},
     {Display, kNovaProDisplay},
     {Power, kNovaProWirelessPower},
     {Wireless, kNovaProWirelessRadio},
@@ -135,24 +148,32 @@ const HeadsetFeatures kNovaProWireless{
     .save = kSaveState,
     .batteryQuery = 0xB0,
     .oled = true,
+    .bluetooth = true,
 };
+// The dongles answer the b0 status request with the battery too (see ParseStatusBattery).
+constexpr uint8_t kStatusRequest = 0xB0;
+
 const HeadsetFeatures kNova7{
     .sections = kNova7Sections,
     .equalizer = {.bandsCommand = 0x33, .baseline = 0x14, .range = 20, .terminator = true, .presets = kNova7Presets},
+    .batteryQuery = kStatusRequest,
 };
 const HeadsetFeatures kNova7Gen2{
     .sections = kNova7Sections,
     .equalizer = {.bandsCommand = 0x33, .baseline = 0x14, .range = 20, .terminator = true, .presets = kNova7Presets},
     .save = kSaveState,
+    .batteryQuery = kStatusRequest,
 };
 const HeadsetFeatures kArctis7Plus{
     .sections = kArctis7PlusSections,
     .equalizer = {.bandsCommand = 0x33, .baseline = 0x18, .range = 24, .terminator = true, .presets = kArctis7PlusPresets},
     .save = kSaveState,
+    .batteryQuery = kStatusRequest,
 };
 const HeadsetFeatures kNova5X{
     .sections = kNova5XSections,
     .save = kNova5XSave,
+    .batteryQuery = kStatusRequest,
 };
 
 constexpr uint8_t kNovaProEventReportId = 0x07;
@@ -184,6 +205,41 @@ bool IsValidValue(const SettingSpec& spec, int value) {
     return false;
 }
 
+// Battery in the dongles' b0 status reply (byte layouts from HeadsetControl):
+// - Nova 7 family: level at 2; byte 3 is 0 while the headset is off, 1 or 2 while it charges.
+// - Arctis 7+: level at 2; byte 1 is 1 while the headset is off, byte 3 is 1 while it charges.
+// - Nova 5X: level at 3; byte 1 is 2 while the headset is off, byte 4 is 1 while it charges.
+// The level runs to statusBatteryMax: 4 on five-step models, 100 on the others.
+std::optional<HeadsetUpdate> ParseStatusBattery(const DeviceModel& model, const uint8_t* data, size_t size) {
+    if (size < 5 || data[0] != kStatusRequest) {
+        return std::nullopt;
+    }
+    HeadsetUpdate update{.kind = HeadsetUpdate::Kind::Battery};
+    int level = 0;
+    switch (model.family) {
+    case DeviceFamily::Nova7:
+    case DeviceFamily::Nova7Gen2:
+        level = data[2];
+        update.headsetOff = data[3] == 0x00;
+        update.charging = data[3] == 0x01 || data[3] == 0x02;
+        break;
+    case DeviceFamily::Arctis7Plus:
+        level = data[2];
+        update.headsetOff = data[1] == 0x01;
+        update.charging = data[3] == 0x01;
+        break;
+    case DeviceFamily::Nova5X:
+        level = data[3];
+        update.headsetOff = data[1] == 0x02;
+        update.charging = data[4] == 0x01;
+        break;
+    default:
+        return std::nullopt;
+    }
+    update.value = std::min(100, level * 100 / std::max<int>(model.statusBatteryMax, 1));
+    return update;
+}
+
 }  // namespace
 
 const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
@@ -211,6 +267,12 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
 
 std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size) {
     std::vector<HeadsetUpdate> updates;
+    if (model.protocol == DeviceProtocol::NovaStatus) {
+        if (const auto battery = ParseStatusBattery(model, data, size)) {
+            updates.push_back(*battery);
+        }
+        return updates;
+    }
     if (model.protocol != DeviceProtocol::NovaPro || size < 3) {
         return updates;
     }
@@ -244,12 +306,21 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
         if (size >= 22) {
             updates.push_back({.kind = Kind::ChatMix, .value = data[20], .chat = data[21]});
         }
+        // ... [line out mode] [game] [chat] [stream main] 00 [stream aux] [stream mic], as Linux-Arctis-Manager
+        // documents; matches a Nova Pro Wired set to Speakers with the stream mix at 100%.
+        if (size >= 26) {
+            updates.push_back({.kind = Kind::Setting, .command = kLineOutCommand, .value = data[19]});
+            updates.push_back({.kind = Kind::Setting, .command = kStreamMain, .value = data[22]});
+            updates.push_back({.kind = Kind::Setting, .command = kStreamAux, .value = data[24]});
+            updates.push_back({.kind = Kind::Setting, .command = kStreamMic, .value = data[25]});
+        }
     } else if (data[1] == kNovaProBattery && features.batteryQuery == kNovaProBattery && size >= 16) {
         // 06 b0: battery 0-8 at byte 6, headset state at byte 15 (1 off, 2 charging, 8 on).
         updates.push_back({.kind = Kind::Battery,
                            .value = std::min(100, data[6] * 100 / 8),
                            .charging = data[15] == 0x02,
                            .headsetOff = data[15] == 0x01});
+        updates.push_back({.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]});
         updates.push_back({.kind = Kind::Setting, .command = 0xBF, .value = data[11]});
         updates.push_back({.kind = Kind::Setting, .command = 0xC1, .value = data[12]});
         updates.push_back({.kind = Kind::Setting, .command = 0xC3, .value = data[13]});
@@ -283,7 +354,27 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         state.charging = update.charging;
         state.headsetOff = update.headsetOff;
         break;
+    case Kind::Bluetooth:
+        // Mode 1 off, 2 pairing, otherwise on (4 with a link); link 1 when a device is connected, as
+        // Linux-Arctis-Manager reads the reply.
+        state.bluetooth = update.value == 1   ? BluetoothState::Off
+                          : update.value == 2 ? BluetoothState::Pairing
+                          : update.chat == 1  ? BluetoothState::Connected
+                                              : BluetoothState::On;
+        break;
     }
+}
+
+std::vector<uint8_t> SettingCommand(const HeadsetState& state, uint8_t command, int value) {
+    if (command != kStreamMain && command != kStreamAux && command != kStreamMic) {
+        return {command, static_cast<uint8_t>(value)};
+    }
+    // The other two sliders keep their level; an unknown one counts as full.
+    auto level = [&](uint8_t id) {
+        const int known = id == command ? value : state.values[id];
+        return static_cast<uint8_t>(known < 0 ? 100 : std::clamp(known, 0, 100));
+    };
+    return {kStreamMain, level(kStreamMain), 0x00, level(kStreamAux), level(kStreamMic)};
 }
 
 std::vector<uint8_t> EqualizerBandsCommand(const EqualizerSpec& spec, const EqCurve& curve) {

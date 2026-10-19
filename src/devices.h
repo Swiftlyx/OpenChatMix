@@ -35,6 +35,7 @@ struct DeviceModel {
     DeviceFamily family;
     uint8_t statusGameOffset;  // NovaStatus only: offsets inside the b0 status report.
     uint8_t statusChatOffset;
+    uint8_t statusBatteryMax = 100;  // NovaStatus only: full battery in the b0 report; 4 on five-step models.
 };
 
 std::span<const DeviceModel> SupportedDevices();

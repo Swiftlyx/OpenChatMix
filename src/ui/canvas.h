@@ -32,6 +32,20 @@ enum class TextStyle {
 
 enum class TextAlign { Leading, Center, Trailing };
 
+// Corner radii of a shape, clockwise from the top left.
+struct Corners {
+    float topLeft = 0.0f;
+    float topRight = 0.0f;
+    float bottomRight = 0.0f;
+    float bottomLeft = 0.0f;
+
+    static Corners All(float radius) { return {radius, radius, radius, radius}; }
+    // Top corners, then bottom corners.
+    static Corners Vertical(float top, float bottom) { return {top, top, bottom, bottom}; }
+    // Left corners, then right corners.
+    static Corners Horizontal(float left, float right) { return {left, right, right, left}; }
+};
+
 // Thin Direct2D/DirectWrite wrapper. Coordinates are DIPs; text is single-line with ellipsis
 // unless wrap is requested, and always centered vertically in its rectangle.
 class Canvas {
@@ -54,6 +68,8 @@ public:
     void FillRect(const D2D1_RECT_F& rect, D2D1_COLOR_F color);
     void FillRound(const D2D1_RECT_F& rect, float radius, D2D1_COLOR_F color);
     void StrokeRound(const D2D1_RECT_F& rect, float radius, D2D1_COLOR_F color, float width);
+    // A rectangle with its own radius per corner, e.g. a tile of a segmented list.
+    void FillShape(const D2D1_RECT_F& rect, const Corners& corners, D2D1_COLOR_F color);
     void FillCircle(D2D1_POINT_2F center, float radius, D2D1_COLOR_F color);
     void StrokeCircle(D2D1_POINT_2F center, float radius, D2D1_COLOR_F color, float width);
     void Line(D2D1_POINT_2F from, D2D1_POINT_2F to, D2D1_COLOR_F color, float width);
@@ -63,6 +79,8 @@ public:
               TextAlign align = TextAlign::Leading, bool wrap = false);
     // Rounded rectangle with a horizontal gradient through evenly spaced colors.
     void FillRoundGradient(const D2D1_RECT_F& rect, float radius, std::span<const D2D1_COLOR_F> colors);
+    // Circle outline with a horizontal gradient through evenly spaced colors.
+    void StrokeCircleGradient(D2D1_POINT_2F center, float radius, std::span<const D2D1_COLOR_F> colors, float width);
     float Measure(std::wstring_view text, TextStyle style);
     // Height of the text wrapped at width.
     float MeasureHeight(std::wstring_view text, TextStyle style, float width);
@@ -78,6 +96,9 @@ public:
 
 private:
     IDWriteTextFormat* Format(TextStyle style, TextAlign align, bool wrap);
+    // A horizontal gradient from left to right through evenly spaced colors.
+    Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> Gradient(float left, float right, float y,
+                                                              std::span<const D2D1_COLOR_F> colors);
     IDWriteTextFormat* GlyphFormat(float size);
     std::wstring ResolveFamily(std::initializer_list<const wchar_t*> candidates);
 

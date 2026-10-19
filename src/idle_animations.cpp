@@ -58,10 +58,8 @@ struct Sprite {
     }
 };
 
-// Renders text with a GDI font without antialiasing, cropped to its lit pixels. faceFound reports
-// whether GDI used the requested font rather than a substitute.
-Sprite RenderText(const std::wstring& text, const wchar_t* face, int pixelHeight, int weight,
-                  bool* faceFound = nullptr) {
+// Renders text with a GDI font without antialiasing, cropped to its lit pixels.
+Sprite RenderText(const std::wstring& text, const wchar_t* face, int pixelHeight, int weight) {
     Sprite sprite;
     HDC dc = CreateCompatibleDC(nullptr);
     if (!dc) {
@@ -70,11 +68,6 @@ Sprite RenderText(const std::wstring& text, const wchar_t* face, int pixelHeight
     HFONT font = CreateFontW(-pixelHeight, 0, 0, 0, weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                              CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY, DEFAULT_PITCH, face);
     HGDIOBJ previousFont = SelectObject(dc, font);
-    if (faceFound) {
-        wchar_t actual[LF_FACESIZE] = {};
-        GetTextFaceW(dc, LF_FACESIZE, actual);
-        *faceFound = _wcsicmp(actual, face) == 0;
-    }
     const int length = static_cast<int>(text.size());
     SIZE size{};
     GetTextExtentPoint32W(dc, text.c_str(), length, &size);
@@ -199,34 +192,6 @@ private:
     Random random_{static_cast<uint32_t>(GetTickCount64())};
     std::vector<Star> stars_;
     ULONGLONG lastMs_ = 0;
-};
-
-// The headphones icon drifting around the screen and bouncing off its edges.
-class BouncingLogo final : public IdleAnimation {
-public:
-    bool Load(const std::atomic<bool>&) override {
-        // Segoe Fluent Icons ships with Windows 11, Segoe MDL2 Assets with Windows 10; both have U+E7F6.
-        bool found = false;
-        logo_ = RenderText(L"", L"Segoe Fluent Icons", kIconSize, FW_NORMAL, &found);
-        if (!found || logo_.width == 0) {
-            logo_ = RenderText(L"", L"Segoe MDL2 Assets", kIconSize, FW_NORMAL);
-        }
-        return logo_.width > 0;
-    }
-
-    DWORD Render(ULONGLONG elapsedMs, OledBitmap& frame) override {
-        logo_.DrawTo(frame, BouncePosition(elapsedMs, kSpeedX, kOledWidth - logo_.width),
-                     BouncePosition(elapsedMs, kSpeedY, kOledHeight - logo_.height));
-        return kFrameMs;
-    }
-
-private:
-    static constexpr int kIconSize = 30;
-    // Speeds without a common period, so the path covers the whole screen.
-    static constexpr double kSpeedX = 16.0;
-    static constexpr double kSpeedY = 9.3;
-    static constexpr DWORD kFrameMs = 40;
-    Sprite logo_;
 };
 
 // Time and date that move by one pixel every few seconds.
@@ -388,6 +353,10 @@ private:
     static constexpr ULONGLONG kDriftMs = 30000;
     static constexpr size_t kMaxFrames = 12000;      // About 12 MB of frames.
     static constexpr UINT kMaxCanvas = 1920;         // Largest GIF canvas side.
+    // Larger still images are refused before decoding; decoders may hold the whole image in memory.
+    static constexpr UINT64 kMaxStillPixels = 100'000'000;
+    // Pixels decoded for one GIF at most (about a minute of work); later frames are left out.
+    static constexpr UINT64 kMaxDecodedPixels = 4'000'000'000;
     static constexpr UINT kStillLimitX = 4 * kOledWidth;  // Still images are scaled down to this first.
     static constexpr UINT kStillLimitY = 4 * kOledHeight;
     static constexpr int kSamples = 4;               // Per axis, per display pixel.
@@ -492,26 +461,37 @@ bool ImageAnimation::Load(const std::atomic<bool>& cancel) {
     std::vector<uint32_t> canvas;
     std::vector<uint32_t> saved;
     std::vector<uint32_t> pixels;
+    UINT64 decoded = 0;
     for (UINT index = 0; index < count && !cancel; ++index) {
-        if (frames_.size() >= kMaxFrames) {
-            Log("idle image: only the first %zu frames are used", kMaxFrames);
+        if (frames_.size() >= kMaxFrames || decoded >= kMaxDecodedPixels) {
+            Log("idle image: only the first %zu frames are used", frames_.size());
             break;
         }
-        ComPtr<IWICBitmapFrameDecode> decoded;
-        if (FAILED(decoder->GetFrame(index, &decoded))) {
+        ComPtr<IWICBitmapFrameDecode> frame;
+        if (FAILED(decoder->GetFrame(index, &frame))) {
             break;
         }
         UINT frameWidth = 0;
         UINT frameHeight = 0;
-        decoded->GetSize(&frameWidth, &frameHeight);
-        ComPtr<IWICBitmapSource> source = decoded;
+        frame->GetSize(&frameWidth, &frameHeight);
+        // GIF frames are clipped to a canvas of at most kMaxCanvas, so larger ones only come from broken
+        // or hostile files, which must not make it allocate gigabytes.
+        if (frameWidth == 0 || frameHeight == 0 || (gif && (frameWidth > kMaxCanvas || frameHeight > kMaxCanvas)) ||
+            (!gif && static_cast<UINT64>(frameWidth) * frameHeight > kMaxStillPixels)) {
+            Log("idle image: frame %u has an unsupported size %ux%u", index, frameWidth, frameHeight);
+            if (index == 0) {
+                return false;
+            }
+            break;
+        }
+        ComPtr<IWICBitmapSource> source = frame;
         UINT left = 0;
         UINT top = 0;
         UINT delayMs = 0;
         UINT disposal = 0;
         if (gif) {
             ComPtr<IWICMetadataQueryReader> reader;
-            decoded->GetMetadataQueryReader(&reader);
+            frame->GetMetadataQueryReader(&reader);
             left = MetadataUInt(reader.Get(), L"/imgdesc/Left", 0);
             top = MetadataUInt(reader.Get(), L"/imgdesc/Top", 0);
             // Delays are in 1/100 s; 0 and 1 are played as 100 ms, as browsers do.
@@ -525,7 +505,7 @@ bool ImageAnimation::Load(const std::atomic<bool>& cancel) {
             const UINT scaledHeight = std::max(1u, static_cast<UINT>(frameHeight * scale));
             ComPtr<IWICBitmapScaler> scaler;
             if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
-                FAILED(scaler->Initialize(decoded.Get(), scaledWidth, scaledHeight, WICBitmapInterpolationModeFant))) {
+                FAILED(scaler->Initialize(frame.Get(), scaledWidth, scaledHeight, WICBitmapInterpolationModeFant))) {
                 break;
             }
             source = scaler;
@@ -566,6 +546,7 @@ bool ImageAnimation::Load(const std::atomic<bool>& cancel) {
                 }
             }
         }
+        decoded += static_cast<UINT64>(frameWidth) * frameHeight;
         frames_.push_back(Quantize(canvas, width));
         ends_.push_back((ends_.empty() ? 0 : ends_.back()) + delayMs);
         if (disposal == 2) {
@@ -594,7 +575,6 @@ bool ImageAnimation::Load(const std::atomic<bool>& cancel) {
 std::shared_ptr<IdleAnimation> CreateIdleAnimation(IdleAnimationKind kind, const std::wstring& imagePath) {
     switch (kind) {
     case IdleAnimationKind::Stars: return std::make_shared<Starfield>();
-    case IdleAnimationKind::Bounce: return std::make_shared<BouncingLogo>();
     case IdleAnimationKind::Clock: return std::make_shared<DriftingClock>();
     case IdleAnimationKind::Life: return std::make_shared<Life>();
     case IdleAnimationKind::Blank: return std::make_shared<BlankScreen>();

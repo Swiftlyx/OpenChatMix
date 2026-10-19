@@ -75,7 +75,8 @@ Biquad MakeBiquad(const EqBand& band, double sampleRate);
 // Magnitude response in dB at a frequency, preamp and boost effects included.
 double ResponseDb(const ParametricEq& eq, double frequency, double sampleRate = 48000.0);
 
-enum class EqChannel { Game, Chat };
+// Media has Game's presets: both carry music and effects rather than voice.
+enum class EqChannel { Game, Chat, Mic, Media };
 
 struct NamedEq {
     std::wstring name;
@@ -96,4 +97,3 @@ bool WriteParametricPreset(const std::wstring& path, const NamedEq& preset);
 // Settings storage: "type,frequency,gain,q,enabled".
 std::wstring FormatBand(const EqBand& band);
 std::optional<EqBand> ParseBand(const std::wstring& text);
-const wchar_t* FilterTypeKey(FilterType type);

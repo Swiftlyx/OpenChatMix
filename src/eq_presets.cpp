@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <shellapi.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cwchar>
@@ -73,6 +75,21 @@ std::wstring Escape(const std::wstring& text) {
     return escaped;
 }
 
+// A file name for a preset name: characters Windows doesn't allow in names become spaces.
+std::wstring FileStemFor(const std::wstring& name) {
+    std::wstring stem;
+    for (const wchar_t c : name) {
+        const wchar_t kept = c < L' ' || std::wcschr(L"<>:\"/\\|?*", c) ? L' ' : c;
+        if (kept != L' ' || (!stem.empty() && stem.back() != L' ')) {
+            stem += kept;
+        }
+    }
+    while (!stem.empty() && (stem.back() == L' ' || stem.back() == L'.')) {
+        stem.pop_back();
+    }
+    return stem.empty() ? std::wstring(L"Preset") : stem;
+}
+
 std::wstring StemOf(const std::wstring& path) {
     std::wstring name = FileNameOf(path);
     const size_t dot = name.find_last_of(L'.');
@@ -86,6 +103,23 @@ std::wstring PresetDirectory() {
     CreateDirectoryW(directory.c_str(), nullptr);
     return directory;
 }
+
+namespace {
+
+// A path in the preset directory for name that no other file uses; keep may be reused.
+std::wstring FreePathFor(const std::wstring& name, const std::wstring& keep = L"") {
+    const std::wstring directory = PresetDirectory();
+    const std::wstring stem = FileStemFor(name);
+    std::wstring path = directory + L"\\" + stem + L".json";
+    for (int copy = 2;
+         _wcsicmp(path.c_str(), keep.c_str()) != 0 && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+         ++copy) {
+        path = directory + L"\\" + stem + L" (" + std::to_wstring(copy) + L").json";
+    }
+    return path;
+}
+
+}  // namespace
 
 std::optional<UserPreset> ReadPresetFile(const std::wstring& path) {
     const std::wstring text = ReadUtf8File(path);
@@ -139,10 +173,18 @@ std::vector<UserPreset> LoadUserPresets() {
 }
 
 bool WritePresetFile(const std::wstring& path, const std::wstring& name, const EqCurve& curve) {
+    std::array<float, kEqBands> gains{};
+    for (int band = 0; band < kEqBands; ++band) {
+        gains[band] = curve[band] / 2.0f;
+    }
+    return WritePresetGains(path, name, gains);
+}
+
+bool WritePresetGains(const std::wstring& path, const std::wstring& name, const std::array<float, kEqBands>& gainsDb) {
     std::wstring gains;
     for (int band = 0; band < kEqBands; ++band) {
         wchar_t value[16];
-        swprintf_s(value, L"%s%.1f", band ? L", " : L"", curve[band] / 2.0);
+        swprintf_s(value, L"%s%.1f", band ? L", " : L"", gainsDb[band]);
         gains += value;
     }
     const std::wstring json = L"{\n  \"app\": \"OpenChatMix\",\n  \"type\": \"equalizer\",\n  \"name\": \"" + Escape(name) +
@@ -156,6 +198,33 @@ bool WritePresetFile(const std::wstring& path, const std::wstring& name, const E
     const BOOL ok = WriteFile(file, utf8.data(), static_cast<DWORD>(utf8.size()), &written, nullptr);
     CloseHandle(file);
     return ok && written == utf8.size();
+}
+
+bool RenamePreset(const UserPreset& preset, const std::wstring& name) {
+    // The file follows the name, so the folder stays readable; the old file goes once the new one is written.
+    const std::wstring path = FreePathFor(name, preset.path);
+    if (!WritePresetGains(path, name, preset.gainsDb)) {
+        return false;
+    }
+    if (_wcsicmp(path.c_str(), preset.path.c_str()) != 0) {
+        DeleteFileW(preset.path.c_str());
+    }
+    return true;
+}
+
+bool CopyPreset(const UserPreset& preset, const std::wstring& name) {
+    return WritePresetGains(FreePathFor(name), name, preset.gainsDb);
+}
+
+bool DeletePreset(const UserPreset& preset) {
+    // To the Recycle Bin, so a preset deleted by mistake can be restored. The path list ends with two nulls.
+    std::wstring from = preset.path;
+    from.push_back(L'\0');
+    SHFILEOPSTRUCTW operation{};
+    operation.wFunc = FO_DELETE;
+    operation.pFrom = from.c_str();
+    operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+    return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
 }
 
 std::optional<UserPreset> ImportPresetFile(const std::wstring& source) {

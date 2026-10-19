@@ -161,14 +161,19 @@ private:
                 if (!Hex4(code)) {
                     return false;
                 }
-                // Surrogate pairs arrive as two escapes.
+                // Surrogate pairs arrive as two escapes; a second escape that is no low surrogate stands alone.
                 if (code >= 0xD800 && code < 0xDC00 && text_.substr(pos_, 2) == "\\u") {
                     pos_ += 2;
                     unsigned low = 0;
                     if (!Hex4(low)) {
                         return false;
                     }
-                    code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                    if (low >= 0xDC00 && low < 0xE000) {
+                        code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                    } else {
+                        AppendUtf8(utf8, code);
+                        code = low;
+                    }
                 }
                 AppendUtf8(utf8, code);
                 break;
