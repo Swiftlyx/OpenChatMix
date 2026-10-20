@@ -13,11 +13,11 @@
   English · <a href="README.uk.md">Українська</a>
 </p>
 
-<p align="center"><sub>
+<p align="center">
   OpenChatMix is free and open source. If you'd like to say thanks, you can support it on
   <a href="https://ko-fi.com/swiftlyx">Ko-fi</a> or through a <a href="https://send.monobank.ua/jar/8C2ACvGoty">monobank jar</a>. Entirely optional:
   bug reports and headset tests help just as much.
-</sub></p>
+</p>
 
 ---
 

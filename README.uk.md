@@ -13,11 +13,11 @@
   <a href="README.md">English</a> · Українська
 </p>
 
-<p align="center"><sub>
+<p align="center">
   OpenChatMix безкоштовний і з відкритим кодом. Якщо хочеться подякувати, підтримати можна через
   <a href="https://ko-fi.com/swiftlyx">Ko-fi</a> або <a href="https://send.monobank.ua/jar/8C2ACvGoty">банку monobank</a>. Це повністю за бажанням:
   звіти про помилки й тести гарнітур допомагають не менше.
-</sub></p>
+</p>
 
 ---
 
