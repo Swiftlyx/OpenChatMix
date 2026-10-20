@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0 — 2026-10-20
+
+- Experimental support for the Arctis Nova Elite (`2244`, `2270`): the ChatMix dial and the battery,
+  built from published descriptions of its protocol ([HeadsetControl #481](https://github.com/Sapd/HeadsetControl/issues/481) and Linux-Arctis-Manager) and not yet
+  tried on the headset. Requested in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- With the log on and no supported headset connected, a SteelSeries headset OpenChatMix does not know
+  is recognized by its audio devices: the log lists its HID collections and the reports it sends, read
+  only, so a log is enough to add a new model.
+
 ## 2.1.0 — 2026-10-20
 
 - The *Screensaver on/off* hotkey (formerly *Screensaver now*) keeps the GameDAC screensaver on until

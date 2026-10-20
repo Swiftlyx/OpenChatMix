@@ -39,6 +39,9 @@ constexpr DeviceModel kModels[] = {
     // The Linux driver reads chat before game on the Nova 5X.
     {0x2253, L"Arctis Nova 5X", NovaStatus, Nova5X, 6, 5},
     {0x2264, L"Arctis Nova 5X", NovaStatus, Nova5X, 6, 5},
+    // Experimental: from HeadsetControl issue #481 (captures of a real base station) and Linux-Arctis-Manager.
+    {0x2244, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
+    {0x2270, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
 };
 
 std::optional<unsigned> ParseHexAfter(std::wstring_view path, std::wstring_view marker, size_t digits) {
@@ -97,6 +100,7 @@ std::optional<Levels> ParseChatMixReport(const DeviceModel& model, const uint8_t
     pushedEvent = false;
     switch (model.protocol) {
     case NovaPro:
+    case Elite:
         if (size >= 4 && data[0] == 0x07 && data[1] == 0x45) {
             pushedEvent = true;
             return Levels{Level(data[2]), Level(data[3])};

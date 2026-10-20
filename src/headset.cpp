@@ -179,6 +179,10 @@ const HeadsetFeatures kNova5X{
     .save = kNova5XSave,
     .batteryQuery = kStatusRequest,
 };
+// Battery only for now; the Elite's settings and equalizer are not known well enough to offer.
+const HeadsetFeatures kNovaElite{
+    .batteryQuery = kStatusRequest,
+};
 
 constexpr uint8_t kNovaProEventReportId = 0x07;
 constexpr uint8_t kNovaProCommandReportId = 0x06;
@@ -257,6 +261,35 @@ std::optional<HeadsetUpdate> ParseStatusBattery(const DeviceModel& model, const 
     return update;
 }
 
+// Nova Elite, as HeadsetControl issue #481 reads a real base station: the 01 b0 reply holds the Bluetooth mode and
+// link at 4 and 5 (as on the Nova Pro Wireless), the headset battery in percent at 6, the 2.4 GHz link at 14
+// (8: headset connected) and the charging state at 15 (2: charging, 8: on battery); 07 b7 [headset %] [spare %]
+// [charging state] reports battery changes, where state 1 means no headset.
+constexpr uint8_t kEliteCommandReportId = 0x01;
+constexpr uint8_t kEliteEventReportId = 0x07;
+constexpr uint8_t kEliteBatteryEvent = 0xB7;
+constexpr uint8_t kEliteLinkConnected = 0x08;
+constexpr uint8_t kEliteCharging = 0x02;
+constexpr uint8_t kEliteNoHeadset = 0x01;
+
+std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
+    using Kind = HeadsetUpdate::Kind;
+    if (size >= 16 && data[0] == kEliteCommandReportId && data[1] == kStatusRequest) {
+        return {{.kind = Kind::Battery,
+                 .value = std::min<int>(data[6], 100),
+                 .charging = data[15] == kEliteCharging,
+                 .headsetOff = data[14] != kEliteLinkConnected},
+                {.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]}};
+    }
+    if (size >= 5 && data[0] == kEliteEventReportId && data[1] == kEliteBatteryEvent) {
+        return {{.kind = Kind::Battery,
+                 .value = std::min<int>(data[2], 100),
+                 .charging = data[4] == kEliteCharging,
+                 .headsetOff = data[4] == kEliteNoHeadset}};
+    }
+    return {};
+}
+
 }  // namespace
 
 const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
@@ -277,6 +310,7 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     case DeviceFamily::Nova7: return kNova7;
     case DeviceFamily::Nova7Gen2: return kNova7Gen2;
     case DeviceFamily::Arctis7Plus: return kArctis7Plus;
+    case DeviceFamily::NovaElite: return kNovaElite;
     case DeviceFamily::Nova5X: break;
     }
     return kNova5X;
@@ -284,6 +318,9 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
 
 std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size) {
     std::vector<HeadsetUpdate> updates;
+    if (model.protocol == DeviceProtocol::Elite) {
+        return ParseEliteReport(data, size);
+    }
     if (model.protocol == DeviceProtocol::NovaStatus) {
         if (const auto battery = ParseStatusBattery(model, data, size)) {
             updates.push_back(*battery);

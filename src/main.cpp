@@ -25,6 +25,7 @@
 #include "audio_devices.h"
 #include "chatmix_device.h"
 #include "headset.h"
+#include "hid_probe.h"
 #include "i18n.h"
 #include "icon.h"
 #include "idle_animations.h"
@@ -210,6 +211,7 @@ struct App {
     std::wstring iniPath;
     Settings settings;
     ChatMixDevice device;
+    HidProbe probe;  // Logs unsupported SteelSeries headsets while the log is on.
     SessionMixer mixer;
     Levels levels;
     std::array<bool, kHotkeyCount> hotkeyFailed{};
@@ -2105,11 +2107,33 @@ void StartIdleScreen(bool preview) {
     CheckIdleScreen();
 }
 
+// With the log on and no supported headset, a SteelSeries headset OpenChatMix does not know is recognized by its
+// audio devices, and its HID reports go into the log for adding it later.
+void ProbeUnsupportedHeadsets() {
+    if (!g_app.settings.log) {
+        return;
+    }
+    std::vector<uint16_t> productIds;
+    std::vector<AudioEndpoint> endpoints = ListRenderEndpoints(true);
+    const std::vector<AudioEndpoint> captures = ListCaptureEndpoints();
+    endpoints.insert(endpoints.end(), captures.begin(), captures.end());
+    for (const AudioEndpoint& endpoint : endpoints) {
+        const std::optional<uint16_t> productId = endpoint.steelSeriesProductId;
+        if (productId && !FindDeviceModel(*productId) &&
+            std::find(productIds.begin(), productIds.end(), *productId) == productIds.end()) {
+            productIds.push_back(*productId);
+        }
+    }
+    std::sort(productIds.begin(), productIds.end());
+    g_app.probe.Start(productIds);
+}
+
 void ConnectDevice() {
     if (g_app.device.IsOpen()) {
         return;
     }
     if (g_app.device.Open(g_app.window)) {
+        g_app.probe.Stop();
         const DeviceModel& model = *g_app.device.Model();
         Log("connected: %ls", model.name);
         g_app.features = &FeaturesFor(model.family);
@@ -2124,6 +2148,7 @@ void ConnectDevice() {
     } else {
         Log("no supported headset");
         g_app.mixer.SetTarget(std::nullopt);
+        ProbeUnsupportedHeadsets();
     }
     g_app.panel->SetBalanceDial(HasBalanceDial());
     ApplyLevels();
@@ -2410,6 +2435,7 @@ void Cleanup() {
     g_app.mic.Stop();
     g_app.micLevels.Stop();
     g_app.pluginThread.Stop();
+    g_app.probe.Stop();
     // Windows persists per-app volume, so every app changed by ChatMix goes back to full level.
     g_app.device.Stop();
     g_app.mixer.ResetVolumes();

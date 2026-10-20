@@ -210,6 +210,7 @@ works with any headset.
 | Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the equalizer of `22A1` and `227E` (Gen 2 protocol) is experimental ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
+| Arctis Nova Elite | `2244`, `2270` | Experimental — ChatMix dial and battery only, from published protocol descriptions ([#6](https://github.com/Swiftlyx/OpenChatMix/issues/6)) |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -504,6 +505,9 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | device → PC | `B0 …` | Status: battery at byte 2 (Nova 5X: 3), 0–100 or 0–4 on older models; game and chat at bytes 4 and 5 (Nova 5X: chat 5, game 6) |
 | | device → PC | `45 gg cc` | Dial event (Gen 2 firmware); polling stops once seen |
 | | PC → device | `00 33 b1…b10 00` | Custom EQ bands on the original Nova 7 firmware, `0x14` = 0 dB, 0.5 dB steps |
+| Nova Elite (interface 3, experimental) | PC → device | `01 8D 01` · `01 49 01` | As on the Nova Pro, with report ID `0x01` |
+| | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
+| | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` | Dial event; battery event (headset %, spare %, charging state) |
 | Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (1 = peak), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback
@@ -615,9 +619,12 @@ are in `src/ui/design.h`.
 - **A plugin "could not be loaded".** Only 64-bit effect plugins work; instruments and 32-bit plugins
   do not. For a VST 3 bundle, choose the `.vst3` folder's inner file
   (`Contents\x86_64-win\Name.vst3`) or the bundle itself.
-- **Collecting a log.** Set `Log=1` in `OpenChatMix.ini`, restart OpenChatMix and reproduce the
-  problem. `OpenChatMix.log` appears next to the ini file and records every report from the headset.
-  Please attach it to an issue.
+- **Collecting a log.** Quit OpenChatMix first (tray menu → *Quit*): it saves its settings when it
+  exits and would undo the change. Set `Log=1` in `%APPDATA%\OpenChatMix\OpenChatMix.ini`, start
+  OpenChatMix and reproduce the problem. `OpenChatMix.log` appears next to the ini file and records every
+  report from the headset. With a SteelSeries headset OpenChatMix does not support yet, the log lists its
+  HID collections and the reports it sends (only read, nothing is sent to it): turn the dial, press its
+  buttons, then attach the log to an issue.
 
 ## Acknowledgements
 
@@ -628,7 +635,8 @@ no code from the projects below, but it would not exist without the protocol det
   ChatMix enable (`0x49`), ChatMix icon (`0x8D`) and `0x45` report format.
 - [HeadsetControl](https://github.com/Sapd/HeadsetControl) by Sapd and contributors — USB product IDs,
   status report layouts (ChatMix and battery), equalizer formats and the SteelSeries EQ preset curves for
-  the Arctis Nova 7, 7+ and Nova 5 families and the Nova Pro Wireless.
+  the Arctis Nova 7, 7+ and Nova 5 families and the Nova Pro Wireless; the Nova Elite captures in
+  [HeadsetControl #481](https://github.com/Sapd/HeadsetControl/issues/481).
 - [Linux-Arctis-Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos — device
   definitions and native settings (microphone, sidetone, gain, display, power, wireless, Bluetooth)
   for the Nova Pro, Nova 7, Nova 5 and Arctis 7+, and the Nova 7 Gen 2 parametric equalizer format.

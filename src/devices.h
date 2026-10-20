@@ -16,6 +16,9 @@ enum class DeviceProtocol {
     // Nova 7 / 7X / 7+ / 5X dongles: no report IDs, status polled with 00 b0.
     // Gen 2 firmware additionally pushes 45 [game] [chat] events.
     NovaStatus,
+    // Nova Elite base station (experimental): like the Nova Pro, but on interface 3 and with report ID 0x01 for
+    // commands and their replies; events still arrive as report ID 0x07.
+    Elite,
 };
 
 // Selects the set of native headset settings (see headset.h).
@@ -26,6 +29,7 @@ enum class DeviceFamily {
     Nova7Gen2,  // Gen 2 hardware, and Nova 7 models on the Gen 2 firmware: parametric equalizer.
     Arctis7Plus,
     Nova5X,
+    NovaElite,
 };
 
 struct DeviceModel {

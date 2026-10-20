@@ -1,18 +1,15 @@
 #include "chatmix_device.h"
 
-#include <hidsdi.h>
-#include <setupapi.h>
-
 #include <algorithm>
 #include <string>
 
 #include "app.h"
+#include "hid_interfaces.h"
 #include "log.h"
 
 namespace {
 
 constexpr USHORT kCommandUsagePage = 0xFFC0;
-constexpr USHORT kVendorUsagePageMin = 0xFF00;
 
 // Nova Pro parameters (second byte after report ID 0x06).
 constexpr uint8_t kNovaProChatMix = 0x45;        // [game 0-100] [chat 0-100]
@@ -39,95 +36,21 @@ struct ProtocolLayout {
 
 constexpr ProtocolLayout kNovaProLayout{4, 0x06, {4, -1}, false};
 constexpr ProtocolLayout kNovaStatusLayout{3, 0x00, {3, 5}, true};
+// Commands and their replies on page FFC0, events on page FF00, both on interface 3.
+constexpr ProtocolLayout kEliteLayout{3, 0x01, {3, -1}, false};
 
 const ProtocolLayout& LayoutFor(const DeviceModel& model) {
-    return model.protocol == DeviceProtocol::NovaPro ? kNovaProLayout : kNovaStatusLayout;
+    switch (model.protocol) {
+    case DeviceProtocol::NovaPro: return kNovaProLayout;
+    case DeviceProtocol::Elite: return kEliteLayout;
+    case DeviceProtocol::NovaStatus: break;
+    }
+    return kNovaStatusLayout;
 }
 
-struct HidInterface {
-    std::wstring path;
-    uint16_t productId = 0;
-    int interfaceNumber = -1;
-    USHORT usagePage = 0;
-    USHORT inputLength = 0;
-    USHORT outputLength = 0;
-    USHORT featureLength = 0;
-};
-
-bool QueryCaps(HidInterface& item) {
-    // Zero access rights are enough for HidD_GetPreparsedData and never conflict with other owners.
-    HANDLE device = CreateFileW(item.path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
-                                nullptr);
-    if (device == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-    bool ok = false;
-    PHIDP_PREPARSED_DATA preparsed = nullptr;
-    if (HidD_GetPreparsedData(device, &preparsed)) {
-        HIDP_CAPS caps{};
-        if (HidP_GetCaps(preparsed, &caps) == HIDP_STATUS_SUCCESS) {
-            item.usagePage = caps.UsagePage;
-            item.inputLength = caps.InputReportByteLength;
-            item.outputLength = caps.OutputReportByteLength;
-            item.featureLength = caps.FeatureReportByteLength;
-            ok = true;
-        }
-        HidD_FreePreparsedData(preparsed);
-    }
-    CloseHandle(device);
-    return ok;
-}
-
-std::vector<HidInterface> EnumerateSteelSeriesInterfaces() {
-    std::vector<HidInterface> result;
-    GUID hidGuid;
-    HidD_GetHidGuid(&hidGuid);
-    HDEVINFO set = SetupDiGetClassDevsW(&hidGuid, nullptr, nullptr, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
-    if (set == INVALID_HANDLE_VALUE) {
-        return result;
-    }
-    SP_DEVICE_INTERFACE_DATA item{};
-    item.cbSize = sizeof(item);
-    for (DWORD index = 0; SetupDiEnumDeviceInterfaces(set, nullptr, &hidGuid, index, &item); ++index) {
-        DWORD size = 0;
-        SetupDiGetDeviceInterfaceDetailW(set, &item, nullptr, 0, &size, nullptr);
-        if (size == 0) {
-            continue;
-        }
-        std::vector<BYTE> buffer(size);
-        auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(buffer.data());
-        detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-        if (!SetupDiGetDeviceInterfaceDetailW(set, &item, detail, size, nullptr, nullptr)) {
-            continue;
-        }
-        HidInterface hid;
-        hid.path = detail->DevicePath;
-        const auto productId = ParseSteelSeriesProductId(hid.path);
-        const auto interfaceNumber = ParseInterfaceNumber(hid.path);
-        if (!productId || !interfaceNumber || !FindDeviceModel(*productId)) {
-            continue;
-        }
-        hid.productId = *productId;
-        hid.interfaceNumber = *interfaceNumber;
-        if (QueryCaps(hid)) {
-            result.push_back(std::move(hid));
-        }
-    }
-    SetupDiDestroyDeviceInfoList(set);
-    return result;
-}
-
-std::string Hex(const uint8_t* data, size_t length) {
-    static constexpr char kDigits[] = "0123456789abcdef";
-    std::string text;
-    for (size_t i = 0; i < length; ++i) {
-        if (i) {
-            text += ' ';
-        }
-        text += kDigits[data[i] >> 4];
-        text += kDigits[data[i] & 0x0F];
-    }
-    return text;
+// Base stations that push 07 events: the dial, the knob and the menu, as on the GameDAC.
+bool PushesEvents(const DeviceModel& model) {
+    return model.protocol == DeviceProtocol::NovaPro || model.protocol == DeviceProtocol::Elite;
 }
 
 uint32_t Pack(Levels levels) {
@@ -156,7 +79,8 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
     Close();
     notify_ = notifyWindow;
 
-    const std::vector<HidInterface> interfaces = EnumerateSteelSeriesInterfaces();
+    const std::vector<HidInterface> interfaces =
+        EnumerateSteelSeriesInterfaces([](uint16_t productId) { return FindDeviceModel(productId) != nullptr; });
     const DeviceModel* model = nullptr;
     for (const auto& candidate : SupportedDevices()) {
         if (std::any_of(interfaces.begin(), interfaces.end(),
@@ -278,6 +202,12 @@ void ChatMixDevice::Start(Levels levels) {
         Send({kNovaProChatMixEnable, 1});
         Sleep(kCommandGapMs);
         SetLevels(levels);
+    } else if (model_->protocol == DeviceProtocol::Elite) {
+        // The same switches as on the Nova Pro, as Linux-Arctis-Manager lists them for the Elite. The balance is
+        // not sent: the Elite's command for it is unknown.
+        Send({kNovaProChatMixIcon, 1});
+        Sleep(kCommandGapMs);
+        Send({kNovaProChatMixEnable, 1});
     } else {
         Send({kNovaStatusRequest});
     }
@@ -333,7 +263,7 @@ void ChatMixDevice::QueueHeadsetUpdates(std::vector<HeadsetUpdate> updates) {
 }
 
 void ChatMixDevice::Stop() {
-    if (model_ && model_->protocol == DeviceProtocol::NovaPro) {
+    if (model_ && PushesEvents(*model_)) {
         Send({kNovaProChatMixEnable, 0});
         Sleep(kCommandGapMs);
         Send({kNovaProChatMixIcon, 0});
@@ -371,12 +301,12 @@ bool ChatMixDevice::Send(std::span<const uint8_t> payload) {
     if (!WriteFile(command_, report.data(), static_cast<DWORD>(report.size()), &written, nullptr)) {
         const DWORD error = GetLastError();
         if (!poll || !pollFailing_.exchange(true)) {
-            Log("tx %s failed, error %lu", Hex(report.data(), payload.size() + 1).c_str(), error);
+            Log("tx %s failed, error %lu", HexBytes(report.data(), payload.size() + 1).c_str(), error);
         }
         return false;
     }
     if (!poll) {
-        Log("tx %s", Hex(report.data(), payload.size() + 1).c_str());
+        Log("tx %s", HexBytes(report.data(), payload.size() + 1).c_str());
     } else if (pollFailing_.exchange(false)) {
         Log("status polling recovered");
     }
@@ -403,20 +333,22 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         ++data;
         --size;
     }
-    // Settings replies are logged in full, other reports by their first bytes.
+    // Settings replies are logged in full, other reports by their first bytes; everything from an experimental
+    // model in full, so its log shows what it sends.
     const bool state = model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[1] == 0x20;
-    const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, state ? 32 : 8));
+    const bool full = state || model_->protocol == DeviceProtocol::Elite;
+    const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, full ? 32 : 8));
     if (current != channel.last) {
-        Log("rx %s", Hex(current.data(), current.size()).c_str());
+        Log("rx %s", HexBytes(current.data(), current.size()).c_str());
         channel.last = current;
     }
 
-    if (model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[0] == kNovaProEventReportId &&
-        data[1] != kNovaProLinkEvent && data[1] != kNovaProBatteryEvent) {
+    if (PushesEvents(*model_) && size >= 2 && data[0] == kNovaProEventReportId && data[1] != kNovaProLinkEvent &&
+        data[1] != kNovaProBatteryEvent) {
         // Every other event comes from someone using the GameDAC: its knob, buttons or menu.
         lastEventTick_ = GetTickCount64();
     }
-    if (model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[0] == kNovaProEventReportId &&
+    if (PushesEvents(*model_) && size >= 2 && data[0] == kNovaProEventReportId &&
         (data[1] == kNovaProVolume || data[1] == kNovaProChatMix)) {
         const DialMode mode = data[1] == kNovaProVolume ? DialMode::Volume : DialMode::ChatMix;
         if (dialMode_.exchange(mode) != mode) {
