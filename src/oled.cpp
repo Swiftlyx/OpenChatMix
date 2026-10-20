@@ -29,10 +29,13 @@ constexpr DWORD kHandBackTimeoutMs = 250;
 // The GameDAC redraws its interface after the hand-back; commands sooner may not show on it.
 constexpr DWORD kHandBackSettleMs = 20;
 constexpr uint8_t kBadgeShown = 0x01;
-constexpr uint8_t kBadgeBlink = 0x02;
+constexpr int kBadgeCornerShift = 2;
+constexpr int kBadgeBlinkShift = 4;
 constexpr int kBadgeMargin = 1;
 constexpr ULONGLONG kBadgeShiftMs = 30000;
-constexpr ULONGLONG kBadgeBlinkMs = 500;
+// Half periods, as the headset's LED blinks: slowly while Bluetooth waits for a device, fast while it pairs.
+constexpr ULONGLONG kBadgeSlowBlinkMs = 1000;
+constexpr ULONGLONG kBadgeFastBlinkMs = 250;
 // The Bluetooth rune, 5 x 9 pixels.
 constexpr const char* kBluetoothRune[] = {"..#..", "..##.", "#.#.#", ".###.", "..#..",
                                           ".###.", "#.#.#", "..##.", "..#.."};
@@ -127,9 +130,10 @@ void OledDisplay::Hold(bool hold) {
     }
 }
 
-void OledDisplay::SetBluetoothIcon(bool shown, bool blink, OledCorner corner) {
-    const uint8_t badge =
-        shown ? static_cast<uint8_t>(kBadgeShown | (blink ? kBadgeBlink : 0) | (static_cast<uint8_t>(corner) << 2)) : 0;
+void OledDisplay::SetBluetoothIcon(bool shown, OledBlink blink, OledCorner corner) {
+    const uint8_t badge = shown ? static_cast<uint8_t>(kBadgeShown | (static_cast<uint8_t>(corner) << kBadgeCornerShift) |
+                                                       (static_cast<uint8_t>(blink) << kBadgeBlinkShift))
+                                : 0;
     if (badge_.exchange(badge) != badge && wake_) {
         SetEvent(wake_);
     }
@@ -391,15 +395,17 @@ DWORD OledDisplay::DrawBadge(OledBitmap& frame, uint8_t badge, ULONGLONG now) {
     constexpr int kBoxHeight = kRuneHeight + 2;
     static constexpr int kShifts[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
     const int* shift = kShifts[(now / kBadgeShiftMs) % std::size(kShifts)];
-    const auto corner = static_cast<OledCorner>((badge >> 2) & 0x03);
+    const auto corner = static_cast<OledCorner>((badge >> kBadgeCornerShift) & 0x03);
     const bool right = corner == OledCorner::TopRight || corner == OledCorner::BottomRight;
     const bool bottom = corner == OledCorner::BottomLeft || corner == OledCorner::BottomRight;
     const int left = right ? kOledWidth - kBadgeMargin - kBoxWidth - shift[0] : kBadgeMargin + shift[0];
     const int top = bottom ? kOledHeight - kBadgeMargin - kBoxHeight - shift[1] : kBadgeMargin + shift[1];
     ULONGLONG next = kBadgeShiftMs - now % kBadgeShiftMs;
-    if (badge & kBadgeBlink) {
-        next = std::min(next, kBadgeBlinkMs - now % kBadgeBlinkMs);
-        if ((now / kBadgeBlinkMs) % 2) {
+    const auto blink = static_cast<OledBlink>((badge >> kBadgeBlinkShift) & 0x03);
+    if (blink != OledBlink::None) {
+        const ULONGLONG half = blink == OledBlink::Fast ? kBadgeFastBlinkMs : kBadgeSlowBlinkMs;
+        next = std::min(next, half - now % half);
+        if ((now / half) % 2) {
             return static_cast<DWORD>(next);
         }
     }

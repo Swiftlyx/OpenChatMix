@@ -356,7 +356,7 @@ void Panel::DrawAppearance() {
         swatchRow(T(Text::ChatColor), kIdChatSwatch, std::move(chat), chatCaption),
     };
     // The battery's color is offered only with a headset that reports one, or while it is not the default.
-    const bool batteryHeadset = features_ && (features_->batteryQuery || headset_.battery >= 0);
+    const bool batteryHeadset = (features_ && features_->batteryQuery) || headset_.battery >= 0;
     if (batteryHeadset || appearance.battery != BatteryTint::Theme) {
         colorRows.push_back(BatteryTintItem(kIdBatteryTint, appearance.battery,
                                             [](Settings& s, BatteryTint tint) { s.appearance.battery = tint; }));
@@ -706,7 +706,7 @@ void Panel::DrawNotifications() {
     }) + design::kGroupGap;
 
     // Wired headsets report no battery, so the warning is not offered for them.
-    if (features_ && (features_->batteryQuery || headset_.battery >= 0)) {
+    if ((features_ && features_->batteryQuery) || headset_.battery >= 0) {
         std::vector<CardRow> battery{
             SwitchItem(kIdBatteryAlert, T(Text::BatteryAlert), settings_.battery.enabled,
                        [this] { Edit([](Settings& s) { s.battery.enabled = !s.battery.enabled; }); }),

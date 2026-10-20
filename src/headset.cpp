@@ -160,7 +160,11 @@ const HeadsetFeatures kNova7{
 };
 const HeadsetFeatures kNova7Gen2{
     .sections = kNova7Sections,
-    .equalizer = {.bandsCommand = 0x33, .baseline = 0x14, .range = 20, .terminator = true, .presets = kNova7Presets},
+    .equalizer = {.bandsCommand = 0x33,
+                  .range = 20,
+                  .presets = kNova7Presets,
+                  .format = EqFormat::Parametric,
+                  .experimental = true},
     .save = kSaveState,
     .batteryQuery = kStatusRequest,
 };
@@ -183,6 +187,19 @@ constexpr uint8_t kNovaProBattery = 0xB0;
 constexpr uint8_t kGainCommand = 0x27;
 constexpr uint8_t kMicVolumeCommand = 0x37;
 constexpr uint8_t kSidetoneCommand = 0x39;
+
+// Nova 7 Gen 2 parametric equalizer, as Linux-Arctis-Manager describes the protocol: A7 [link] [kind] [name],
+// then 33 [link] and ten filters of six bytes each, then 27 to apply them. Each filter is its frequency (u16
+// big-endian), type, gain (signed, in 0.1 dB) and Q (x1000, u16 little-endian). The curve's ten bands become peak
+// filters at the usual octave centres with a Q of one octave.
+constexpr uint8_t kGen2EqName = 0xA7;
+constexpr uint8_t kGen2EqCommit = 0x27;
+constexpr uint8_t kGen2Radio = 0x00;         // The 2.4 GHz link; 1 is Bluetooth, 2 the microphone.
+constexpr uint8_t kGen2CustomPreset = 0x01;  // 0 is a SteelSeries preset.
+constexpr char kGen2PresetName[] = "OpenChatMix";
+constexpr uint8_t kGen2PeakFilter = 0x01;
+constexpr uint16_t kGen2OctaveQ = 1414;
+constexpr uint16_t kGen2Frequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
 
 EqCurve CurveFromBytes(const uint8_t* bytes, uint8_t baseline, int8_t range) {
     EqCurve curve{};
@@ -377,15 +394,28 @@ std::vector<uint8_t> SettingCommand(const HeadsetState& state, uint8_t command, 
     return {kStreamMain, level(kStreamMain), 0x00, level(kStreamAux), level(kStreamMic)};
 }
 
-std::vector<uint8_t> EqualizerBandsCommand(const EqualizerSpec& spec, const EqCurve& curve) {
-    std::vector<uint8_t> command{spec.bandsCommand};
-    for (const int8_t band : curve) {
-        command.push_back(static_cast<uint8_t>(spec.baseline + std::clamp<int>(band, -spec.range, spec.range)));
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve) {
+    if (spec.format == EqFormat::Graphic) {
+        std::vector<uint8_t> command{spec.bandsCommand};
+        for (const int8_t band : curve) {
+            command.push_back(static_cast<uint8_t>(spec.baseline + std::clamp<int>(band, -spec.range, spec.range)));
+        }
+        if (spec.terminator) {
+            command.push_back(0x00);
+        }
+        return {command};
     }
-    if (spec.terminator) {
-        command.push_back(0x00);
+    std::vector<uint8_t> name{kGen2EqName, kGen2Radio, kGen2CustomPreset};
+    name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);
+    std::vector<uint8_t> filters{spec.bandsCommand, kGen2Radio};
+    for (int band = 0; band < kEqBands; ++band) {
+        const uint16_t frequency = kGen2Frequencies[band];
+        const int tenths = std::clamp<int>(curve[band], -spec.range, spec.range) * 5;
+        filters.insert(filters.end(), {static_cast<uint8_t>(frequency >> 8), static_cast<uint8_t>(frequency & 0xFF),
+                                       kGen2PeakFilter, static_cast<uint8_t>(static_cast<int8_t>(tenths)),
+                                       static_cast<uint8_t>(kGen2OctaveQ & 0xFF), static_cast<uint8_t>(kGen2OctaveQ >> 8)});
     }
-    return command;
+    return {name, filters, {kGen2EqCommit}};
 }
 
 std::vector<uint8_t> SettingValues(const SettingSpec& spec) {

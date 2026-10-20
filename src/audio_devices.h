@@ -27,6 +27,9 @@ enum class EndpointLink { Unknown, Usb, Bluetooth, Jack, Hdmi, Spdif };
 // From the adapter's bus, and for a sound card from the endpoint's form factor and jack. Unknown for
 // built-in speakers, virtual devices and adapters that describe no jack. Requires COM on the calling thread.
 EndpointLink EndpointLinkOf(const std::wstring& endpointId);
+// Battery of a Bluetooth playback device in percent, as Windows keeps it for the device; nothing for other
+// devices or while the device reports none. Requires COM on the calling thread.
+std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId);
 
 // Active playback devices, and disabled ones on request. Requires COM on the calling thread.
 std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled = false);

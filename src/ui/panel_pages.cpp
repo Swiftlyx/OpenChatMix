@@ -209,7 +209,9 @@ float Panel::DrawEqualizer(float y) {
                T(Text::EqReset), false, [this] { host_.OnEqualizerCurve(EqCurve{}); });
     y += design::kSectionTitleHeight + 2.0f;
 
-    const float hintHeight = devicePreset ? HintHeight(T(Text::EqPresetActive), kWidth - 64.0f) + 4.0f : 0.0f;
+    // One hint under the presets: a preset stored on the headset cannot be edited, an untested format says so.
+    const wchar_t* hint = devicePreset ? T(Text::EqPresetActive) : eq.experimental ? T(Text::EqExperimental) : nullptr;
+    const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
     const float bandsHeight = 20.0f + kEqTrackHeight + 30.0f;
     const float gameHint = HintHeight(T(Text::GamePresetsHint), kWidth - 64.0f);
     const float gameHeight = 44.0f + gameHint;
@@ -228,9 +230,9 @@ float Panel::DrawEqualizer(float y) {
     DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdEqPreset, labels, headset_.eqPreset,
                   p.primary, p.onPrimary, [this](int index) { host_.OnEqualizerPreset(index); });
     float inner = y + 60.0f;
-    if (devicePreset) {
-        canvas_.Text(T(Text::EqPresetActive), {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall,
-                     p.onSurfaceVariant, TextAlign::Leading, true);
+    if (hint) {
+        canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
+                     TextAlign::Leading, true);
         inner += hintHeight;
     }
 

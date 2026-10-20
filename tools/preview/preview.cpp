@@ -177,9 +177,14 @@ const HeadsetFeatures* Features() {
     return Current().steelSeries ? &FeaturesFor(Current().family) : nullptr;
 }
 
+// Bluetooth headphones report their level through Windows, never charging and never off.
+bool BluetoothBattery() {
+    return Current().other == Other::BluetoothHeadset;
+}
+
 bool BatteryShown() {
     const HeadsetFeatures* features = Features();
-    return features && features->batteryQuery && !g.headsetOff;
+    return BluetoothBattery() || (features && features->batteryQuery && !g.headsetOff);
 }
 
 // Plausible values for every native setting of the model: the middle of a slider, the second choice.
@@ -243,7 +248,7 @@ void UpdateTray(DWORD action) {
     }
     HICON icon = CreateLevelIcon(GetSystemMetrics(SM_CXSMICON), static_cast<float>(g.levels.game),
                                  static_cast<float>(g.levels.chat), colors, mark, mark == BalancedIcon::Bars ? 0.0f : 1.0f,
-                                 {g.battery / 100.0f, g.charging});
+                                 {g.battery / 100.0f, g.charging && !BluetoothBattery()});
     NOTIFYICONDATAW data{};
     data.cbSize = sizeof(data);
     data.hWnd = g.window;
@@ -337,7 +342,7 @@ void PushStatus() {
 void PushHeadset() {
     const HeadsetFeatures* features = Features();
     g.headset.battery = BatteryShown() ? g.battery : -1;
-    g.headset.charging = g.charging;
+    g.headset.charging = g.charging && !BluetoothBattery();
     g.headset.headsetOff = features && features->batteryQuery && g.headsetOff;
     g.headset.bluetooth = features && features->bluetooth ? g.bluetooth : BluetoothState::Unknown;
     const bool visible = features && features->HasSettings();
@@ -771,7 +776,7 @@ void ShowMenu() {
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(headsets), texts.headset);
 
     const HeadsetFeatures* features = Features();
-    const bool wireless = features && features->batteryQuery;
+    const bool wireless = BluetoothBattery() || (features && features->batteryQuery);
     HMENU battery = CreatePopupMenu();
     for (int i = 0; i < static_cast<int>(std::size(kBatteryLevels)); ++i) {
         const std::wstring label = std::to_wstring(kBatteryLevels[i]) + L"%";

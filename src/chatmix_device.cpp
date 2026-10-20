@@ -20,6 +20,9 @@ constexpr uint8_t kNovaProChatMixEnable = 0x49;  // 1: dial controls the ChatMix
 constexpr uint8_t kNovaProChatMixIcon = 0x8D;    // 1: ChatMix icon on the display
 constexpr uint8_t kNovaProEventReportId = 0x07;
 constexpr uint8_t kNovaProVolume = 0x25;         // Event: knob turned in volume mode.
+// Events the Nova Pro Wireless base station sends on its own, as Linux-Arctis-Manager lists them.
+constexpr uint8_t kNovaProLinkEvent = 0xB5;      // The 2.4 GHz link to the headset changed.
+constexpr uint8_t kNovaProBatteryEvent = 0xB7;   // Headset or spare battery level changed.
 constexpr uint8_t kNovaStatusRequest = 0xB0;
 
 constexpr DWORD kCommandGapMs = 10;
@@ -408,8 +411,9 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         channel.last = current;
     }
 
-    if (model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[0] == kNovaProEventReportId) {
-        // Every event comes from someone using the GameDAC: its knob, buttons or menu.
+    if (model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[0] == kNovaProEventReportId &&
+        data[1] != kNovaProLinkEvent && data[1] != kNovaProBatteryEvent) {
+        // Every other event comes from someone using the GameDAC: its knob, buttons or menu.
         lastEventTick_ = GetTickCount64();
     }
     if (model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[0] == kNovaProEventReportId &&

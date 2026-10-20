@@ -23,7 +23,7 @@ enum class DeviceFamily {
     NovaProWired,
     NovaProWireless,
     Nova7,
-    Nova7Gen2,
+    Nova7Gen2,  // Gen 2 hardware, and Nova 7 models on the Gen 2 firmware: parametric equalizer.
     Arctis7Plus,
     Nova5X,
 };

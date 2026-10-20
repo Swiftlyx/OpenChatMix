@@ -468,6 +468,7 @@ enum class Text {
     NextMicrophone,
     NoOtherMicrophone,
     MicProcessingOff,
+    EqExperimental,
     Count,
 };
 

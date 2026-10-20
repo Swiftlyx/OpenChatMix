@@ -64,6 +64,7 @@ native settings, so GG and Sonar can stay closed:
   They are stored in the headset itself and stay active while no app runs.
 - **Battery** beside the app's name on the *Mixer* tab, in the tray tooltip, as the tray icon at the
   even balance (in the theme's color, or green to red by its charge) and as a popup when it runs low.
+  Bluetooth headphones show theirs too when Windows gets the level from them.
 - **Only what your model has.** The panel shows the settings, the battery and the display options
   that the connected model supports, and nothing it does not.
 - **A Sonar-style mode** with two virtual audio devices and a 10-band parametric equalizer, if you
@@ -95,12 +96,13 @@ native settings, so GG and Sonar can stay closed:
 - **EQ presets as files.** Save the current curve, import presets from others, keep backups.
 - **Screensaver for the GameDAC display** (Nova Pro). While no sound plays, an animation, a clock
   or your own image or GIF keeps the OLED from burning in. Any sound brings the usual screen back.
-  The *Screensaver now* hotkey shows it at once until the headset or the app is used, and *Test* on
+  The *Screensaver on/off* hotkey keeps it on until you press it again, and *Test* on
   the *Headset* tab shows it for a few seconds. It also runs while SteelSeries GG is open and gives
   way to GG's own apps for the display (Discord, Now Playing, Spotify, Audio Visualizer) that are
   switched on: the moment one of them hands GG a message, a track or its animation, even without sound,
   the screensaver stops drawing over it until GG is done. With the Nova Pro Wireless it can show a
-  Bluetooth icon in a corner while the base station's Bluetooth is on.
+  Bluetooth icon in a corner while the base station's Bluetooth is on: steady with a device connected,
+  blinking slowly while it waits for one and fast while it pairs.
 - **Visualizer for the GameDAC screen** (Nova Pro). Bars that follow the sound fill the whole screen while
   music or a video plays, or for any sound if you like. Music and video are told apart the way Windows
   knows them: an app that plays tells the media controls of Windows, as players and YouTube in the
@@ -137,8 +139,8 @@ native settings, so GG and Sonar can stay closed:
   installation. It is off until you turn it on in *Settings → Audio*.
 - **Hotkeys with an on-screen popup** (`Ctrl + Alt + ← / → / ↓` by default), plus optional hotkeys
   to mute game, chat or media, to send the sound to the next output device or feed the microphone chain
-  from the next microphone (virtual cables are skipped), and one that shows the GameDAC screensaver at
-  once. A single key works as well, so a keyboard's volume knob can become a ChatMix wheel. Hotkeys
+  from the next microphone (virtual cables are skipped), and one that turns the GameDAC screensaver on
+  and off. A single key works as well, so a keyboard's volume knob can become a ChatMix wheel. Hotkeys
   also work without a SteelSeries headset: the balance is then applied to the default output device.
 - **Output devices.** Put the connected devices in your order of preference; optionally the sound
   moves to the next one when the output disconnects and back when the preferred device reconnects.
@@ -205,8 +207,8 @@ works with any headset.
 | Arctis Nova Pro Wired (PC, Xbox) | `12CB`, `12CD` | ✅ Tested |
 | Arctis 7+ / 7P+ / 7X+ / 7+ Destiny | `220E`, `2212`, `2216`, `2236` | ✅ Tested (Arctis 7+) |
 | Arctis Nova Pro Wireless (PC, Xbox) | `12E0`, `12E5` | ✅ Works, reported by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) |
-| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the equalizer is not checked yet |
-| Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A` | Untested — same protocol as Nova 7 |
+| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the equalizer of `22A1` and `227E` (Gen 2 protocol) is experimental ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
+| Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
@@ -281,7 +283,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Headset settings and EQ | *Headset* tab (shown when a supported headset is connected). |
 | Rename, copy or delete saved headset presets | *Headset* tab → the buttons beside each preset under *My presets*. Deleted presets go to the Recycle Bin. |
 | Save, import or back up EQ presets | *Headset* tab → *Save* / *Import* / *Folder*. Presets live in `%APPDATA%\OpenChatMix\Presets`. |
-| Screensaver on the GameDAC | *Headset* tab → *Screensaver* → pick an animation and the delay; the *Screensaver now* hotkey shows it at once. |
+| Screensaver on the GameDAC | *Headset* tab → *Screensaver* → pick an animation and the delay; the *Screensaver on/off* hotkey keeps it on until pressed again. |
 | Line out: speakers or a stream mix | *Headset* tab → *Line out* (GameDAC); in *Streaming* set the main sound, aux input and microphone levels. |
 | Virtual device mode, Media group, equalizer, ducking | *Settings* → *Audio*. |
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode), once turned on in *Settings* → *Audio*. |
@@ -453,7 +455,9 @@ Sound → All sound devices*. The output and microphone pickers also leave out v
 The GameDAC and the Nova Pro Wireless base station have a 128×64 OLED that shows the same screen
 for hours when nothing plays. The screensaver replaces it after a chosen delay (15 s to 10 min)
 without sound. Any sound, turning the knob or a change made in OpenChatMix brings the usual
-screen back at once, so the level meters still show while audio plays.
+screen back at once, so the level meters still show while audio plays. The *Screensaver on/off* hotkey
+keeps it on until you press it again, sound or not; turning the knob or a change made in OpenChatMix
+then shows the usual screen for three seconds.
 
 <p align="center">
   <img src="docs/screenshots/screensaver.png" width="260" alt="Visualizer and screensaver settings">
@@ -475,7 +479,7 @@ When OpenChatMix exits or the PC goes to sleep, the display is handed back to th
 peak marks, while something plays: music and video (an app that tells the media controls of Windows it
 plays) or any sound. It runs at about 17 to 23 frames a second, as fast as the GameDAC takes them.
 Turning the knob or a change made in OpenChatMix shows the usual screen for three seconds; a screensaver
-started by hand goes first.
+turned on by the hotkey goes first.
 
 **Add-on screens** ([3rd party add-ons](#features)) go over the screensaver, the visualizer or the
 GameDAC's own screen for as long as they last; then the screen they covered comes back.
@@ -499,6 +503,8 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | Nova 7 / 7+ / 5X (interface 3) | PC → device | `00 B0` | Status request, polled every 100 ms until dial events arrive, then every 30 s for the battery |
 | | device → PC | `B0 …` | Status: battery at byte 2 (Nova 5X: 3), 0–100 or 0–4 on older models; game and chat at bytes 4 and 5 (Nova 5X: chat 5, game 6) |
 | | device → PC | `45 gg cc` | Dial event (Gen 2 firmware); polling stops once seen |
+| | PC → device | `00 33 b1…b10 00` | Custom EQ bands on the original Nova 7 firmware, `0x14` = 0 dB, 0.5 dB steps |
+| Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (1 = peak), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback
 device, so there is no extra audio path and no added latency. `IAudioSessionManager2` lists the apps
@@ -625,7 +631,7 @@ no code from the projects below, but it would not exist without the protocol det
   the Arctis Nova 7, 7+ and Nova 5 families and the Nova Pro Wireless.
 - [Linux-Arctis-Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos — device
   definitions and native settings (microphone, sidetone, gain, display, power, wireless, Bluetooth)
-  for the Nova Pro, Nova 7, Nova 5 and Arctis 7+.
+  for the Nova Pro, Nova 7, Nova 5 and Arctis 7+, and the Nova 7 Gen 2 parametric equalizer format.
 - [ggoled](https://github.com/JerwuQu/ggoled) by JerwuQu — the Nova Pro OLED drawing protocol
   (`0x93` draw report, `0x95` return to the device's interface), and the Bad Apple demo that
   inspired the screensaver.

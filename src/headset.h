@@ -54,6 +54,12 @@ struct EqPreset {
     EqCurve curve;
 };
 
+// How the equalizer curve reaches the headset.
+enum class EqFormat : uint8_t {
+    Graphic,     // [bandsCommand] [10 levels]: baseline plus half-decibel steps.
+    Parametric,  // Nova 7 Gen 2 protocol: a preset name, ten filters, then a commit (see EqualizerCommands).
+};
+
 struct EqualizerSpec {
     uint8_t bandsCommand = 0;  // 0: the headset has no equalizer.
     uint8_t baseline = 0x14;   // Byte value for 0 dB; each step is 0.5 dB.
@@ -61,6 +67,8 @@ struct EqualizerSpec {
     bool terminator = false;   // A 0x00 byte follows the bands.
     uint8_t presetCommand = 0;  // Non-zero: presets are stored on the device and selected by index.
     std::span<const EqPreset> presets = {};
+    EqFormat format = EqFormat::Graphic;
+    bool experimental = false;  // Written from protocol descriptions only, not yet confirmed on the headset.
     // The custom curve is preset index presets.size() (4 on every supported device).
     int CustomIndex() const { return static_cast<int>(presets.size()); }
 };
@@ -118,7 +126,8 @@ struct HeadsetUpdate {
 std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size);
 void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const HeadsetUpdate& update);
 
-std::vector<uint8_t> EqualizerBandsCommand(const EqualizerSpec& spec, const EqCurve& curve);
+// The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one.
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve);
 // The bytes after the report ID that set one setting: [command, value], or the whole stream mix.
 std::vector<uint8_t> SettingCommand(const HeadsetState& state, uint8_t command, int value);
 

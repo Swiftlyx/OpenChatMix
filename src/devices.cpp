@@ -12,24 +12,26 @@ using enum DeviceFamily;
 
 // Product IDs from HeadsetControl, Linux-Arctis-Manager and the Linux hid-steelseries driver.
 // Only the Nova Pro Wired has been verified with this app. Battery steps follow HeadsetControl: older
-// Nova 7 firmware and the Arctis 7+ report 0-4, newer models a percentage.
+// Nova 7 firmware and the Arctis 7+ report 0-4, newer models a percentage. The Gen 2 family follows
+// Linux-Arctis-Manager: Gen 2 hardware and the IDs Nova 7 models take on the Gen 2 firmware.
 constexpr DeviceModel kModels[] = {
     {0x12CB, L"Arctis Nova Pro Wired", NovaPro, NovaProWired, 0, 0},
     {0x12CD, L"Arctis Nova Pro Wired", NovaPro, NovaProWired, 0, 0},
     {0x12E0, L"Arctis Nova Pro Wireless", NovaPro, NovaProWireless, 0, 0},
     {0x12E5, L"Arctis Nova Pro Wireless", NovaPro, NovaProWireless, 0, 0},
     {0x2202, L"Arctis Nova 7", NovaStatus, Nova7, 4, 5, 4},
-    {0x22A1, L"Arctis Nova 7", NovaStatus, Nova7, 4, 5},
+    {0x22A1, L"Arctis Nova 7", NovaStatus, Nova7Gen2, 4, 5},
     {0x227E, L"Arctis Nova 7 Gen 2", NovaStatus, Nova7Gen2, 4, 5},
     {0x2206, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5, 4},
     {0x2258, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5},
-    {0x229E, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5},
-    {0x22AD, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5},
+    {0x229E, L"Arctis Nova 7X", NovaStatus, Nova7Gen2, 4, 5},
+    {0x22AD, L"Arctis Nova 7X", NovaStatus, Nova7Gen2, 4, 5},
     {0x22A4, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5, 4},
-    {0x22A5, L"Arctis Nova 7X", NovaStatus, Nova7, 4, 5},
+    {0x22A5, L"Arctis Nova 7X", NovaStatus, Nova7Gen2, 4, 5},
     {0x223A, L"Arctis Nova 7 Diablo IV", NovaStatus, Nova7, 4, 5, 4},
-    {0x22A9, L"Arctis Nova 7 Diablo IV", NovaStatus, Nova7, 4, 5},
+    {0x22A9, L"Arctis Nova 7 Diablo IV", NovaStatus, Nova7Gen2, 4, 5},
     {0x227A, L"Arctis Nova 7 WoW Edition", NovaStatus, Nova7, 4, 5, 4},
+    {0x22AB, L"Arctis Nova 7 WoW Edition", NovaStatus, Nova7Gen2, 4, 5},
     {0x220E, L"Arctis 7+", NovaStatus, Arctis7Plus, 4, 5, 4},
     {0x2212, L"Arctis 7P+", NovaStatus, Arctis7Plus, 4, 5, 4},
     {0x2216, L"Arctis 7X+", NovaStatus, Arctis7Plus, 4, 5, 4},

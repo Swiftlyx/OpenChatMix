@@ -1,6 +1,8 @@
 #include "audio_devices.h"
 
 #include <devicetopology.h>
+#include <devpropdef.h>
+#include <setupapi.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -41,6 +43,17 @@ class DECLSPEC_UUID("870af99c-171d-4f9e-af0d-e63df40c2bc9") CPolicyConfigClient;
 // PKEY_AudioEndpoint_FormFactor, an EndpointFormFactor value.
 constexpr PROPERTYKEY kFormFactorKey = {
     {0x1da5d803, 0xd492, 0x4edd, {0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e}}, 0};
+
+// PKEY_Device_ContainerId / DEVPKEY_Device_ContainerId: every device node of one physical device shares it,
+// its audio endpoints included.
+constexpr GUID kContainerIdFormat = {0x8c7ed206, 0x3f8a, 0x4827, {0xb3, 0xab, 0xae, 0x9e, 0x1f, 0xae, 0xfc, 0x6c}};
+constexpr PROPERTYKEY kContainerIdKey = {kContainerIdFormat, 2};
+constexpr DEVPROPKEY kDeviceContainerIdKey = {kContainerIdFormat, 2};
+
+// The battery level Windows keeps for a Bluetooth device that reports one, a byte in percent, on one of the
+// device's nodes under the Bluetooth enumerators.
+constexpr DEVPROPKEY kBluetoothBatteryKey = {
+    {0x104ea319, 0x6ee2, 0x4701, {0xbd, 0x47, 0x8d, 0xdb, 0xf4, 0x25, 0xbb, 0xe5}}, 2};
 
 // The adapter's connector that an endpoint is wired to.
 ComPtr<IConnector> AdapterConnector(IMMDevice* device) {
@@ -194,6 +207,58 @@ EndpointLink EndpointLinkOf(const std::wstring& endpointId) {
     }
     // Without a jack description, only headphones and headsets surely plug into one.
     return is(Headphones) || is(Headset) ? EndpointLink::Jack : EndpointLink::Unknown;
+}
+
+std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId) {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IMMDevice> device;
+    ComPtr<IPropertyStore> store;
+    if (endpointId.empty() ||
+        FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
+        FAILED(enumerator->GetDevice(endpointId.c_str(), &device)) ||
+        FAILED(device->OpenPropertyStore(STGM_READ, &store))) {
+        return std::nullopt;
+    }
+    GUID container{};
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    const bool known = SUCCEEDED(store->GetValue(kContainerIdKey, &value)) && value.vt == VT_CLSID && value.puuid;
+    if (known) {
+        container = *value.puuid;
+    }
+    PropVariantClear(&value);
+    if (!known) {
+        return std::nullopt;
+    }
+    // Classic Bluetooth devices sit under BTHENUM, Bluetooth LE devices under BTHLE.
+    for (const wchar_t* bus : {L"BTHENUM", L"BTHLE"}) {
+        HDEVINFO set = SetupDiGetClassDevsW(nullptr, bus, nullptr, DIGCF_ALLCLASSES | DIGCF_PRESENT);
+        if (set == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        std::optional<int> battery;
+        SP_DEVINFO_DATA node{};
+        node.cbSize = sizeof(node);
+        for (DWORD index = 0; !battery && SetupDiEnumDeviceInfo(set, index, &node); ++index) {
+            GUID nodeContainer{};
+            DEVPROPTYPE type = DEVPROP_TYPE_EMPTY;
+            if (!SetupDiGetDevicePropertyW(set, &node, &kDeviceContainerIdKey, &type,
+                                           reinterpret_cast<PBYTE>(&nodeContainer), sizeof(nodeContainer), nullptr, 0) ||
+                type != DEVPROP_TYPE_GUID || !IsEqualGUID(nodeContainer, container)) {
+                continue;
+            }
+            BYTE level = 0;
+            if (SetupDiGetDevicePropertyW(set, &node, &kBluetoothBatteryKey, &type, &level, sizeof(level), nullptr, 0) &&
+                type == DEVPROP_TYPE_BYTE && level <= 100) {
+                battery = level;
+            }
+        }
+        SetupDiDestroyDeviceInfoList(set);
+        if (battery) {
+            return battery;
+        }
+    }
+    return std::nullopt;
 }
 
 namespace {

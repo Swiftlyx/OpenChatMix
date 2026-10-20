@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.1.0 — 2026-10-20
+
+- The *Screensaver on/off* hotkey (formerly *Screensaver now*) keeps the GameDAC screensaver on until
+  you press it again, also while sound plays. Turning the knob or a change made in OpenChatMix shows the
+  GameDAC's own screen for three seconds, then the screensaver comes back. Requested by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5).
+- Nova Pro Wireless: the battery and 2.4 GHz link reports the base station sends on its own no longer
+  count as using the GameDAC, so they no longer end the screensaver.
+- The Bluetooth icon on the screensaver follows the headset's LED: steady with a device connected,
+  blinking slowly while Bluetooth waits for one and fast while it pairs. Suggested by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5).
+- Bluetooth headphones show their battery beside the app's name, in the tray tooltip, as the tray icon
+  at the even balance and in the low battery popup, when Windows gets the level from them.
+- Experimental equalizer for the Nova 7 Gen 2 protocol: the Nova 7 Gen 2 (`227E`) and the Nova 7
+  models on the Gen 2 firmware (`22A1`, 7X `229E` / `22A5` / `22AD`, Diablo IV `22A9`, WoW `22AB`)
+  ignore the older 10-band command, so the curve is now sent as ten peak filters, as
+  Linux-Arctis-Manager describes their protocol. These models also save their settings like the
+  Nova 7 Gen 2. Reported by [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7); the *Headset* tab marks it as experimental until it is confirmed.
+- After a SteelSeries headset disconnects, the panel no longer shows its last battery level.
+- The Ukrainian translation reads more naturally: no repeated words, and the same terms as Windows
+  (пристрій виводу, гаряча клавіша, самопрослуховування).
+
 ## 2.0.0 — 2026-10-19
 
 - The tray icon animates: at the even balance the two bars turn into the equals sign, widen into the

@@ -19,6 +19,8 @@ constexpr int kOledHeight = 64;
 
 // Where an icon sits over the animation.
 enum class OledCorner : uint8_t { TopLeft, TopRight, BottomLeft, BottomRight };
+// How an icon over the animation blinks.
+enum class OledBlink : uint8_t { None, Slow, Fast };
 
 // One frame, one byte per pixel (0 off, 1 on), row-major.
 struct OledBitmap {
@@ -76,9 +78,9 @@ public:
     // Starts holding from any thread: drawing stops before its next report, even within a frame. Hold()
     // decides afterwards when it ends.
     void HoldNow() { holding_ = true; }
-    // Shows the Bluetooth icon over the animation in a corner, blinking while pairing. Like a still image it
-    // moves by a pixel every half minute, so it does not burn in.
-    void SetBluetoothIcon(bool shown, bool blink, OledCorner corner);
+    // Shows the Bluetooth icon over the animation in a corner, steady or blinking. Like a still image it moves by a
+    // pixel every half minute, so it does not burn in.
+    void SetBluetoothIcon(bool shown, OledBlink blink, OledCorner corner);
     // Shows an add-on's screen over the screensaver, or instead of the device's own screen, until it is replaced
     // or cleared with null; what was there before comes back after it. GG holds do not apply to it.
     void SetOverlay(std::shared_ptr<IdleAnimation> overlay);
@@ -103,7 +105,7 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> playing_{false};
     std::atomic<bool> holding_{false};
-    std::atomic<uint8_t> badge_{0};  // 0 none; otherwise bit 0 shown, bit 1 blinking, bits 2-3 the corner.
+    std::atomic<uint8_t> badge_{0};  // 0 none; otherwise bit 0 shown, bits 2-3 the corner, bits 4-5 the blink.
     std::atomic<bool> overlaid_{false};
     SRWLOCK lock_ = SRWLOCK_INIT;
     std::shared_ptr<IdleAnimation> requested_;

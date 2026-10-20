@@ -74,6 +74,7 @@ constexpr UINT_PTR kTimerSavePlugins = 14;
 constexpr UINT_PTR kTimerTrayMotion = 15;
 constexpr UINT_PTR kTimerTrayCard = 16;
 constexpr UINT_PTR kTimerAddOnScreen = 17;
+constexpr UINT_PTR kTimerOutputBattery = 18;
 constexpr UINT kTrayFrameMs = 15;  // About one frame of a 60 Hz display; the tray needs no more.
 constexpr UINT kMicRetryMs = 3000;
 constexpr UINT kSavePluginsMs = 60 * 1000;  // Plugin settings are kept safe while their windows are used.
@@ -106,6 +107,7 @@ constexpr UINT kResumeDelayMs = 3000;     // Headsets re-enumerate after sleep.
 constexpr UINT kRebindDelayMs = 500;      // Coalesces bursts of endpoint notifications.
 constexpr UINT kGgWatchMs = 5000;
 constexpr UINT kIdleCheckMs = 250;
+constexpr UINT kOutputBatteryPollMs = 60000;  // A Bluetooth output's battery, as Windows reports it.
 constexpr ULONGLONG kIdlePreviewMs = 8000;  // A newly chosen animation shows right away for this long.
 constexpr float kSilencePeak = 0.0001f;     // About -80 dBFS.
 // SteelSeries GG's apps draw on the same display; the screensaver holds still while they show something, for as
@@ -114,7 +116,9 @@ constexpr ULONGLONG kGgMessageMs = 6000;  // Discord: a message's title and text
 constexpr ULONGLONG kGgTrackMs = 3500;    // Now Playing and Spotify: the track for 3 s.
 constexpr ULONGLONG kGgFrameMs = 1000;    // Audio Visualizer: frames follow each other while sound plays.
 constexpr ULONGLONG kVisualizerLingerMs = 2000;  // The visualizer stays this long after the sound or media stops.
-constexpr ULONGLONG kVisualizerYieldMs = 3000;   // The GameDAC's own screen after the headset or the app is used.
+// The GameDAC's own screen after the headset or the app is used, before the visualizer or the screensaver turned on
+// by the hotkey come back.
+constexpr ULONGLONG kDisplayYieldMs = 3000;
 constexpr ULONGLONG kMediaCheckMs = 1000;        // How often Windows is asked whether media plays.
 // The headset is asked for its settings again after changes, so the panel shows what it really applied.
 constexpr UINT kVerifyAfterCommandMs = 500;
@@ -221,8 +225,10 @@ struct App {
     bool routingDevicesAcquired = false;  // The Game and Chat devices were switched on for the running mode.
     bool routingDeviceError = false;
     // The playback device ChatMix works on while no SteelSeries headset is connected; empty if it is virtual.
+    std::wstring outputId;
     std::wstring outputName;
     EndpointLink outputLink = EndpointLink::Unknown;
+    int outputBattery = -1;  // Percent for a Bluetooth output that reports it; -1 otherwise.
     OledDisplay display;
     std::shared_ptr<IdleAnimation> idleAnimation;
     MicChain mic;
@@ -240,8 +246,9 @@ struct App {
     ULONGLONG lastActivityTick = 0;  // Changes made in OpenChatMix that the headset display shows.
     ULONGLONG idlePreviewStart = 0;
     ULONGLONG idlePreviewUntil = 0;
-    bool idleManual = false;  // Started by the hotkey: shows despite sound until the headset or the app is used.
-    ULONGLONG idleManualUntil = 0;  // Non-zero: the Test button's run ends at this tick.
+    bool idlePinned = false;  // Turned on by the hotkey: shows despite sound until the hotkey is pressed again.
+    bool idleManual = false;  // Started by the Test button: shows despite sound until idleManualUntil.
+    ULONGLONG idleManualUntil = 0;
     ULONGLONG idleHoldStart = 0;    // Something SteelSeries GG shows holds the screensaver still...
     ULONGLONG idleHoldUntil = 0;    // ...until this tick.
     GgScreenApps ggScreen;          // GG's apps that may draw on the headset display.
@@ -319,6 +326,22 @@ uint32_t PackRgb(D2D1_COLOR_F color) {
     return (channel(color.r) << 16) | (channel(color.g) << 8) | channel(color.b);
 }
 
+struct BatteryReading {
+    int level = -1;  // Percent; -1 unknown.
+    bool charging = false;
+};
+
+// The battery the panel and the tray show: the SteelSeries headset's while it is connected and switched on,
+// otherwise a Bluetooth output's as Windows reports it.
+BatteryReading CurrentBattery() {
+    if (g_app.device.IsOpen()) {
+        const HeadsetState& headset = g_app.headset;
+        return headset.battery >= 0 && !headset.headsetOff ? BatteryReading{headset.battery, headset.charging}
+                                                           : BatteryReading{};
+    }
+    return {g_app.outputBattery, false};
+}
+
 // Theme colors, or the taskbar's own text color for the monochrome icon.
 LevelIconColors TrayColors() {
     const bool light = TaskbarIsLight();
@@ -327,16 +350,11 @@ LevelIconColors TrayColors() {
     }
     const ui::Palette palette = ui::MakePalette(AccentSeed(), !light, g_app.settings.appearance.chatAccent,
                                                 g_app.settings.appearance.contrast);
-    const float charge = std::max(0, g_app.headset.battery) / 100.0f;
+    const float charge = std::max(0, CurrentBattery().level) / 100.0f;
     const D2D1_COLOR_F battery = g_app.settings.appearance.trayBattery == BatteryTint::Theme
                                      ? palette.primary
                                      : ui::BatteryColor(charge, !light);
     return {PackRgb(palette.primary), PackRgb(palette.tertiary), PackRgb(battery)};
-}
-
-// The connected headset reports its battery and is switched on.
-bool HeadsetBatteryKnown() {
-    return g_app.device.IsOpen() && g_app.headset.battery >= 0 && !g_app.headset.headsetOff;
 }
 
 std::wstring DisplayName(const std::wstring& path, const std::wstring& exe) {
@@ -424,7 +442,7 @@ void TrayTargets(float& game, float& chat, float& morph) {
     chat = g_app.chatMuted ? 0.0f : static_cast<float>(g_app.levels.chat);
     const bool balanced = BalanceFromLevels(g_app.levels) == 0 && !g_app.chatMuted && !g_app.gameMuted;
     BalancedIcon wanted = balanced ? g_app.settings.appearance.balancedIcon : BalancedIcon::Bars;
-    if (wanted == BalancedIcon::Battery && !HeadsetBatteryKnown()) {
+    if (wanted == BalancedIcon::Battery && CurrentBattery().level < 0) {
         wanted = BalancedIcon::Bars;
     }
     morph = 0.0f;
@@ -436,8 +454,8 @@ void TrayTargets(float& game, float& chat, float& morph) {
 
 HICON TrayIconNow() {
     const TrayMotion& tray = g_app.tray;
-    const HeadsetState& headset = g_app.headset;
-    const BatteryMark battery{std::max(0, headset.battery) / 100.0f, headset.charging};
+    const BatteryReading reading = CurrentBattery();
+    const BatteryMark battery{std::max(0, reading.level) / 100.0f, reading.charging};
     return CreateLevelIcon(GetSystemMetrics(SM_CXSMICON), tray.game, tray.chat, TrayColors(), tray.mark, tray.morph,
                            battery);
 }
@@ -528,10 +546,9 @@ void TickTray() {
 // "Arctis Nova 7 · 85% · charging".
 std::wstring TrayDeviceText() {
     std::wstring device = DeviceName();
-    const HeadsetState& headset = g_app.headset;
-    if (g_app.device.IsOpen() && headset.battery >= 0 && !headset.headsetOff) {
-        device += L" · " + std::to_wstring(headset.battery) + L"%";
-        if (headset.charging) {
+    if (const BatteryReading battery = CurrentBattery(); battery.level >= 0) {
+        device += L" · " + std::to_wstring(battery.level) + L"%";
+        if (battery.charging) {
             device += std::wstring(L" · ") + T(Text::Charging);
         }
     }
@@ -693,9 +710,15 @@ void NotifyGg() {
 }
 
 void PushHeadset() {
-    const bool visible = g_app.device.IsOpen() && g_app.features && g_app.features->HasSettings();
-    g_app.panel->SetHeadset(g_app.device.IsOpen() ? g_app.device.Model()->name : L"", visible ? g_app.features : nullptr,
-                            g_app.headset);
+    if (!g_app.device.IsOpen()) {
+        // Without a SteelSeries headset only a Bluetooth output's battery shows.
+        HeadsetState output;
+        output.battery = g_app.outputBattery;
+        g_app.panel->SetHeadset(L"", nullptr, output);
+        return;
+    }
+    const bool visible = g_app.features && g_app.features->HasSettings();
+    g_app.panel->SetHeadset(g_app.device.Model()->name, visible ? g_app.features : nullptr, g_app.headset);
 }
 
 void ScheduleHeadsetSave() {
@@ -775,8 +798,9 @@ void CommitHeadset() {
 }
 
 void SendEqualizerCurve(const EqCurve& curve) {
-    const std::vector<uint8_t> command = EqualizerBandsCommand(g_app.features->equalizer, curve);
-    SendHeadsetCommand(command);
+    for (const std::vector<uint8_t>& command : EqualizerCommands(g_app.features->equalizer, curve)) {
+        SendHeadsetCommand(command);
+    }
 }
 
 // Endpoint ID of the routing output: the chosen device or the connected SteelSeries headset.
@@ -794,18 +818,45 @@ std::wstring RoutingOutputId(const std::vector<AudioEndpoint>& endpoints) {
     return {};
 }
 
+void CheckBattery();
+
+// A Bluetooth output's battery while no SteelSeries headset is connected, as Windows reports it; read again every
+// minute while the output is such a device.
+void RefreshOutputBattery() {
+    const bool bluetooth = !g_app.device.IsOpen() && g_app.outputLink == EndpointLink::Bluetooth;
+    const int battery = bluetooth ? BluetoothBatteryOf(g_app.outputId).value_or(-1) : -1;
+    if (bluetooth) {
+        SetTimer(g_app.window, kTimerOutputBattery, kOutputBatteryPollMs, nullptr);
+    } else {
+        KillTimer(g_app.window, kTimerOutputBattery);
+    }
+    if (battery == g_app.outputBattery) {
+        return;
+    }
+    g_app.outputBattery = battery;
+    if (battery >= 0) {
+        Log("output battery: %d%%", battery);
+    }
+    PushHeadset();
+    UpdateStatus();
+    CheckBattery();
+}
+
 // Name of the routing output in virtual device mode, otherwise of the default playback device.
 void RefreshOutputName() {
     const std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
     const std::wstring id = g_app.settings.routing.enabled ? RoutingOutputId(endpoints) : DefaultRenderEndpoint(eConsole);
+    g_app.outputId.clear();
     g_app.outputName.clear();
     g_app.outputLink = EndpointLink::Unknown;
     for (const auto& endpoint : endpoints) {
         if (endpoint.id == id && !IsVirtualEndpoint(endpoint)) {
+            g_app.outputId = endpoint.id;
             g_app.outputName = endpoint.name;
             g_app.outputLink = EndpointLinkOf(endpoint.id);
         }
     }
+    RefreshOutputBattery();
 }
 
 bool IsRoutingDevice(const std::wstring& id) {
@@ -1686,7 +1737,8 @@ void PushIdleScreen() {
     g_app.panel->SetIdleScreen(view);
 }
 
-// The base station's Bluetooth on the screensaver, in the chosen corner, while it is on.
+// The base station's Bluetooth on the screensaver, in the chosen corner, while it is on. Like the headset's LED it
+// stays steady with a device connected, blinks slowly while it waits for one and fast while it pairs.
 void UpdateIdleBadge() {
     const IconCorner corner = g_app.settings.idleScreen.bluetoothIcon;
     const BluetoothState bluetooth = g_app.headset.bluetooth;
@@ -1697,7 +1749,10 @@ void UpdateIdleBadge() {
                              : corner == IconCorner::BottomLeft  ? OledCorner::BottomLeft
                              : corner == IconCorner::BottomRight ? OledCorner::BottomRight
                                                                  : OledCorner::TopRight;
-    g_app.display.SetBluetoothIcon(shown, bluetooth == BluetoothState::Pairing, place);
+    const OledBlink blink = bluetooth == BluetoothState::Pairing ? OledBlink::Fast
+                            : bluetooth == BluetoothState::On    ? OledBlink::Slow
+                                                                 : OledBlink::None;
+    g_app.display.SetBluetoothIcon(shown, blink, place);
 }
 
 const char* BluetoothName(BluetoothState state) {
@@ -1796,7 +1851,7 @@ bool VisualizerWanted(ULONGLONG now, ULONGLONG deviceEvent) {
         }
     }
     const ULONGLONG used = std::max(deviceEvent, g_app.lastActivityTick);
-    if (used && now - used < kVisualizerYieldMs) {
+    if (used && now - used < kDisplayYieldMs) {
         return false;
     }
     const ULONGLONG playing = visualizer.mediaOnly ? g_app.mediaPlayingTick : g_app.lastSoundTick;
@@ -1857,7 +1912,7 @@ void CheckIdleScreen() {
         g_app.idlePreviewUntil = 0;
     }
     if (used || (g_app.idleManualUntil && now >= g_app.idleManualUntil)) {
-        if (g_app.idleManualUntil && now >= g_app.idleManualUntil) {
+        if (g_app.idleManualUntil && now >= g_app.idleManualUntil && !g_app.idlePinned) {
             // After a test the screensaver waits its whole delay again.
             g_app.lastActivityTick = now;
         }
@@ -1866,8 +1921,12 @@ void CheckIdleScreen() {
     }
     const ULONGLONG activity = std::max({g_app.lastSoundTick, g_app.lastActivityTick, deviceEvent});
     const ULONGLONG delay = static_cast<ULONGLONG>(g_app.settings.idleScreen.delaySeconds) * 1000;
+    // Turned on by the hotkey, the screensaver stays; using the headset or the app shows the GameDAC's own screen
+    // for a moment, so a volume change shows there.
+    const ULONGLONG lastUse = std::max(deviceEvent, g_app.lastActivityTick);
+    const bool pinned = g_app.idlePinned && !(lastUse && now - lastUse < kDisplayYieldMs);
     // SteelSeries GG may draw on the same display too; the screensaver runs regardless.
-    const bool byHand = g_app.idleManual || now < g_app.idlePreviewUntil;
+    const bool byHand = g_app.idleManual || pinned || now < g_app.idlePreviewUntil;
     const bool idle = g_app.idleAnimation && (byHand || now - activity >= delay);
     // The visualizer while something plays; a screensaver started by hand goes first.
     const bool visualize = !byHand && VisualizerWanted(now, deviceEvent);
@@ -1907,8 +1966,8 @@ void OnWindowFlash(HWND window) {
     }
 }
 
-// The screensaver hotkey: shows it now, or hides it when it shows. Without a chosen animation the
-// popup says where to pick one.
+// The screensaver hotkey: turns it on until the hotkey is pressed again, or off when it is on or shows.
+// Without a chosen animation the popup says where to pick one.
 void ToggleScreensaver() {
     if (!g_app.display.IsOpen() || !g_app.idleAnimation) {
         if (g_app.settings.showPopup) {
@@ -1917,15 +1976,19 @@ void ToggleScreensaver() {
         return;
     }
     const ULONGLONG now = GetTickCount64();
-    if (g_app.displayShows == App::DisplayShows::Screensaver) {
+    if (g_app.idlePinned || g_app.displayShows == App::DisplayShows::Screensaver) {
+        g_app.idlePinned = false;
         g_app.idleManual = false;
+        g_app.idleManualUntil = 0;
         g_app.idlePreviewUntil = 0;
         g_app.lastActivityTick = now;
     } else {
-        g_app.idleManual = true;
+        g_app.idlePinned = true;
+        g_app.idleManual = false;
         g_app.idleManualUntil = 0;
         g_app.idlePreviewStart = now;
     }
+    Log("screensaver %s by the hotkey", g_app.idlePinned ? "on" : "off");
     CheckIdleScreen();
 }
 
@@ -2018,6 +2081,9 @@ void StartIdleScreen(bool preview) {
     const IdleScreenSettings& idle = g_app.settings.idleScreen;
     const std::optional<DisplayCollection> collection = g_app.device.IsOpen() ? g_app.device.Display() : std::nullopt;
     if (!collection || idle.animation == IdleAnimationKind::Off) {
+        if (idle.animation == IdleAnimationKind::Off) {
+            g_app.idlePinned = false;
+        }
         UpdateDisplayUse();
         return;
     }
@@ -3003,26 +3069,26 @@ void Host::OnOutputExclude(const std::wstring& id, bool excluded) {
 // Warns once when the battery falls to the threshold, in the popup; charging or 5% above re-arms it.
 void CheckBattery() {
     const BatteryAlertSettings& alert = g_app.settings.battery;
-    const HeadsetState& state = g_app.headset;
-    if (state.battery < 0 || state.headsetOff) {
+    const BatteryReading state = CurrentBattery();
+    if (state.level < 0) {
         return;
     }
     // A battery that reports five steps (0, 25, 50…%) warns at its lowest step above empty.
-    const DeviceModel* model = g_app.device.Model();
+    const DeviceModel* model = g_app.device.IsOpen() ? g_app.device.Model() : nullptr;
     const int step = model && model->protocol == DeviceProtocol::NovaStatus ? 100 / std::max<int>(model->statusBatteryMax, 1)
                                                                             : 1;
     const int threshold = std::max(alert.threshold, step);
-    if (state.charging || state.battery > threshold + 5) {
+    if (state.charging || state.level > threshold + 5) {
         g_app.batteryWarned = false;
         return;
     }
-    if (!alert.enabled || g_app.batteryWarned || state.battery > threshold) {
+    if (!alert.enabled || g_app.batteryWarned || state.level > threshold) {
         return;
     }
     g_app.batteryWarned = true;
-    Log("battery low: %d%%", state.battery);
-    const wchar_t glyph = static_cast<wchar_t>(kGlyphBattery0 + std::clamp(state.battery / 10, 0, 10));
-    g_app.osd->ShowMessage(glyph, std::wstring(T(Text::BatteryLowTitle)) + L" · " + std::to_wstring(state.battery) + L"%",
+    Log("battery low: %d%%", state.level);
+    const wchar_t glyph = static_cast<wchar_t>(kGlyphBattery0 + std::clamp(state.level / 10, 0, 10));
+    g_app.osd->ShowMessage(glyph, std::wstring(T(Text::BatteryLowTitle)) + L" · " + std::to_wstring(state.level) + L"%",
                            DeviceName() + L" · " + T(Text::BatteryLowText), true);
 }
 
@@ -3404,6 +3470,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         }
         if (wParam == kTimerDucking) {
             TickDucking();
+            return 0;
+        }
+        if (wParam == kTimerOutputBattery) {
+            RefreshOutputBattery();
             return 0;
         }
         KillTimer(window, wParam);
