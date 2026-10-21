@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.5.1 — 2026-10-22
+
+- Presets from SteelSeries GG are read again: current GG keeps Sonar's database in a new place. Chat
+  presets in their new format, Sonar's media presets for the Media channel and 46 presets that GG wrote
+  with trailing commas are read too, and notch filters keep their type.
+- GG Engine's game and microphone presets that Sonar lacks join the list (46 game presets, mostly
+  console and mobile games); the section is now called *From SteelSeries GG*.
+- App profiles: the *Game equalizer* menu starts with GG's presets made for the profile's game
+  (*For this game*), found through GG's game library and Sonar's links to games, or by the game's name.
+- Preset menus filter as you type, with a *Type to search…* hint at the top; Ctrl+A, Ctrl+C, Ctrl+X,
+  Ctrl+V and Ctrl+Backspace work there, and Esc clears the search first. *Manage presets…* moved up,
+  above GG's list, and stands out with an icon and a chevron.
+- Long menus and pages stay smooth: only the rows in view are drawn, menus scroll three items per notch,
+  and scrollbars can be dragged.
+- The *Game presets* menu on the *Headset* tab no longer repeats presets the headset has itself (Flat,
+  Bass Boost).
+- Nova 7 Gen 2: the equalizer's title counts down to the delayed save and then says *Done*.
+- Text fields take Ctrl+C, Ctrl+X, Ctrl+V and Ctrl+Backspace.
+
 ## 2.5.0 — 2026-10-21
 
 - NVIDIA noise removal for RTX graphics cards, as a plugin: with NVIDIA's Audio Effects redistributable

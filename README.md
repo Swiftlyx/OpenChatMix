@@ -146,8 +146,8 @@ native settings, so GG and Sonar can stay closed:
   be held at 100%. See [Microphone](#microphone).
 - **Equalizer for any headset** (virtual device mode, optional). A 10-band parametric EQ for Game
   and for Chat with a response graph like Sonar's, Bass Boost, Voice Clarity, Treble Boost and Smart
-  Volume, built-in presets, your own preset files and the presets of a local SteelSeries Sonar
-  installation. Each channel can also run your own VST 2 and VST 3 plugins, such as a convolver with
+  Volume, built-in presets, your own preset files and the presets of a local SteelSeries GG
+  installation (Sonar's and Engine's). Each channel can also run your own VST 2 and VST 3 plugins, such as a convolver with
   impulse responses, crossfeed or a loudness plugin, and DeepFilterNet on Chat removes noise from the
   voices of others. It is off until you turn it on in *Settings → Audio*.
 - **Hotkeys with an on-screen popup** (`Ctrl + Alt + ← / → / ↓` by default), plus optional hotkeys
@@ -418,9 +418,13 @@ Presets come from three places:
 - built-in presets: Flat, Bass Boost, Footsteps, Treble Boost, V-Shape, Clear Dialog and Night for
   Game; Flat, Clear Voice, Warm Voice, Less Harsh and Radio for Chat; Flat, Voice Clarity, Broadcast,
   Bass Cut, Less Nasal and Less Sibilance for the microphone;
-- the game, chat and microphone presets of SteelSeries Sonar, if SteelSeries GG is installed: they are read
-  from GG's local database and are not shipped with OpenChatMix;
+- the game, chat, media and microphone presets of SteelSeries GG, if it is installed: Sonar's, plus
+  Engine's game and microphone presets that Sonar lacks. They are read from GG's local databases and are
+  not shipped with OpenChatMix;
 - your own presets, saved as files in `%APPDATA%\OpenChatMix\Presets\Parametric`.
+
+The preset menus filter as you type. In an app profile, the *Game equalizer* menu starts with GG's
+presets made for that game, under *For this game*.
 
 **Plugins.** Below the effects, Game, Chat and Media each have a *Plugins* list like the microphone's:
 any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder and click one to open
@@ -458,7 +462,7 @@ under *Processing order* to change it, for example to run a plugin before the no
   RNNoise hears no speech.
 - **Equalizer**: the same 10-band parametric EQ as for Game and Chat, with presets made for voices
   (Voice Clarity, Broadcast, Bass Cut, Less Nasal, Less Sibilance) and the microphone presets of a
-  local Sonar installation.
+  local SteelSeries GG installation.
 - **Compressor** (Light, Medium, Strong): makes quiet speech louder and loud speech quieter, and keeps
   the room noise between words down instead of raising it.
 - **Plugins**: any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder.
