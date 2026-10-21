@@ -27,6 +27,12 @@ struct SettingOption {
     const wchar_t* literal = nullptr;  // Overrides text, e.g. "−12 dB".
 };
 
+// How a setting's value goes on the wire after its command byte.
+enum class SettingWire : uint8_t {
+    Byte,           // [value]
+    SwitchedLevel,  // [on] [level]: 0 is off at the last level, 1..max is on at that level (Nova Elite sidetone).
+};
+
 struct SettingSpec {
     uint8_t command;  // Sent as [command, value] after the report ID; see SettingCommand().
     Text label;
@@ -36,6 +42,7 @@ struct SettingSpec {
     std::span<const SettingOption> options = {};
     uint8_t shownWith = 0;  // Non-zero: shown only while that setting has the value below.
     uint8_t shownWithValue = 0;
+    SettingWire wire = SettingWire::Byte;
 };
 
 // The GameDAC's stream mix is one command for three sliders: 47 [main] 00 [aux] [mic]. The aux and
@@ -86,6 +93,7 @@ struct HeadsetFeatures {
     uint8_t batteryQuery = 0;            // Answered with the battery status (Nova Pro Wireless, dongles' b0).
     bool oled = false;                   // 128x64 display that accepts drawing reports (06 93).
     bool bluetooth = false;              // The battery reply also tells the base station's Bluetooth.
+    bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
 
     bool HasSettings() const { return !sections.empty() || equalizer.bandsCommand != 0; }
     const SettingSpec* FindSetting(uint8_t command) const;
@@ -129,7 +137,8 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
 // The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve);
 // The bytes after the report ID that set one setting: [command, value], or the whole stream mix.
-std::vector<uint8_t> SettingCommand(const HeadsetState& state, uint8_t command, int value);
+std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const HeadsetState& state, uint8_t command,
+                                    int value);
 
 // Valid values of a setting in display order.
 std::vector<uint8_t> SettingValues(const SettingSpec& spec);

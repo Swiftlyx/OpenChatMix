@@ -222,7 +222,7 @@ works with any headset.
 | Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the Gen 2 protocol equalizer works on `22A1` ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) and is not yet checked on `227E` |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
-| Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial and battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its settings are not supported yet |
+| Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial and battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its settings are experimental since 2.4.1, and its own equalizer is not supported yet |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -537,6 +537,9 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | Nova Elite (interface 3, experimental) | PC → device | `01 8D 01` · `01 49 01` | As on the Nova Pro, with report ID `0x01` |
 | | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
 | | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` | Dial event; battery event (headset %, spare %, charging state) |
+| | PC → device | `01 37` `01 BF` `01 BD` `01 B8` `01 B9` `01 27` `01 85` `01 83` `01 89` `01 C1` `01 B2` `01 B3` | Settings (experimental): mic volume, mute LED, noise control (0 off, 1 transparency, 2 ANC), ANC level, transparency level, volume limiter, brightness, dimming, home screen, auto-off, Bluetooth at power-on, during calls; line out and stream mix as on the Nova Pro; `01 09` saves 500 ms later |
+| | PC → device | `01 38 on level` · `01 39 on level` | Sidetone of the boom and the built-in microphone |
+| | PC → device | `01 80` | Query the display: dimming (byte 2), brightness (3), home screen (5); `01 B0` also holds Bluetooth at power-on (2), during calls (3), transparency (8), noise control (10), mute LED (11), auto-off (12), ANC level (16) |
 | Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (1 = peak), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback

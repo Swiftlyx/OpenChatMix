@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.1 — 2026-10-21
+
+- Arctis Nova Elite settings on the *Headset* tab, experimental: microphone volume, sidetone for the boom
+  and the built-in microphone, mute LED brightness, noise control (off, transparency or ANC) with its
+  level, volume limiter, line out with the stream mix, display brightness, screen dimming and home screen,
+  auto power-off, and the Bluetooth options. They follow the Elite's protocol description in
+  Linux-Arctis-Manager and the base station's events in the log from [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); auto power-off and saving
+  to the headset were confirmed by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx). The tab reads the current values from the base station and
+  follows changes made on it or in SteelSeries GG, saves half a second after the last change and says the
+  settings are experimental. The Elite's own equalizer is not supported yet.
+
 ## 2.4.0 — 2026-10-21
 
 - VST 2 and VST 3 plugins on the Game, Chat and Media channels of virtual device mode: the *Equalizer*

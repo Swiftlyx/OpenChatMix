@@ -133,6 +133,9 @@ void Panel::DrawHeadset() {
         canvas_.Text(text, {kInset + 20.0f, y, kWidth - kInset, y + 24.0f}, TextStyle::BodyMedium, p.onSurfaceVariant);
         y += 24.0f + design::kSpace2;
     }
+    if (features_->experimental) {
+        y = PageHint(T(Text::HeadsetExperimental), y);
+    }
     if (features_->equalizer.bandsCommand) {
         y = DrawEqualizer(y);
     }
@@ -422,7 +425,8 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
         const D2D1_RECT_F labelRect{kInset, top + design::kHintBottomGap, kWidth - 110.0f, top + 34.0f};
         const bool fits = canvas_.Measure(T(spec.label), TextStyle::BodyLarge) <= labelRect.right - labelRect.left;
         canvas_.Text(T(spec.label), labelRect, fits ? TextStyle::BodyLarge : TextStyle::BodyMedium, p.onSurface);
-        canvas_.Text(value >= 0 ? std::to_wstring(value) : L"—",
+        const bool off = value == 0 && spec.wire == SettingWire::SwitchedLevel;
+        canvas_.Text(value < 0 ? L"—" : off ? std::wstring(T(Text::OptOff)) : std::to_wstring(value),
                      {kWidth - 110.0f, labelRect.top, kWidth - kInset, labelRect.bottom}, TextStyle::LabelLarge,
                      p.onSurfaceVariant, TextAlign::Trailing);
         const float left = kInset + design::kSpace1;

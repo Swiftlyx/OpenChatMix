@@ -180,8 +180,57 @@ const HeadsetFeatures kNova5X{
     .batteryQuery = kStatusRequest,
 };
 // Battery only for now; the Elite's settings and equalizer are not known well enough to offer.
+// Nova Elite base station (experimental): the commands of Linux-Arctis-Manager's device description, with the
+// value ranges the base station reports in its own events (the log in issue #6). The stream mix and line out
+// work as on the GameDAC.
+constexpr uint8_t kEliteDisplayQuery = 0x80;  // Answered with the screen settings.
+constexpr uint8_t kEliteBoomSidetone = 0x38;
+constexpr uint8_t kEliteOnEarSidetone = 0x39;
+constexpr uint8_t kEliteNoiseMode = 0xBD;
+constexpr uint8_t kEliteTransparent = 1;
+constexpr uint8_t kEliteNoiseCancelling = 2;
+constexpr SettingOption kEliteNoiseModes[] = {{0, OptOff}, {kEliteTransparent, OptTransparency},
+                                              {kEliteNoiseCancelling, OptNoiseCancelling}};
+constexpr SettingOption kThreeLevels[] = {{1, OptLow}, {2, OptMedium}, {3, OptHigh}};
+constexpr SettingOption kHomeScreenViews[] = {{0, OptDetailed}, {1, OptSimple}};
+constexpr SettingSpec kEliteMicrophone[] = {
+    {0x37, MicVolume, SettingKind::Slider, 1, 10},
+    {kEliteBoomSidetone, SidetoneBoomMic, SettingKind::Slider, 0, 10, {}, 0, 0, SettingWire::SwitchedLevel},
+    {kEliteOnEarSidetone, SidetoneOnEarMic, SettingKind::Slider, 0, 10, {}, 0, 0, SettingWire::SwitchedLevel},
+    {0xBF, MicLed, SettingKind::Slider, 0, 10},
+};
+constexpr SettingSpec kEliteNoise[] = {
+    {kEliteNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kEliteNoiseModes},
+    {0xB8, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kThreeLevels, kEliteNoiseMode, kEliteNoiseCancelling},
+    {0xB9, TransparencyLevel, SettingKind::Slider, 1, 10, {}, kEliteNoiseMode, kEliteTransparent},
+};
+constexpr SettingSpec kEliteSound[] = {
+    {0x27, VolumeLimiter, SettingKind::Toggle, 0, 1},
+};
+constexpr SettingSpec kEliteDisplay[] = {
+    {0x85, Brightness, SettingKind::Slider, 1, 10},
+    {0x83, ScreenDim, SettingKind::Choice, 0, 6, kNovaProTimeouts},
+    {0x89, HomeScreen, SettingKind::Choice, 0, 1, kHomeScreenViews},
+};
+constexpr SettingSpec kEliteBluetooth[] = {
+    {0xB2, BluetoothPowerOn, SettingKind::Toggle, 0, 1},
+    {0xB3, BluetoothAutoMute, SettingKind::Choice, 0, 2, kCallMute},
+};
+constexpr SettingSection kEliteSections[] = {
+    {Microphone, kEliteMicrophone},
+    {NoiseControl, kEliteNoise},
+    {Sound, kEliteSound},
+    {LineOut, kNovaProLineOut},
+    {Display, kEliteDisplay},
+    {Power, kNovaProWirelessPower},
+    {Bluetooth, kEliteBluetooth},
+};
 const HeadsetFeatures kNovaElite{
+    .sections = kEliteSections,
+    .save = kSaveState,
+    .stateQuery = kEliteDisplayQuery,
     .batteryQuery = kStatusRequest,
+    .experimental = true,
 };
 
 constexpr uint8_t kNovaProEventReportId = 0x07;
@@ -272,20 +321,50 @@ constexpr uint8_t kEliteLinkConnected = 0x08;
 constexpr uint8_t kEliteCharging = 0x02;
 constexpr uint8_t kEliteNoHeadset = 0x01;
 
+// The 01 b0 reply also holds settings: Bluetooth at power-on 2, during calls 3, transparency 8, noise control 10,
+// mute LED 11, auto-off 12 and the noise cancelling level 16. The 01 80 reply holds the screen: dimming 2,
+// brightness 3, home screen 5. Events are 07 [command] [value], the sidetones 07 [command] [on] [level] and
+// the stream mix 07 47 [main] 00 [aux] [mic].
 std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
     using Kind = HeadsetUpdate::Kind;
-    if (size >= 16 && data[0] == kEliteCommandReportId && data[1] == kStatusRequest) {
+    auto setting = [](uint8_t command, int value) {
+        return HeadsetUpdate{.kind = Kind::Setting, .command = command, .value = value};
+    };
+    if (size >= 17 && data[0] == kEliteCommandReportId && data[1] == kStatusRequest) {
         return {{.kind = Kind::Battery,
                  .value = std::min<int>(data[6], 100),
                  .charging = data[15] == kEliteCharging,
                  .headsetOff = data[14] != kEliteLinkConnected},
-                {.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]}};
+                {.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]},
+                setting(0xB2, data[2]),
+                setting(0xB3, data[3]),
+                setting(0xB9, data[8]),
+                setting(kEliteNoiseMode, data[10]),
+                setting(0xBF, data[11]),
+                setting(0xC1, data[12]),
+                setting(0xB8, data[16])};
     }
-    if (size >= 5 && data[0] == kEliteEventReportId && data[1] == kEliteBatteryEvent) {
+    if (size >= 6 && data[0] == kEliteCommandReportId && data[1] == kEliteDisplayQuery) {
+        return {setting(0x83, data[2]), setting(0x85, data[3]), setting(0x89, data[5])};
+    }
+    if (size < 3 || data[0] != kEliteEventReportId) {
+        return {};
+    }
+    const uint8_t command = data[1];
+    if (command == kEliteBatteryEvent && size >= 5) {
         return {{.kind = Kind::Battery,
                  .value = std::min<int>(data[2], 100),
                  .charging = data[4] == kEliteCharging,
                  .headsetOff = data[4] == kEliteNoHeadset}};
+    }
+    if ((command == kEliteBoomSidetone || command == kEliteOnEarSidetone) && size >= 4) {
+        return {setting(command, data[2] ? data[3] : 0)};
+    }
+    if (command == kStreamMain && size >= 6) {
+        return {setting(kStreamMain, data[2]), setting(kStreamAux, data[4]), setting(kStreamMic, data[5])};
+    }
+    if (kNovaElite.FindSetting(command)) {
+        return {setting(command, data[2])};
     }
     return {};
 }
@@ -419,7 +498,13 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
     }
 }
 
-std::vector<uint8_t> SettingCommand(const HeadsetState& state, uint8_t command, int value) {
+std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const HeadsetState& state, uint8_t command,
+                                    int value) {
+    if (const SettingSpec* spec = features.FindSetting(command); spec && spec->wire == SettingWire::SwitchedLevel) {
+        // Off keeps the last level, so switching it on again restores it.
+        const int last = state.values[command] > 0 ? state.values[command] : 1;
+        return {command, static_cast<uint8_t>(value > 0 ? 1 : 0), static_cast<uint8_t>(value > 0 ? value : last)};
+    }
     if (command != kStreamMain && command != kStreamAux && command != kStreamMic) {
         return {command, static_cast<uint8_t>(value)};
     }

@@ -480,6 +480,18 @@ enum class Text {
     ChatPluginsHint,
     PluginsLatency,
     DeepFilterChannelHint,
+    SidetoneBoomMic,
+    SidetoneOnEarMic,
+    NoiseControl,
+    NoiseCancellingLevel,
+    TransparencyLevel,
+    HomeScreen,
+    OptTransparency,
+    OptNoiseCancelling,
+    OptDetailed,
+    OptSimple,
+    HeadsetExperimental,
+    NoiseMode,
     Count,
 };
 

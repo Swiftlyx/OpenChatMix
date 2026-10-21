@@ -483,6 +483,18 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"To remove noise from the voices of others, add DeepFilterNet-OpenChatMix.dll from the OpenChatMix releases on GitHub.",  // ChatPluginsHint
     L"Latency of the plugins",  // PluginsLatency
     L"Lower values leave a little of the room in, which sounds more natural; Unlimited removes all the noise it can. On a channel DeepFilterNet filters the mix of both sides and adds about 30 ms.",  // DeepFilterChannelHint
+    L"Sidetone, boom mic",  // SidetoneBoomMic
+    L"Sidetone, built-in mic",  // SidetoneOnEarMic
+    L"Noise control",  // NoiseControl
+    L"Noise cancelling level",  // NoiseCancellingLevel
+    L"Transparency level",  // TransparencyLevel
+    L"Home screen",  // HomeScreen
+    L"Transparency",  // OptTransparency
+    L"ANC",  // OptNoiseCancelling
+    L"Detailed",  // OptDetailed
+    L"Simple",  // OptSimple
+    L"The settings of this headset are experimental: they follow a description of its protocol and are not yet confirmed on it. If one does not apply, please report it on GitHub.",  // HeadsetExperimental
+    L"Mode",  // NoiseMode
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -960,6 +972,18 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Щоб прибрати шум із голосів співрозмовників, додайте DeepFilterNet-OpenChatMix.dll з релізів OpenChatMix на GitHub.",
     L"Затримка плагінів",
     L"Менші значення лишають трохи звуку кімнати, і голос звучить природніше; «Без обмеження» прибирає весь шум, який може. На каналі DeepFilterNet обробляє суміш обох боків і додає близько 30 мс.",
+    L"Самопрослуховування, знімний мікрофон",
+    L"Самопрослуховування, вбудований мікрофон",
+    L"Керування шумом",
+    L"Рівень шумозаглушення",
+    L"Рівень прозорості",
+    L"Головний екран",
+    L"Прозорість",
+    L"ANC",
+    L"Детальний",
+    L"Простий",
+    L"Налаштування цієї гарнітури експериментальні: вони працюють за описом її протоколу й ще не підтверджені на ній. Якщо якесь не застосовується, повідомте про це на GitHub.",
+    L"Режим",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

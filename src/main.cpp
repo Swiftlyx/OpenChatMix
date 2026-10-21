@@ -2674,7 +2674,7 @@ void Host::OnHeadsetSetting(uint8_t command, int value) {
     if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->FindSetting(command)) {
         return;
     }
-    SendHeadsetCommand(SettingCommand(g_app.headset, command, value));
+    SendHeadsetCommand(SettingCommand(*g_app.features, g_app.headset, command, value));
     g_app.headset.values[command] = static_cast<int16_t>(value);
     PushHeadset();
     ScheduleHeadsetSave();
