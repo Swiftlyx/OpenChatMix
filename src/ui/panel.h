@@ -465,8 +465,10 @@ private:
     float DrawEqEffects(float top, const ParametricEq& eq);
     // Built-in, Sonar and own presets of a channel, kept while the pages that list them are open.
     void LoadEqLibrary(EqChannel channel);
-    // The library as menu items under section titles; presets[i] is the preset of item i.
-    std::vector<MenuItem> EqLibraryMenu(std::vector<const NamedEq*>& presets) const;
+    // The library as menu items under section titles; presets[i] is the preset of item i. Built-in and Sonar
+    // presets named like one of deviceOwn are left out; own presets always stay.
+    std::vector<MenuItem> EqLibraryMenu(std::vector<const NamedEq*>& presets,
+                                        std::span<const EqPreset> deviceOwn = {}) const;
     void OpenEqPresetMenu(const D2D1_RECT_F& anchor);
 
     // Headset and devices (panel_pages.cpp).

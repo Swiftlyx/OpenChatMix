@@ -304,7 +304,7 @@ float Panel::DrawEqualizer(float y) {
     TextButton(kIdEqFolder, {32.0f + 2.0f * actionWidth, actions, kWidth - 32.0f, actions + 32.0f}, kGlyphFolder,
                T(Text::EqFolder), false, [] { OpenWithExplorer(PresetDirectory()); });
 
-    // Game presets of every source, converted to the headset's bands.
+    // Game presets of every source, converted to the headset's bands; the headset's own presets sit above.
     const float gameTop = actions + 44.0f;
     const D2D1_RECT_F gameButton{32.0f, gameTop, kWidth - 32.0f, gameTop + 36.0f};
     TextButton(kIdGamePresets, gameButton, kGlyphGame, T(Text::GamePresets), true, [this, gameButton] {
@@ -312,7 +312,7 @@ float Panel::DrawEqualizer(float y) {
             LoadEqLibrary(EqChannel::Game);
         }
         std::vector<const NamedEq*> presets;
-        std::vector<MenuItem> items = EqLibraryMenu(presets);
+        std::vector<MenuItem> items = EqLibraryMenu(presets, features_->equalizer.presets);
         std::vector<NamedEq> chosen;
         for (const NamedEq* preset : presets) {
             chosen.push_back(preset ? *preset : NamedEq{});

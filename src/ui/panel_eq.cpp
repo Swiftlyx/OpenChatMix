@@ -171,16 +171,27 @@ void Panel::LoadEqLibrary(EqChannel channel) {
     eqLibrary_[2] = LoadParametricPresets();
 }
 
-std::vector<MenuItem> Panel::EqLibraryMenu(std::vector<const NamedEq*>& presets) const {
+std::vector<MenuItem> Panel::EqLibraryMenu(std::vector<const NamedEq*>& presets,
+                                           std::span<const EqPreset> deviceOwn) const {
     constexpr Text kSections[] = {Text::PresetsBuiltin, Text::PresetsSonar, Text::MyPresets};
+    constexpr int kOwnSection = 2;
+    auto onDevice = [deviceOwn](const NamedEq& preset) {
+        return std::any_of(deviceOwn.begin(), deviceOwn.end(), [&preset](const EqPreset& own) {
+            return _wcsicmp(own.name, preset.name.c_str()) == 0;
+        });
+    };
     std::vector<MenuItem> items;
     for (int section = 0; section < 3; ++section) {
-        if (eqLibrary_[section].empty()) {
-            continue;
-        }
-        items.push_back({T(kSections[section]), true});
-        presets.push_back(nullptr);
+        bool titled = false;
         for (const NamedEq& preset : eqLibrary_[section]) {
+            if (section != kOwnSection && onDevice(preset)) {
+                continue;
+            }
+            if (!titled) {
+                items.push_back({T(kSections[section]), true});
+                presets.push_back(nullptr);
+                titled = true;
+            }
             items.push_back({preset.name});
             presets.push_back(&preset);
         }
