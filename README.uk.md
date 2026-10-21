@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · Українська
+  <a href="https://swiftlyx.github.io/OpenChatMix/">Вебсайт</a> · <a href="README.md">English</a> · Українська
 </p>
 
 <p align="center">
