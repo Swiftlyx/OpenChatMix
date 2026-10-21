@@ -49,3 +49,8 @@ private:
 
 // Implemented in vst3_host.cpp.
 std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sampleRate, int blockSize);
+
+// Implemented in deep_filter_plugin.cpp. recognized tells whether the DLL is OpenChatMix's DeepFilterNet build,
+// so a failure there is final and the DLL is not tried as a VST 2 plugin.
+std::unique_ptr<AudioPlugin> LoadDeepFilterPlugin(const std::wstring& path, double sampleRate, int blockSize,
+                                                  bool& recognized);

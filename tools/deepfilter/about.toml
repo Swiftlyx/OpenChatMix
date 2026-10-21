@@ -1,0 +1,19 @@
+# cargo-about configuration for DeepFilterNet-NOTICES.txt.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "Zlib",
+    "ISC",
+    "Unlicense",
+    "CC0-1.0",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# The wrapper crate itself (publish = false) is OpenChatMix code under its own LICENSE.
+private = { ignore = true }

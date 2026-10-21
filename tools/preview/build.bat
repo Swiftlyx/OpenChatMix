@@ -37,7 +37,7 @@ cl /nologo /std:c++20 /O2 /MT /W4 /EHsc /utf-8 /permissive- /DUNICODE /D_UNICODE
     /Fobuild\preview\obj\ /Febuild\preview\OpenChatMixPreview.exe tools\preview\preview.cpp %SOURCES% src\ui\*.cpp ^
     build\rnnoise\*.obj build\preview\preview.res ^
     /link /SUBSYSTEM:WINDOWS /MANIFEST:NO /OPT:REF /OPT:ICF ^
-    user32.lib gdi32.lib shell32.lib ole32.lib setupapi.lib hid.lib advapi32.lib wtsapi32.lib ^
+    dbghelp.lib user32.lib gdi32.lib shell32.lib ole32.lib setupapi.lib hid.lib advapi32.lib wtsapi32.lib ^
     d2d1.lib dwrite.lib windowscodecs.lib dwmapi.lib shcore.lib version.lib avrt.lib dxgi.lib runtimeobject.lib winsqlite3.lib winhttp.lib bcrypt.lib ws2_32.lib oleaut32.lib
 if errorlevel 1 exit /b 1
 

@@ -374,7 +374,7 @@ public:
             if (const auto exit = reinterpret_cast<ExitDll>(GetProcAddress(module_, "ExitDll"))) {
                 exit();
             }
-            FreeLibrary(module_);
+            // The module stays loaded; see PluginModulesLoaded().
         }
     }
 

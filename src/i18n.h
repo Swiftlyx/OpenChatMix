@@ -469,6 +469,11 @@ enum class Text {
     NoOtherMicrophone,
     MicProcessingOff,
     EqExperimental,
+    DeepFilterReduction,
+    DeepFilterReductionHint,
+    DeepFilterUnlimited,
+    DeepFilterPostFilter,
+    DeepFilterPostFilterHint,
     Count,
 };
 

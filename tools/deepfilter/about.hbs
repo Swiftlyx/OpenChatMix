@@ -1,0 +1,22 @@
+Third-party notices for DeepFilterNet-OpenChatMix.dll
+
+DeepFilterNet-OpenChatMix.dll is an optional OpenChatMix plugin built from DeepFilterNet
+(https://github.com/Rikorose/DeepFilterNet, commit d375b2d), which includes the DeepFilterNet3
+model, and the Rust crates listed below. Each license text is followed by the crates that use it.
+
+Overview:
+{{#each overview}}
+  {{name}}: {{count}}
+{{/each}}
+{{#each licenses}}
+
+================================================================================
+{{name}} ({{id}})
+
+Used by:
+{{#each used_by}}
+  {{crate.name}} {{crate.version}}{{#if crate.repository}} - {{crate.repository}}{{/if}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

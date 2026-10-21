@@ -323,6 +323,10 @@ void MicChain::Run() {
         // Whole blocks through the effects and plugins.
         const uint64_t generation = pluginsGeneration_.load();
         std::shared_ptr<const MicPluginList> plugins = plugins_.load();
+        int pluginDelay = 0;
+        for (const AudioPlugin* plugin : *plugins) {
+            pluginDelay += plugin->LatencySamples();
+        }
         const std::shared_ptr<const MicDspSettings> settings = settings_.load();
         size_t used = 0;
         float peak = 0.0f;
@@ -375,7 +379,7 @@ void MicChain::Run() {
             // A lost headphone stream must not stop the microphone.
             monitor.Feed(monitorPadding, elapsed);
         }
-        latencyMs_ = static_cast<int>((padding + cable.queue.Size() + kBlock) * 1000 / MicProcessor::kRate +
+        latencyMs_ = static_cast<int>((padding + cable.queue.Size() + kBlock + pluginDelay) * 1000 / MicProcessor::kRate +
                                       (capturePeriod + renderLatency) / 10000);
         if ((cable.underruns > 0 || monitor.underruns > 0 || captureGaps > 0) &&
             GetTickCount64() - underrunLogged > kUnderrunLogMs) {

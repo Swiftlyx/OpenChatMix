@@ -142,6 +142,10 @@ void Panel::DrawMicrophone() {
     EndScroll(Page::Microphone, kHeaderHeight, y);
 }
 
+// DeepFilterNet's maximum reduction steps in 6 dB up to 60 dB, then unlimited.
+constexpr int kDeepFilterStepDb = 6;
+constexpr int kDeepFilterMaxStepsDb = 60;
+
 float Panel::DrawMicPlugins(float y) {
     const Palette& p = P();
     y = SectionTitle(T(Text::Plugins), y);
@@ -199,7 +203,60 @@ float Panel::DrawMicPlugins(float y) {
     }
     TextButton(kIdAddPlugin, {design::kPageGutter, y, kWidth - design::kPageGutter, y + design::kButtonHeight},
                kGlyphAdd, T(Text::AddPlugin), true, [this] { RunFileDialog(FileDialog::Plugin); });
-    return y + design::kButtonHeight;
+    y += design::kButtonHeight;
+
+    // DeepFilterNet has no window of its own: its settings follow the list.
+    for (size_t index = 0; index < plugins.size() && index < mic_.plugins.size(); ++index) {
+        if (!mic_.plugins[index].deepFilter) {
+            continue;
+        }
+        const DeepFilterSettings filter = *mic_.plugins[index].deepFilter;
+        const std::wstring& key = plugins[index].id;
+        y = SectionTitle(mic_.plugins[index].name.c_str(), y + design::kSectionGap);
+        auto apply = [this, index](DeepFilterSettings changed) { host_.OnMicPluginDeepFilter(index, changed); };
+        const int reduction = filter.maxReductionDb;
+        const bool unlimited = reduction >= DeepFilterSettings::kUnlimited;
+        y = DrawCard(
+            y,
+            {
+                NumberItem(
+                    HashId(kKindPlugin, key + L"/reduction"), T(Text::DeepFilterReduction),
+                    unlimited ? std::wstring(T(Text::DeepFilterUnlimited)) : std::to_wstring(reduction) + L" dB",
+                    reduction > kDeepFilterStepDb, !unlimited,
+                    [filter, apply, reduction, unlimited] {
+                        DeepFilterSettings changed = filter;
+                        changed.maxReductionDb = unlimited ? kDeepFilterMaxStepsDb : reduction - kDeepFilterStepDb;
+                        apply(changed);
+                    },
+                    [filter, apply, reduction] {
+                        DeepFilterSettings changed = filter;
+                        changed.maxReductionDb = reduction >= kDeepFilterMaxStepsDb ? DeepFilterSettings::kUnlimited
+                                                                                    : reduction + kDeepFilterStepDb;
+                        apply(changed);
+                    },
+                    [filter, apply](const std::wstring& text) {
+                        const int value = _wtoi(text.c_str());
+                        if (value <= 0) {
+                            return false;
+                        }
+                        DeepFilterSettings changed = filter;
+                        changed.maxReductionDb = value > kDeepFilterMaxStepsDb
+                                                     ? DeepFilterSettings::kUnlimited
+                                                     : std::max(value, kDeepFilterStepDb);
+                        apply(changed);
+                        return true;
+                    },
+                    T(Text::DeepFilterReductionHint)),
+                SwitchItem(HashId(kKindPlugin, key + L"/post-filter"), T(Text::DeepFilterPostFilter), filter.postFilter,
+                           [filter, apply] {
+                               DeepFilterSettings changed = filter;
+                               changed.postFilter = !changed.postFilter;
+                               apply(changed);
+                           },
+                           T(Text::DeepFilterPostFilterHint)),
+            });
+    }
+    return y;
 }
 
 }  // namespace ui

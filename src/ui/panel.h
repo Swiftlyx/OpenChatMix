@@ -19,6 +19,7 @@
 #include "../hotkeys.h"
 #include "../i18n.h"
 #include "../parametric_eq.h"
+#include "../plugin_host.h"
 #include "../settings.h"
 #include "canvas.h"
 #include "frame_clock.h"
@@ -73,6 +74,7 @@ struct MicPluginView {
     bool enabled = true;
     bool loaded = false;
     bool hasEditor = false;
+    std::optional<DeepFilterSettings> deepFilter;  // Set for the DeepFilterNet plugin once it loaded.
 };
 
 // The microphone chain as shown in the panel.
@@ -154,6 +156,7 @@ public:
     // Moves the plugin at from to the place to, shifting the ones between.
     virtual void OnMicPluginMove(size_t from, size_t to) = 0;
     virtual void OnMicPluginEditor(size_t index) = 0;
+    virtual void OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) = 0;
     // Uses the device now.
     virtual void OnOutputChoose(const std::wstring& id) = 0;
     // Moves a device from one place to another among the listed ones, in the order of preference.

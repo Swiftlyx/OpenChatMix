@@ -154,6 +154,7 @@ struct Preview {
     Levels levels;
     int choice = 0;
     int battery = 75;
+    DeepFilterSettings deepFilter;  // Settings of a DeepFilterNet DLL in the plugin list.
     bool charging = false;
     bool headsetOff = false;
     BluetoothState bluetooth = BluetoothState::Connected;
@@ -398,11 +399,17 @@ void PushMic() {
         view.status = std::wstring(T(Text::RoutingRunning)) + L" · " + T(Text::AddsLatency) + L" ~6 " +
                       T(Text::MillisecondsShort);
     }
-    // Plugins are listed by their file, as loaded; the preview loads none.
+    // Plugins are listed by their file, as loaded; the preview loads none. A DeepFilterNet DLL shows its settings.
     for (const MicPlugin& plugin : mic.plugins) {
         std::wstring name = FileNameOf(plugin.path);
         name = name.substr(0, name.find_last_of(L'.'));
-        view.plugins.push_back({name, plugin.path, plugin.enabled, true, true});
+        ui::MicPluginView row{name, plugin.path, plugin.enabled, true, true};
+        if (name.find(L"DeepFilterNet") != std::wstring::npos) {
+            row.name = L"DeepFilterNet";
+            row.hasEditor = false;
+            row.deepFilter = g.deepFilter;
+        }
+        view.plugins.push_back(std::move(row));
     }
     g.panel->SetMic(view);
 }
@@ -682,6 +689,10 @@ public:
     }
     void OnMicPluginEditor(size_t) override {
         MessageBoxW(g.panel->Handle(), Texts().pluginNote, Texts().title, MB_OK | MB_ICONINFORMATION);
+    }
+    void OnMicPluginDeepFilter(size_t, const DeepFilterSettings& settings) override {
+        g.deepFilter = settings;
+        PushMic();
     }
     void OnOutputChoose(const std::wstring& id) override {
         g.defaultOutput = id;

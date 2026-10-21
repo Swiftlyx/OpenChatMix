@@ -1,0 +1,29 @@
+[package]
+name = "deepfilter-openchatmix"
+version = "1.0.0"
+edition = "2021"
+description = "DeepFilterNet3 noise suppression plugin for OpenChatMix (plugin ABI 1)"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Test builds only: a frame whose first sample is 12345.0 panics, to exercise the unwind guards.
+panic-probe = []
+
+[dependencies]
+# libDF at commit d375b2d with the tract backend and the embedded DeepFilterNet3 model. The default
+# features (vorbis, flac) and the training-only hdf5 dependency stay off.
+deep_filter = { git = "https://github.com/Rikorose/DeepFilterNet", rev = "d375b2d8309e0935d165700c91da9de862a99c31", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+# catch_unwind in every entry point relies on unwinding panics.
+panic = "unwind"
+debug = false
+strip = true

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.3.0 — 2026-10-21
+
+- AI noise suppression as an optional plugin: [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll) is OpenChatMix's build
+  of [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) by Hendrik Schröter, with its DeepFilterNet3 model inside. Download it and add it
+  in *Settings → Microphone → Plugins* like a VST plugin; *Max noise reduction* and *Post-filter* appear below
+  the list. It adds about 20 ms and nothing is loaded until it is added. The plugin section takes any plugin
+  now, and the chain's latency includes what plugins add.
+- OpenChatMix could stop responding and be closed by Windows while the GameDAC visualizer was set to music
+  and video: the check whether media plays asks other processes and ran on the app's main thread. It runs
+  on a thread of its own now, so a stalled media app or Windows service can no longer freeze OpenChatMix.
+- Plugins that crash in their own unload code, such as Supertone Clear, no longer take OpenChatMix down
+  when the microphone chain stops or the app exits: plugin modules stay loaded until the app ends, after
+  the app volumes are restored and the settings saved.
+- `Log=1` set in `OpenChatMix.ini` while OpenChatMix runs is no longer overwritten when it exits, and a log
+  file still held by an instance that is ending no longer leaves the new one without a log (it writes
+  `OpenChatMix-<process ID>.log` beside it). Reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- With the log on, a hang of the app's window thread writes `OpenChatMix-hang-<time>.dmp` next to the log, so
+  the cause can be found.
+- The Arctis Nova Elite is confirmed: the ChatMix dial and the battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+
 ## 2.2.0 — 2026-10-20
 
 - Experimental support for the Arctis Nova Elite (`2244`, `2270`): the ChatMix dial and the battery,

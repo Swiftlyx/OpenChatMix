@@ -267,11 +267,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Strong",  // CompressorStrong
     L"Makes quiet speech louder and loud speech quieter.",  // CompressorHint
     L"Equalizer",  // MicEqualizer
-    L"VST plugins",  // Plugins
-    L"VST 2 and VST 3 effects run after the built-in ones, top to bottom. Click a plugin to open its window.",  // PluginsHint
+    L"Plugins",  // Plugins
+    L"VST 2 and VST 3 effects run after the built-in steps, top to bottom; click a plugin to open its window. For AI noise suppression, add DeepFilterNet-OpenChatMix.dll from the OpenChatMix releases on GitHub.",  // PluginsHint
     L"Add plugin",  // AddPlugin
-    L"Choose a VST plugin",  // PluginTitle
-    L"VST plugins",  // PluginFilter
+    L"Choose a plugin",  // PluginTitle
+    L"Plugins",  // PluginFilter
     L"could not be loaded",  // PluginNotLoaded
     L"Output devices",  // OutputDevices
     L"Priority, switching on disconnect",  // OutputDevicesSummary
@@ -472,6 +472,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"No other microphone",  // NoOtherMicrophone
     L"Microphone processing is off",  // MicProcessingOff
     L"Experimental on this headset: if the sound does not change, please report it on GitHub.",  // EqExperimental
+    L"Max noise reduction",  // DeepFilterReduction
+    L"Lower values leave a little of the room in, which sounds more natural; Unlimited removes all the noise it can. DeepFilterNet adds about 20 ms.",  // DeepFilterReductionHint
+    L"Unlimited",  // DeepFilterUnlimited
+    L"Post-filter",  // DeepFilterPostFilter
+    L"Removes a little more of the noise left between words; the voice may sound slightly thinner.",  // DeepFilterPostFilterHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -713,7 +718,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Колесо миші",
     L"Затисніть клавіші й крутіть колесо: вгору — більше чату, вниз — більше гри. Натискання на колесо вирівнює баланс. Перехоплюється лише ця комбінація, тож масштабування через Ctrl чи Ctrl + Alt з колесом працює як раніше.",
     L"Мік",
-    L"Шумодав, компресор, еквалайзер, VST-плагіни",
+    L"Шумодав, компресор, еквалайзер, плагіни",
     L"Обробляти мікрофон",
     L"Оброблений сигнал мікрофона подається у віртуальний кабель. Оберіть вихід цього кабелю, наприклад CABLE Output, як мікрофон у Discord, OBS чи грі.",
     L"Мікрофон",
@@ -733,11 +738,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Сильний",
     L"Робить тиху мову гучнішою, а гучну — тихішою.",
     L"Еквалайзер",
-    L"VST-плагіни",
-    L"Ефекти VST 2 і VST 3 працюють після вбудованих, згори донизу. Натисніть на плагін, щоб відкрити його вікно.",
+    L"Плагіни",
+    L"Ефекти VST 2 і VST 3 працюють після вбудованих кроків, згори донизу; натисніть на плагін, щоб відкрити його вікно. Для шумодаву на основі ШІ додайте DeepFilterNet-OpenChatMix.dll з релізів OpenChatMix на GitHub.",
     L"Додати плагін",
-    L"Оберіть VST-плагін",
-    L"VST-плагіни",
+    L"Оберіть плагін",
+    L"Плагіни",
     L"не вдалося завантажити",
     L"Пристрої виводу",
     L"Пріоритет, перемикання при відключенні",
@@ -938,6 +943,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Немає іншого мікрофона",
     L"Обробку мікрофона вимкнено",
     L"Експериментально для цієї гарнітури: якщо звук не змінюється, повідомте про це на GitHub.",
+    L"Найбільше приглушення шуму",
+    L"Менші значення лишають трохи звуку кімнати, і голос звучить природніше; «Без обмеження» прибирає весь шум, який може. DeepFilterNet додає близько 20 мс.",
+    L"Без обмеження",
+    L"Постфільтр",
+    L"Прибирає ще трохи шуму, що лишився між словами; голос може звучати трохи тонше.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

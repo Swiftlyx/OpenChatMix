@@ -760,7 +760,10 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
 
     WriteString(path, L"Game", std::to_wstring(settings.levels.game).c_str());
     WriteString(path, L"Chat", std::to_wstring(settings.levels.chat).c_str());
-    WriteString(path, L"Log", settings.log ? L"1" : L"0");
+    // Log is only ever set by hand in this file, so an edit made while OpenChatMix runs stays.
+    if (ReadString(path, kMainSection, L"Log", L"").empty()) {
+        WriteString(path, L"Log", settings.log ? L"1" : L"0");
+    }
     WriteString(path, L"CheckUpdates", settings.checkUpdates ? L"1" : L"0");
     WriteString(path, L"LastUpdateCheck", std::to_wstring(settings.lastUpdateCheck).c_str());
     WriteString(path, L"ShowPopup", settings.showPopup ? L"1" : L"0");

@@ -222,7 +222,7 @@ ChatMix балансує звук гри й голосового чату одн
 | Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Працює, за звітами [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); еквалайзер `22A1` і `227E` (протокол Gen 2) експериментальний ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Не перевірено — той самий протокол, що й у Nova 7; `229E`, `22A5`, `22AD`, `22A9` і `22AB` мають протокол Gen 2 з експериментальним еквалайзером |
 | Arctis Nova 5X | `2253`, `2264` | Не перевірено — гра й чат можуть бути переплутані |
-| Arctis Nova Elite | `2244`, `2270` | Експериментально — лише коліщатко ChatMix і батарея, за опублікованими описами протоколу ([#6](https://github.com/Swiftlyx/OpenChatMix/issues/6)) |
+| Arctis Nova Elite | `2244`, `2270` | ✅ Коліщатко ChatMix і батарея працюють, за звітом [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) у [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); її налаштування поки не підтримуються |
 
 Не підтримується: **Arctis Nova 7P** (її коліщатко керує самопрослуховуванням, а не ChatMix).
 Оригінальні **Arctis 7, 9 і Pro Wireless** змішують гру й чат апаратно через два пристрої відтворення
@@ -449,10 +449,15 @@ Windows, який вимагає вимкнути Secure Boot і який від
   встановленого Sonar.
 - **Компресор** (Легкий, Середній, Сильний): тихе мовлення робить гучнішим, а гучне — тихішим, і не
   піднімає шум кімнати між словами, а навпаки притишує його.
-- **VST-плагіни**: будь-який ефект VST 2 (`.dll`) чи VST 3 (`.vst3`), згори донизу; порядок
+- **Плагіни**: будь-який ефект VST 2 (`.dll`) чи VST 3 (`.vst3`), згори донизу; порядок
   змінюється перетягуванням. Натисніть на плагін, щоб відкрити його власне вікно; його налаштування
   зберігаються в `%APPDATA%\OpenChatMix\PluginStates`. Плагіни працюють в окремому потоці, у моно;
   стереоплагіни отримують мікрофон в обидва канали.
+- **Шумодав на основі ШІ** (за бажанням): завантажте [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll) і додайте
+  його в розділі *Плагіни*. Це збірка OpenChatMix для [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) — нейромережі, що прибирає шум
+  ретельніше за RNNoise, з моделлю DeepFilterNet3 всередині (близько 17 МБ). Під списком плагінів
+  з'являються *Найбільше приглушення шуму* (6–60 дБ або без обмеження) і *Постфільтр*. Додає близько
+  20 мс і займає близько 3% одного ядра процесора; доки ви його не додасте, нічого з нього не завантажується.
 - Лімітер наприкінці не дає результату перевантажуватися.
 
 Ланцюжок додає близько 30–50 мс затримки, залежно від пристроїв. Коли ввімкнено *Тримати рівні на
@@ -648,12 +653,14 @@ docs/           скриншоти й дизайн-система (docs/design-s
   запустіть OpenChatMix і відтворіть проблему. `OpenChatMix.log` з'явиться поруч з ini-файлом і запише
   кожен звіт від гарнітури. Для гарнітури SteelSeries, яку OpenChatMix ще не підтримує, лог перелічує її
   HID-колекції та звіти, які вона надсилає (лише читання, на неї нічого не надсилається): покрутіть
-  коліщатко, натисніть її кнопки й додайте лог до issue.
+  коліщатко, натисніть її кнопки й додайте лог до issue. Якщо з увімкненим логом OpenChatMix перестане
+  відповідати, він також запише туди `OpenChatMix-hang-<час>.dmp`; додайте й цей файл.
 
 ## Подяки
 
-Окрім RNNoise та інтерфейсів VST 3 SDK, які включено, як зазначено, OpenChatMix не містить коду з
-проєктів нижче, але без описаних ними подробиць протоколів його б не існувало:
+Окрім RNNoise та інтерфейсів VST 3 SDK, які включено, як зазначено, і DeepFilterNet у додатковому
+плагіні, OpenChatMix не містить коду з проєктів нижче, але без описаних ними подробиць протоколів його б
+не існувало:
 
 - [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux) від Dymstro — увімкнення ChatMix
   на Nova Pro (`0x49`), іконка ChatMix (`0x8D`) і формат звіту `0x45`.
@@ -674,6 +681,9 @@ docs/           скриншоти й дизайн-система (docs/design-s
 - *Audio EQ Cookbook* Роберта Брістоу-Джонсона — формули фільтрів еквалайзера.
 - [RNNoise](https://github.com/xiph/rnnoise) від Jean-Marc Valin, Xiph.Org і Mozilla — шумодав
   обробки мікрофона, включений у `third_party/rnnoise` (BSD 3-clause).
+- [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) від Hendrik Schröter — шумодав на основі ШІ та його модель DeepFilterNet3 у
+  додатковому `DeepFilterNet-OpenChatMix.dll` (MIT або Apache-2.0), що працює на
+  [tract](https://github.com/sonos/tract) від Sonos (MIT або Apache-2.0). Збирається з `tools/deepfilter`.
 - Інтерфейси [VST 3 SDK](https://github.com/steinbergmedia/vst3_pluginterfaces) від Steinberg Media
   Technologies, включені в `third_party/vst3` (MIT). VST — торговельна марка Steinberg Media
   Technologies GmbH.

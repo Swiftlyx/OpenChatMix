@@ -15,8 +15,17 @@ HANDLE g_file = INVALID_HANDLE_VALUE;
 
 void LogOpen(const std::wstring& path) {
     LogClose();
-    g_file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) {
+        // An instance that is still ending holds the file; this one logs beside it, e.g. OpenChatMix-1234.log.
+        const size_t dot = path.rfind(L'.');
+        const std::wstring alternate =
+            path.substr(0, dot) + L"-" + std::to_wstring(GetCurrentProcessId()) + path.substr(dot);
+        file = CreateFileW(alternate.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
+    g_file = file;
 }
 
 void LogClose() {

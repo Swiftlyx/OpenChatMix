@@ -29,10 +29,12 @@ rem RNNoise (third_party\rnnoise) is C and keeps its own warnings.
 cl /nologo /c /std:c11 /O2 /MT /W0 /utf-8 /Ithird_party\rnnoise\include /Fobuild\rnnoise\ third_party\rnnoise\src\*.c
 if errorlevel 1 exit /b 1
 
-cl /nologo /std:c++20 /O2 /MT /W4 /EHsc /utf-8 /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /Ithird_party\vst3 ^
-    /Fobuild\ /Febuild\OpenChatMix.exe src\*.cpp src\ui\*.cpp build\rnnoise\*.obj build\app.res ^
-    /link /SUBSYSTEM:WINDOWS /MANIFEST:NO /OPT:REF /OPT:ICF ^
-    user32.lib gdi32.lib shell32.lib ole32.lib setupapi.lib hid.lib advapi32.lib wtsapi32.lib ^
+rem /Zi and /DEBUG write build\OpenChatMix.pdb beside the executable, for reading crash and hang dumps; the
+rem executable names only the file, not this folder.
+cl /nologo /std:c++20 /O2 /MT /W4 /EHsc /utf-8 /permissive- /DUNICODE /D_UNICODE /DNOMINMAX /Ithird_party\vst3 /Zi ^
+    /Fobuild\ /Fdbuild\ /Febuild\OpenChatMix.exe src\*.cpp src\ui\*.cpp build\rnnoise\*.obj build\app.res ^
+    /link /SUBSYSTEM:WINDOWS /MANIFEST:NO /OPT:REF /OPT:ICF /DEBUG /INCREMENTAL:NO /PDBALTPATH:%%_PDB%% ^
+    dbghelp.lib user32.lib gdi32.lib shell32.lib ole32.lib setupapi.lib hid.lib advapi32.lib wtsapi32.lib ^
     d2d1.lib dwrite.lib windowscodecs.lib dwmapi.lib shcore.lib version.lib avrt.lib dxgi.lib runtimeobject.lib winsqlite3.lib winhttp.lib bcrypt.lib ws2_32.lib oleaut32.lib
 if errorlevel 1 exit /b 1
 

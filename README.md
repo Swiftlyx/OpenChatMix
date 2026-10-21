@@ -216,7 +216,7 @@ works with any headset.
 | Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the equalizer of `22A1` and `227E` (Gen 2 protocol) is experimental ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
-| Arctis Nova Elite | `2244`, `2270` | Experimental — ChatMix dial and battery only, from published protocol descriptions ([#6](https://github.com/Swiftlyx/OpenChatMix/issues/6)) |
+| Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial and battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its settings are not supported yet |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -439,9 +439,14 @@ under *Processing order* to change it, for example to run a plugin before the no
   local Sonar installation.
 - **Compressor** (Light, Medium, Strong): makes quiet speech louder and loud speech quieter, and keeps
   the room noise between words down instead of raising it.
-- **VST plugins**: any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder.
+- **Plugins**: any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder.
   Click a plugin to open its own window; its settings are kept in `%APPDATA%\OpenChatMix\PluginStates`.
   Plugins run on their own thread, as mono; stereo plugins get the microphone on both sides.
+- **AI noise suppression** (optional): download [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll) and add it under
+  *Plugins*. It is OpenChatMix's build of [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet), a neural network that removes noise more
+  thoroughly than RNNoise, with its DeepFilterNet3 model inside (about 17 MB). *Max noise reduction*
+  (6–60 dB or unlimited) and *Post-filter* appear below the plugin list. It adds about 20 ms and takes
+  about 3% of one CPU core; nothing of it is loaded until you add it.
 - A limiter at the end keeps the result from clipping.
 
 The chain adds about 30–50 ms of latency, depending on the devices. With *Keep levels at 100%* on,
@@ -630,12 +635,14 @@ are in `src/ui/design.h`.
   OpenChatMix and reproduce the problem. `OpenChatMix.log` appears next to the ini file and records every
   report from the headset. With a SteelSeries headset OpenChatMix does not support yet, the log lists its
   HID collections and the reports it sends (only read, nothing is sent to it): turn the dial, press its
-  buttons, then attach the log to an issue.
+  buttons, then attach the log to an issue. If OpenChatMix stops responding while the log is on, it also
+  writes `OpenChatMix-hang-<time>.dmp` there; please attach that as well.
 
 ## Acknowledgements
 
-Apart from RNNoise and the VST 3 SDK interfaces, which are included as marked, OpenChatMix contains
-no code from the projects below, but it would not exist without the protocol details they documented:
+Apart from RNNoise and the VST 3 SDK interfaces, which are included as marked, and DeepFilterNet in the
+optional plugin, OpenChatMix contains no code from the projects below, but it would not exist without the
+protocol details they documented:
 
 - [nova-chatmix-linux](https://github.com/Dymstro/nova-chatmix-linux) by Dymstro — the Nova Pro
   ChatMix enable (`0x49`), ChatMix icon (`0x8D`) and `0x45` report format.
@@ -656,6 +663,9 @@ no code from the projects below, but it would not exist without the protocol det
 - Robert Bristow-Johnson's *Audio EQ Cookbook* — the filter formulas of the equalizer.
 - [RNNoise](https://github.com/xiph/rnnoise) by Jean-Marc Valin, Xiph.Org and Mozilla — the noise
   suppression of the microphone chain, included in `third_party/rnnoise` (BSD 3-clause).
+- [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) by Hendrik Schröter — the AI noise suppression and its DeepFilterNet3 model in
+  the optional `DeepFilterNet-OpenChatMix.dll` (MIT or Apache-2.0), running on
+  [tract](https://github.com/sonos/tract) by Sonos (MIT or Apache-2.0). Built from `tools/deepfilter`.
 - The [VST 3 SDK](https://github.com/steinbergmedia/vst3_pluginterfaces) interfaces by Steinberg
   Media Technologies, included in `third_party/vst3` (MIT). VST is a trademark of Steinberg Media
   Technologies GmbH.

@@ -3,6 +3,7 @@
 #include <ole2.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 
 #include "app.h"
@@ -131,9 +132,7 @@ public:
             Dispatch(effMainsChanged, 0, 0);
             Dispatch(effClose);
         }
-        if (module_) {
-            FreeLibrary(module_);
-        }
+        // The module stays loaded; see PluginModulesLoaded().
     }
 
     bool Load(const std::wstring& path, double rate, int block) {
@@ -472,9 +471,24 @@ LRESULT CALLBACK EditorWindow::WindowProc(HWND window, UINT message, WPARAM wPar
 
 // ---- Loading ---------------------------------------------------------------------------------------
 
+namespace {
+
+std::atomic<bool> g_modulesLoaded{false};
+
+}  // namespace
+
+bool PluginModulesLoaded() {
+    return g_modulesLoaded;
+}
+
 std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize) {
+    g_modulesLoaded = true;
     if (EndsWithNoCase(path, L".vst3")) {
         return LoadVst3Plugin(path, sampleRate, blockSize);
+    }
+    bool deepFilter = false;
+    if (auto plugin = LoadDeepFilterPlugin(path, sampleRate, blockSize, deepFilter); plugin || deepFilter) {
+        return plugin;
     }
     auto plugin = std::make_unique<Vst2Plugin>();
     if (!plugin->Load(path, sampleRate, blockSize)) {

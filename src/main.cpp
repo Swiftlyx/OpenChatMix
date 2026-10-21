@@ -24,6 +24,7 @@
 #include "audio_bridge.h"
 #include "audio_devices.h"
 #include "chatmix_device.h"
+#include "hang_watch.h"
 #include "headset.h"
 #include "hid_probe.h"
 #include "i18n.h"
@@ -176,6 +177,7 @@ public:
     void OnMicPluginRemove(size_t index) override;
     void OnMicPluginMove(size_t from, size_t to) override;
     void OnMicPluginEditor(size_t index) override;
+    void OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) override;
     void OnOutputChoose(const std::wstring& id) override;
     void OnOutputMove(size_t from, size_t to) override;
     void OnOutputExclude(const std::wstring& id, bool excluded) override;
@@ -212,6 +214,7 @@ struct App {
     Settings settings;
     ChatMixDevice device;
     HidProbe probe;  // Logs unsupported SteelSeries headsets while the log is on.
+    HangWatch hangWatch;  // Writes a dump when the window's thread hangs, while the log is on.
     SessionMixer mixer;
     Levels levels;
     std::array<bool, kHotkeyCount> hotkeyFailed{};
@@ -1270,6 +1273,7 @@ void PushMic() {
             plugin.name = g_app.micPlugins[index]->Name();
             plugin.loaded = true;
             plugin.hasEditor = g_app.micPlugins[index]->HasEditor();
+            plugin.deepFilter = g_app.micPlugins[index]->DeepFilter();
         } else {
             // Not loaded yet while the chain is off; only a failed load counts as an error.
             plugin.loaded = !g_app.micPluginsLoaded;
@@ -2414,6 +2418,8 @@ void Cleanup() {
         return;
     }
     g_app.cleanedUp = true;
+    // Leaving takes a moment (plugins, devices) and is no hang.
+    g_app.hangWatch.Stop();
 
     // Settings that a game profile replaced are not kept.
     if (!g_app.activeProfile.empty()) {
@@ -2787,6 +2793,20 @@ void Host::OnMicPluginEditor(size_t index) {
         AudioPlugin* plugin = g_app.micPlugins[index].get();
         g_app.pluginThread.Run([plugin] { plugin->OpenEditor(); });
     }
+}
+
+void Host::OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) {
+    if (index >= g_app.micPlugins.size() || !g_app.micPlugins[index] || index >= g_app.settings.mic.plugins.size()) {
+        return;
+    }
+    AudioPlugin* plugin = g_app.micPlugins[index].get();
+    const std::wstring path = PluginStatePath(g_app.settings.mic.plugins[index]);
+    // Kept at once, like the settings: the plugin has no window whose closing would save it.
+    g_app.pluginThread.Run([plugin, &settings, &path] {
+        plugin->SetDeepFilter(settings);
+        WriteFileBytes(path, plugin->SaveState());
+    });
+    PushMic();
 }
 
 std::vector<AudioEndpoint> Host::PlaybackDevices() {
@@ -3721,6 +3741,9 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     }
 
     RegisterShellHookWindow(g_app.window);
+    if (g_app.settings.log) {
+        g_app.hangWatch.Start(g_app.window, configDirectory);
+    }
     g_app.panel = std::make_unique<ui::Panel>(instance, g_app.host);
     g_app.osd = std::make_unique<ui::Osd>(instance);
     g_app.panel->SetTrayAnchor(g_app.window, kTrayId);
@@ -3776,6 +3799,11 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     CoUninitialize();
     if (mutex) {
         CloseHandle(mutex);
+    }
+    // Plugin modules stay loaded until the end, and some crash in their own unload code: with everything saved
+    // and released, the process ends without running it.
+    if (PluginModulesLoaded()) {
+        TerminateProcess(GetCurrentProcess(), static_cast<UINT>(message.wParam));
     }
     return static_cast<int>(message.wParam);
 }
