@@ -171,6 +171,17 @@ void Panel::LoadEqLibrary(EqChannel channel) {
     eqLibrary_[2] = LoadParametricPresets();
 }
 
+const NamedEq* Panel::FindInEqLibrary(const std::wstring& name) const {
+    for (const auto& section : eqLibrary_) {
+        for (const NamedEq& preset : section) {
+            if (_wcsicmp(preset.name.c_str(), name.c_str()) == 0) {
+                return &preset;
+            }
+        }
+    }
+    return nullptr;
+}
+
 std::vector<MenuItem> Panel::EqLibraryMenu(std::vector<const NamedEq*>& presets,
                                            std::span<const EqPreset> deviceOwn) const {
     constexpr Text kSections[] = {Text::PresetsBuiltin, Text::PresetsSonar, Text::MyPresets};
@@ -205,6 +216,17 @@ void Panel::OpenEqPresetMenu(const D2D1_RECT_F& anchor) {
     }
     std::vector<const NamedEq*> presets;
     std::vector<MenuItem> items = EqLibraryMenu(presets);
+    // Manage presets sits after OpenChatMix's own, above GG's long list, so it is reached without scrolling.
+    size_t manage = items.size();
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (items[i].header && (items[i].text == T(Text::PresetsSonar) || items[i].text == T(Text::MyPresets))) {
+            manage = i;
+            break;
+        }
+    }
+    items.insert(items.begin() + static_cast<std::ptrdiff_t>(manage),
+                 MenuItem{T(Text::ManagePresets), false, kGlyphSettings, true});
+    presets.insert(presets.begin() + static_cast<std::ptrdiff_t>(manage), nullptr);
     const std::wstring current = EqChannelState().preset;
     int selected = -1;
     std::vector<NamedEq> chosen;
@@ -214,14 +236,16 @@ void Panel::OpenEqPresetMenu(const D2D1_RECT_F& anchor) {
             selected = static_cast<int>(i);
         }
     }
-    items.push_back({T(Text::ManagePresets)});
-    OpenMenu(anchor, std::move(items), selected, [this, chosen = std::move(chosen)](int index) {
-        if (index >= static_cast<int>(chosen.size())) {
-            GoTo(Page::EqPresets);
-        } else {
-            ApplyEqPreset(chosen[index]);
-        }
-    });
+    OpenMenu(
+        anchor, std::move(items), selected,
+        [this, manage, chosen = std::move(chosen)](int index) {
+            if (index == static_cast<int>(manage)) {
+                GoTo(Page::EqPresets);
+            } else {
+                ApplyEqPreset(chosen[index]);
+            }
+        },
+        true);
 }
 
 void Panel::DrawEqualizerPage() {

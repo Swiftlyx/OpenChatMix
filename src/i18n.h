@@ -515,6 +515,11 @@ enum class Text {
     KnobPopup,
     KnobPopupHint,
     BatteryAlertHint,
+    PresetsForGame,
+    MenuSearchHint,
+    MenuNoMatches,
+    EqSavingIn,
+    EqSaved,
     Count,
 };
 

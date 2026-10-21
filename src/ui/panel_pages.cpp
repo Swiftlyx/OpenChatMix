@@ -93,6 +93,19 @@ void Panel::SetHeadset(const std::wstring& name, const HeadsetFeatures* features
     Invalidate();
 }
 
+void Panel::SetHeadsetSaving(ULONGLONG deadline, unsigned delayMs) {
+    saveDeadline_ = deadline;
+    saveDelayMs_ = delayMs;
+    savedAt_ = 0;
+    Invalidate();
+}
+
+void Panel::SetHeadsetSaved() {
+    saveDeadline_ = 0;
+    savedAt_ = GetTickCount64();
+    Invalidate();
+}
+
 void Panel::SetRouting(const RoutingView& routing) {
     routing_ = routing;
     Invalidate();
@@ -203,6 +216,53 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
     host_.OnEqualizerCurve(curve);
 }
 
+// Before the headset saves a run of changes: a ring that empties and the seconds left; after it: Done, fading.
+void Panel::DrawSaveState(float right, float centerY) {
+    const Palette& p = P();
+    const ULONGLONG now = GetTickCount64();
+    // Both stages move with time, so they are drawn on every frame, like springs, until Done has faded.
+    if (saveDeadline_ || (savedAt_ && now - savedAt_ < kSaveDoneMs)) {
+        animating_ = true;
+    }
+    if (saveDeadline_) {
+        const float left = saveDeadline_ > now ? static_cast<float>(saveDeadline_ - now) : 0.0f;
+        const int seconds = std::max(1, static_cast<int>(std::ceil(left / 1000.0f)));
+        const std::wstring text =
+            std::wstring(T(Text::EqSavingIn)) + L" " + std::to_wstring(seconds) + L" " + T(Text::SecondsShort);
+        const float textLeft = right - canvas_.Measure(text, TextStyle::LabelMedium);
+        canvas_.Text(text, {textLeft, centerY - 10.0f, right + 2.0f, centerY + 10.0f}, TextStyle::LabelMedium,
+                     p.onSurfaceVariant);
+        const D2D1_POINT_2F center{textLeft - 12.0f, centerY};
+        constexpr float kRadius = 6.0f;
+        canvas_.StrokeCircle(center, kRadius, Alpha(p.onSurfaceVariant, 0.25f), 2.0f);
+        const float fraction = std::clamp(left / static_cast<float>(std::max(1u, saveDelayMs_)), 0.0f, 1.0f);
+        const int steps = std::max(2, static_cast<int>(std::ceil(32.0f * fraction)) + 1);
+        std::vector<D2D1_POINT_2F> arc;
+        for (int i = 0; i < steps; ++i) {
+            // Clockwise from the top, the part still to wait.
+            const float angle = -1.5707963f + 6.2831853f * fraction * static_cast<float>(i) / (steps - 1);
+            arc.push_back({center.x + kRadius * std::cos(angle), center.y + kRadius * std::sin(angle)});
+        }
+        canvas_.Polyline(arc, p.primary, 2.0f);
+        return;
+    }
+    if (!savedAt_ || now - savedAt_ >= kSaveDoneMs) {
+        return;
+    }
+    // Done fades in quickly and out slowly, both eased.
+    const float age = static_cast<float>(now - savedAt_);
+    auto ease = [](float t) {
+        t = std::clamp(t, 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    };
+    const float alpha = std::min(ease(age / 250.0f), ease((static_cast<float>(kSaveDoneMs) - age) / 700.0f));
+    const std::wstring text = T(Text::EqSaved);
+    const float textLeft = right - canvas_.Measure(text, TextStyle::LabelMedium);
+    canvas_.Text(text, {textLeft, centerY - 10.0f, right + 2.0f, centerY + 10.0f}, TextStyle::LabelMedium,
+                 Alpha(p.primary, alpha));
+    canvas_.Glyph(kGlyphCheck, {textLeft - 12.0f, centerY}, 12.0f, Alpha(p.primary, alpha));
+}
+
 float Panel::DrawEqualizer(float y) {
     const Palette& p = P();
     const EqualizerSpec& eq = features_->equalizer;
@@ -213,6 +273,9 @@ float Panel::DrawEqualizer(float y) {
     canvas_.Text(T(Text::Equalizer), {kInset, y, 240.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
     TextButton(kIdEqReset, {kWidth - kGutter - 104.0f, y - 6.0f, kWidth - kGutter, y + 26.0f}, kGlyphReset,
                T(Text::EqReset), false, [this] { host_.OnEqualizerCurve(EqCurve{}); });
+    if (features_->saveDelayMs) {
+        DrawSaveState(kWidth - kGutter - 112.0f, y + 10.0f);
+    }
     y += design::kSectionTitleHeight + 2.0f;
 
     // One hint under the presets: a preset stored on the headset cannot be edited, an untested format says so.
@@ -317,8 +380,9 @@ float Panel::DrawEqualizer(float y) {
         for (const NamedEq* preset : presets) {
             chosen.push_back(preset ? *preset : NamedEq{});
         }
-        OpenMenu(gameButton, std::move(items), -1,
-                 [this, chosen = std::move(chosen)](int index) { ApplyHeadsetGamePreset(chosen[index]); });
+        OpenMenu(
+            gameButton, std::move(items), -1,
+            [this, chosen = std::move(chosen)](int index) { ApplyHeadsetGamePreset(chosen[index]); }, true);
     });
     canvas_.Text(T(Text::GamePresetsHint), {32.0f, gameTop + 40.0f, kWidth - 32.0f, gameTop + 40.0f + gameHint},
                  TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Leading, true);

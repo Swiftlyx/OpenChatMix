@@ -591,6 +591,7 @@ public:
     void OnEqualizerPreset(int index) override {
         g.headset.eqPreset = index;
         PushHeadset();
+        CountDownSave();
     }
     void OnEqualizerCurve(const EqCurve& curve) override {
         g.headset.eqCurve = curve;
@@ -599,6 +600,24 @@ public:
             g.headset.eqPreset = features->equalizer.CustomIndex();
         }
         PushHeadset();
+        CountDownSave();
+    }
+    // As the app does for headsets that save once changes settle: a countdown, then Done.
+    static void CountDownSave() {
+        const HeadsetFeatures* features = Features();
+        if (!features || !features->saveDelayMs) {
+            return;
+        }
+        static UINT_PTR timer = 0;
+        if (timer) {
+            KillTimer(nullptr, timer);
+        }
+        g.panel->SetHeadsetSaving(GetTickCount64() + features->saveDelayMs, features->saveDelayMs);
+        timer = SetTimer(nullptr, 0, features->saveDelayMs, [](HWND, UINT, UINT_PTR id, DWORD) {
+            KillTimer(nullptr, id);
+            timer = 0;
+            g.panel->SetHeadsetSaved();
+        });
     }
     void OnRoutingEnabled(bool enabled) override {
         g.settings.routing.enabled = enabled;

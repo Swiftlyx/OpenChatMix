@@ -45,6 +45,8 @@ inline constexpr int kRoutingSlots = 9;
 struct MenuItem {
     std::wstring text;
     bool header = false;  // Section title; cannot be chosen.
+    wchar_t glyph = 0;    // Leading icon; 0 for none.
+    bool action = false;  // Opens a page instead of choosing an entry: set apart by a line, primary color, a chevron.
 };
 
 // Virtual device mode as shown in the panel.
@@ -252,6 +254,12 @@ public:
     void SetSettings(const Settings& settings);
     // features is null while no SteelSeries headset is connected.
     void SetHeadset(const std::wstring& name, const HeadsetFeatures* features, const HeadsetState& state);
+    // Headsets that save a run of changes once it ends (features.saveDelayMs): the save is due at deadline
+    // (GetTickCount64), and SetHeadsetSaved says it went out. The equalizer's title row counts down, then says
+    // Done.
+    void SetHeadsetSaving(ULONGLONG deadline, unsigned delayMs);
+    void SetHeadsetSaved();
+    void DrawSaveState(float right, float centerY);
     void SetRouting(const RoutingView& routing);
     void SetIdleScreen(const IdleScreenView& idle);
     void SetAddOns(const AddOnsView& addOns);
@@ -380,7 +388,11 @@ private:
     D2D1_RECT_F DrawDropdown(uint32_t id, float right, float centerY, const std::wstring& value, float maxWidth,
                              std::function<void(const D2D1_RECT_F&)> open);
     // Dropdown over the page; choose gets the index of the chosen item.
-    void OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int selected, std::function<void(int)> choose);
+    // searchable: typing filters the items, and a row at the top says so (long lists such as presets).
+    void OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int selected, std::function<void(int)> choose,
+                  bool searchable = false);
+    // The items of the open menu that match its search, by index, with the titles of their sections.
+    std::vector<size_t> MenuMatches() const;
     void CloseMenu();
     void DrawMenu();
     // Row content with a leading glyph, title, optional subtitle and a chevron; returns the bottom.
@@ -393,7 +405,10 @@ private:
     void DrawHint(const wchar_t* text, float top, float height);
     // Room supporting text under a row takes, including the gap below it; width is the text width.
     float HintHeight(const wchar_t* text, float width = 0.0f);
-    void DrawScrollbar(const D2D1_RECT_F& area, float offset, float content);
+    // The scrollbar of a scrolling area; with an id and scrollTo its thumb can be dragged, and a press beside it
+    // jumps there.
+    void DrawScrollbar(const D2D1_RECT_F& area, float offset, float content, uint32_t id = 0,
+                       std::function<void(float)> scrollTo = {});
     // A scrolling segmented list filling the rectangle; idOf gives each row's hover id.
     void DrawList(const D2D1_RECT_F& list, uint32_t id, float& scroll, size_t count, float rowHeight,
                   const std::function<uint32_t(size_t)>& idOf, const std::function<void(size_t, float)>& drawRow);
@@ -470,6 +485,8 @@ private:
     std::vector<MenuItem> EqLibraryMenu(std::vector<const NamedEq*>& presets,
                                         std::span<const EqPreset> deviceOwn = {}) const;
     void OpenEqPresetMenu(const D2D1_RECT_F& anchor);
+    // A preset of the loaded library by name; null when it has none.
+    const NamedEq* FindInEqLibrary(const std::wstring& name) const;
 
     // Headset and devices (panel_pages.cpp).
     void DrawHeadset();
@@ -621,6 +638,9 @@ private:
         std::function<void(int)> choose;
         float scroll = -1.0f;  // Negative: brings the selected item into view on the next frame.
         uint32_t ownerId = 0;  // The dropdown that opened it, drawn as open meanwhile.
+        bool searchable = false;
+        std::wstring search;   // Typed while it is open.
+        bool searchSelected = false;  // Ctrl+A selected the whole search; the next key replaces it.
     } menu_;
     std::wstring profileExe_;               // Profile being edited.
     std::wstring addOnPath_;                // Add-on being edited.
@@ -678,6 +698,10 @@ private:
     uint32_t hotId_ = 0;
     uint32_t pressedId_ = 0;
     bool pressStarting_ = false;  // True while a hit's drag runs for the press itself, not a move.
+    float scrollGrab_ = 0.0f;     // Where a dragged scrollbar thumb was grabbed, from its top.
+    ULONGLONG saveDeadline_ = 0;  // When a pending headset save goes out; 0 without one.
+    unsigned saveDelayMs_ = 0;    // The wait it counts down from.
+    ULONGLONG savedAt_ = 0;       // When the last save went out, for Done; 0 once that has faded.
     uint32_t dragId_ = 0;  // Equalizer handle being dragged, and where it was grabbed.
     float dragOffsetX_ = 0.0f;
     float dragOffsetY_ = 0.0f;

@@ -85,8 +85,12 @@ struct NamedEq {
 
 // Presets made for OpenChatMix.
 std::vector<NamedEq> BuiltinEqPresets(EqChannel channel);
-// Presets of a local SteelSeries Sonar installation (its own database), empty without Sonar.
+// Presets of a local SteelSeries GG installation: Sonar's, and Engine's game and microphone presets that Sonar
+// lacks. Empty without GG.
 std::vector<NamedEq> SonarEqPresets(EqChannel channel);
+// Names of GG's game presets made for the game at exePath (appName as Windows shows it): those GG links to the
+// game's install first, then those whose names match the game's or its file's. Empty without GG.
+std::vector<std::wstring> SuggestedEqPresets(const std::wstring& exePath, const std::wstring& appName);
 
 // Preset files (JSON) in %APPDATA%\OpenChatMix\Presets\Parametric.
 std::wstring ParametricPresetDirectory();

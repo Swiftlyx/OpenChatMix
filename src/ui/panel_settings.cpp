@@ -874,19 +874,37 @@ void Panel::DrawProfileEdit() {
         }));
 
     // An equalizer preset per channel, from every source and by name; each menu loads its channel's library.
-    auto eqRow = [this, &p, editProfile](uint32_t id, Text label, EqChannel channel, const std::wstring& current,
-                                        std::wstring GameProfile::*field) {
+    auto eqRow = [this, &p, editProfile, path = profile->path, name](uint32_t id, Text label, EqChannel channel,
+                                                                    const std::wstring& current,
+                                                                    std::wstring GameProfile::*field) {
         auto set = [editProfile, field](const std::wstring& name) {
             editProfile([&](GameProfile& item) { item.*field = name; });
         };
-        return CardRow{kRowHeight, [this, &p, id, label, channel, current, set](float top) {
+        return CardRow{kRowHeight, [this, &p, id, label, channel, current, set, path, name](float top) {
                            const D2D1_RECT_F dropdown = DrawDropdown(
                                id, kWidth - kInset, top + kRowHeight / 2.0f,
                                current.empty() ? std::wstring(T(Text::Unchanged)) : current, 200.0f,
-                               [this, channel, current, set](const D2D1_RECT_F& anchor) {
+                               [this, channel, current, set, path, name](const D2D1_RECT_F& anchor) {
                                    LoadEqLibrary(channel);
                                    std::vector<const NamedEq*> presets{nullptr};
                                    std::vector<MenuItem> items{{T(Text::Unchanged)}};
+                                   // GG's presets for this game come first, above the whole library.
+                                   if (channel == EqChannel::Game) {
+                                       bool titled = false;
+                                       for (const std::wstring& suggested : SuggestedEqPresets(path, name)) {
+                                           const NamedEq* found = FindInEqLibrary(suggested);
+                                           if (!found) {
+                                               continue;
+                                           }
+                                           if (!titled) {
+                                               items.push_back({T(Text::PresetsForGame), true});
+                                               presets.push_back(nullptr);
+                                               titled = true;
+                                           }
+                                           items.push_back({found->name});
+                                           presets.push_back(found);
+                                       }
+                                   }
                                    for (MenuItem& item : EqLibraryMenu(presets)) {
                                        items.push_back(std::move(item));
                                    }
@@ -899,8 +917,9 @@ void Panel::DrawProfileEdit() {
                                            selected = static_cast<int>(i);
                                        }
                                    }
-                                   OpenMenu(anchor, std::move(items), selected,
-                                            [set, chosen = std::move(chosen)](int index) { set(chosen[index]); });
+                                   OpenMenu(
+                                       anchor, std::move(items), selected,
+                                       [set, chosen = std::move(chosen)](int index) { set(chosen[index]); }, true);
                                });
                            DrawRowLabel(T(label), {kInset, top, dropdown.left - design::kSpace3, top + kRowHeight},
                                         p.onSurface);

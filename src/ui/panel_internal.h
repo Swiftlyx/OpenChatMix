@@ -29,6 +29,7 @@ inline constexpr float kInset = design::kContentInset;
 inline constexpr ULONGLONG kReopenGuardMs = 400;
 inline constexpr UINT_PTR kMeterTimer = 1;     // Panel window timer that reads the level meters.
 inline constexpr UINT_PTR kTooltipTimer = 2;   // Panel window timer for the tooltip delay.
+inline constexpr ULONGLONG kSaveDoneMs = 2000;  // How long Done shows after a headset save.
 inline constexpr UINT kTooltipDelayMs = 500;
 inline constexpr UINT kMeterIntervalMs = 33;  // A tray click that closed the panel must not reopen it.
 
@@ -211,6 +212,8 @@ enum : uint32_t {
     kIdPopups,
     kIdPopupCorner,
     kIdKnobPopup,
+    kIdMenuScrollbar,
+    kIdPageScrollbar,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,
@@ -268,6 +271,10 @@ inline D2D1_RECT_F Inset(const D2D1_RECT_F& rect, float dx, float dy) {
 inline bool Contains(const D2D1_RECT_F& rect, float x, float y) {
     return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
 }
+
+// Text on the Windows clipboard, one line of it; empty when it holds none.
+std::wstring ClipboardText(HWND owner);
+void SetClipboardText(HWND owner, const std::wstring& text);
 
 inline std::wstring Percent(int value) {
     return std::to_wstring(value) + L"%";

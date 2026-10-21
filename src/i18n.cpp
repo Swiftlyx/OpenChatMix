@@ -151,7 +151,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Preamp",  // Preamp
     L"Type",  // FilterType
     L"OpenChatMix",  // PresetsBuiltin
-    L"From SteelSeries Sonar",  // PresetsSonar
+    L"From SteelSeries GG",  // PresetsSonar
     L"Appearance",  // Appearance
     L"Theme, color, background",  // AppearanceSummary
     L"Audio",  // AudioSection
@@ -518,6 +518,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"For the knob in ChatMix mode",  // KnobPopup
     L"Shows the balance when the knob on the GameDAC or base station turns.",  // KnobPopupHint
     L"Shows even while popups are off.",  // BatteryAlertHint
+    L"For this game",  // PresetsForGame
+    L"Type to search…",  // MenuSearchHint
+    L"Nothing found",  // MenuNoMatches
+    L"Saving in",  // EqSavingIn
+    L"Done",  // EqSaved
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -663,7 +668,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Передпідсилення",
     L"Тип",
     L"OpenChatMix",
-    L"Із SteelSeries Sonar",
+    L"Із SteelSeries GG",
     L"Вигляд",
     L"Тема, колір, фон",
     L"Звук",
@@ -1030,6 +1035,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Для коліщатка в режимі ChatMix",
     L"Показує баланс під час обертання коліщатка на GameDAC або базовій станції.",
     L"З'являється, навіть коли спливаючі вікна вимкнено.",
+    L"Для цієї гри",
+    L"Друкуйте, щоб шукати…",
+    L"Нічого не знайдено",
+    L"Збереження за",
+    L"Готово",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

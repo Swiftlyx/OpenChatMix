@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <cwctype>
 #include <string>
 #include <vector>
 
@@ -10,6 +12,50 @@
 #include "panel_internal.h"
 
 namespace ui {
+
+namespace detail {
+
+std::wstring ClipboardText(HWND owner) {
+    std::wstring text;
+    if (!OpenClipboard(owner)) {
+        return text;
+    }
+    if (HANDLE data = GetClipboardData(CF_UNICODETEXT)) {
+        if (const auto* chars = static_cast<const wchar_t*>(GlobalLock(data))) {
+            text = chars;
+            GlobalUnlock(data);
+        }
+    }
+    CloseClipboard();
+    // Only the first line: fields and searches hold one.
+    if (const size_t end = text.find_first_of(L"\r\n"); end != std::wstring::npos) {
+        text.resize(end);
+    }
+    std::erase_if(text, [](wchar_t c) { return c < L' ' || c == 0x7F; });
+    return text;
+}
+
+void SetClipboardText(HWND owner, const std::wstring& text) {
+    if (text.empty() || !OpenClipboard(owner)) {
+        return;
+    }
+    EmptyClipboard();
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+        if (void* chars = GlobalLock(memory)) {
+            memcpy(chars, text.c_str(), bytes);
+            GlobalUnlock(memory);
+            if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+                GlobalFree(memory);
+            }
+        } else {
+            GlobalFree(memory);
+        }
+    }
+    CloseClipboard();
+}
+
+}  // namespace detail
 
 using namespace detail;
 
@@ -20,11 +66,17 @@ constexpr float kDragThreshold = 4.0f;  // Pointer travel before a press becomes
 }  // namespace
 
 float Panel::DrawCard(float y, const std::vector<CardRow>& rows) {
+    // In a scrolling page, rows more than a screen away from the view are only measured, so long lists (hundreds
+    // of presets) stay smooth; the rows next to the view are still drawn, for keyboard focus to reach them.
+    const bool inPage = pageScrollDepth_ != 0 && hitClip_.size() == pageScrollDepth_;
+    const D2D1_RECT_F view = inPage ? hitClip_.back() : D2D1_RECT_F{};
     float top = y;
     for (size_t i = 0; i < rows.size(); ++i) {
         const CardRow& row = rows[i];
-        DrawTile(TileRect(top, row.height), row.id, i == 0, i + 1 == rows.size());
-        row.draw(top);
+        if (!inPage || (top + row.height >= view.top - kHeight && top <= view.bottom + kHeight)) {
+            DrawTile(TileRect(top, row.height), row.id, i == 0, i + 1 == rows.size());
+            row.draw(top);
+        }
         top += row.height + (i + 1 < rows.size() ? design::kSegmentGap : 0.0f);
     }
     return top;
@@ -383,6 +435,31 @@ bool Panel::FieldKey(UINT key) {
         field_.anchor = 0;
         field_.caret = size;
         break;
+    case 'C':
+    case 'X':
+        if (!control) {
+            return true;
+        }
+        if (selected) {
+            SetClipboardText(window_, field_.text.substr(low, high - low));
+            if (key == 'X') {
+                field_.text.erase(low, high - low);
+                field_.caret = field_.anchor = low;
+            }
+        }
+        break;
+    case 'V': {
+        if (!control) {
+            return true;
+        }
+        const std::wstring pasted = ClipboardText(window_);
+        field_.text.erase(low, high - low);
+        const size_t limit = field_.numeric ? 16u : 64u;
+        const size_t room = field_.text.size() < limit ? limit - field_.text.size() : 0;
+        field_.text.insert(low, pasted.substr(0, room));
+        field_.caret = field_.anchor = low + std::min(pasted.size(), room);
+        break;
+    }
     default:
         return true;  // The field takes every key while it is open.
     }
@@ -393,10 +470,21 @@ bool Panel::FieldKey(UINT key) {
 void Panel::FieldChar(wchar_t ch) {
     const size_t low = std::min(field_.anchor, field_.caret);
     const size_t high = std::max(field_.anchor, field_.caret);
-    if (ch == L'\b') {
+    if (ch == L'\b' || ch == 0x7F) {
         if (low != high) {
             field_.text.erase(low, high - low);
             field_.caret = low;
+        } else if (ch == 0x7F) {
+            // Ctrl+Backspace: back to the start of the word, with the spaces after it.
+            size_t start = field_.caret;
+            while (start > 0 && std::iswspace(field_.text[start - 1])) {
+                --start;
+            }
+            while (start > 0 && !std::iswspace(field_.text[start - 1])) {
+                --start;
+            }
+            field_.text.erase(start, field_.caret - start);
+            field_.caret = start;
         } else if (field_.caret > 0) {
             field_.text.erase(--field_.caret, 1);
         }

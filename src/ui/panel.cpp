@@ -773,14 +773,18 @@ void Panel::EndScroll(Page page, float top, float y) {
         scroll = std::clamp(scroll, 0.0f, maxScroll);
         Invalidate();
     }
-    DrawScrollbar(area, offset, content);
+    DrawScrollbar(area, offset, content, kIdPageScrollbar, [this, page](float value) {
+        scroll_[page] = value;
+        SetAnimation(AnimKey(kIdSettingsPage, static_cast<uint32_t>(page)), value);
+    });
 }
 
 void Panel::AddHit(Hit hit) {
     // Anything that acts on a click or a drag is a focus stop. The menu's backdrop and list surface,
     // the page's wheel area and the mixer card's wheel area are not.
     const bool focusable = hit.id != 0 && (hit.click || hit.drag) && hit.id != kIdMenu && hit.id != kIdMenuList &&
-                           hit.id != kIdSettingsPage && hit.id != kIdMixCard;
+                           hit.id != kIdSettingsPage && hit.id != kIdMixCard && hit.id != kIdMenuScrollbar &&
+                           hit.id != kIdPageScrollbar;
     if (focusable && std::none_of(focusables_.begin(), focusables_.end(),
                                   [&](const Focusable& known) { return known.id == hit.id; })) {
         Focusable stop;
@@ -1165,13 +1169,15 @@ D2D1_RECT_F Panel::DrawDropdown(uint32_t id, float right, float centerY, const s
 }
 
 void Panel::OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int selected,
-                     std::function<void(int)> choose) {
+                     std::function<void(int)> choose, bool searchable) {
     menu_.open = true;
     menu_.anchor = anchor;
     menu_.items = std::move(items);
     menu_.selected = selected;
     menu_.choose = std::move(choose);
     menu_.scroll = -1.0f;
+    menu_.searchable = searchable;
+    menu_.search.clear();
     animations_.erase(AnimKey(kIdMenu, 0));
     animations_.erase(AnimKey(kIdMenu, 1));
     hotId_ = pressedId_ = 0;
@@ -1186,6 +1192,47 @@ void Panel::CloseMenu() {
     }
 }
 
+namespace {
+
+// Ctrl+Backspace: the last word of a text and the spaces after it.
+void DeleteLastWord(std::wstring& text) {
+    while (!text.empty() && std::iswspace(text.back())) {
+        text.pop_back();
+    }
+    while (!text.empty() && !std::iswspace(text.back())) {
+        text.pop_back();
+    }
+}
+
+}  // namespace
+
+std::vector<size_t> Panel::MenuMatches() const {
+    std::vector<size_t> matches;
+    auto lower = [](std::wstring text) {
+        for (wchar_t& c : text) {
+            c = static_cast<wchar_t>(std::towlower(c));
+        }
+        return text;
+    };
+    const std::wstring search = lower(menu_.search);
+    size_t title = SIZE_MAX;  // The section title not yet shown above a match.
+    for (size_t i = 0; i < menu_.items.size(); ++i) {
+        const MenuItem& item = menu_.items[i];
+        if (search.empty()) {
+            matches.push_back(i);
+        } else if (item.header) {
+            title = i;
+        } else if (lower(item.text).find(search) != std::wstring::npos) {
+            if (title != SIZE_MAX) {
+                matches.push_back(title);
+                title = SIZE_MAX;
+            }
+            matches.push_back(i);
+        }
+    }
+    return matches;
+}
+
 void Panel::DrawMenu() {
     if (!menu_.open) {
         return;
@@ -1195,6 +1242,7 @@ void Panel::DrawMenu() {
     constexpr float kTitleHeight = 32.0f;
     constexpr float kPadding = 8.0f;
     constexpr float kMargin = 12.0f;
+    constexpr float kSearchHeight = 40.0f;  // The search row of a searchable menu, above the list.
 
     // Everything outside the menu only closes it.
     Hit scrim;
@@ -1204,26 +1252,40 @@ void Panel::DrawMenu() {
     scrim.wheel = [](int) {};
     AddHit(std::move(scrim));
 
-    float content = 2.0f * kPadding;
+    // The menu keeps the size of its whole list while a search narrows it, so it does not jump while typing.
+    const float searchRow = menu_.searchable ? kSearchHeight : 0.0f;
+    float full = 2.0f * kPadding + searchRow;
     for (const MenuItem& item : menu_.items) {
-        content += item.header ? kTitleHeight : kItemHeight;
+        full += item.header ? kTitleHeight : kItemHeight;
+    }
+    const std::vector<size_t> matches = MenuMatches();
+    float content = 2.0f * kPadding;
+    for (const size_t i : matches) {
+        content += menu_.items[i].header ? kTitleHeight : kItemHeight;
+    }
+    if (matches.empty()) {
+        content += kItemHeight;  // "Nothing found".
     }
     const float width = std::clamp(menu_.anchor.right - menu_.anchor.left, 220.0f, kWidth - 2.0f * kMargin);
     const float left = std::clamp(menu_.anchor.left, kMargin, kWidth - kMargin - width);
     const float below = kHeight - kMargin - (menu_.anchor.bottom + 4.0f);
     const float above = menu_.anchor.top - 4.0f - kMargin;
-    const bool down = below >= std::min(content, 260.0f) || below >= above;
-    const float height = std::min(content, down ? below : above);
+    const bool down = below >= std::min(full, 260.0f) || below >= above;
+    const float height = std::min(full, down ? below : above);
     const float top = down ? menu_.anchor.bottom + 4.0f : menu_.anchor.top - 4.0f - height;
     const D2D1_RECT_F rect{left, top, left + width, top + height};
+    const float listHeight = height - searchRow;
 
-    const float maxScroll = std::max(0.0f, content - height);
+    const float maxScroll = std::max(0.0f, content - listHeight);
     if (menu_.scroll < 0.0f) {
         float offset = kPadding;
-        for (int i = 0; i < menu_.selected && i < static_cast<int>(menu_.items.size()); ++i) {
+        for (const size_t i : matches) {
+            if (static_cast<int>(i) >= menu_.selected) {
+                break;
+            }
             offset += menu_.items[i].header ? kTitleHeight : kItemHeight;
         }
-        menu_.scroll = offset - (height - kItemHeight) / 2.0f;
+        menu_.scroll = offset - (listHeight - kItemHeight) / 2.0f;
     }
     menu_.scroll = std::clamp(menu_.scroll, 0.0f, maxScroll);
     const float scroll = Animate(AnimKey(kIdMenuList, 0), menu_.scroll, design::kSpringScroll, true);
@@ -1240,21 +1302,64 @@ void Panel::DrawMenu() {
                      {0.0f, 0.0f, 0.0f, design::kScrimOpacity * appear});
     canvas_.FillRound(shown, design::kRadiusMenu, Alpha(p.surfaceContainerHighest, appear));
 
+    // The search row: a hint until something is typed, then what was typed; a line sets it off from the list.
+    D2D1_RECT_F listRect = shown;
+    if (menu_.searchable) {
+        const float rowTop = down ? shown.top : shown.top + (shown.bottom - shown.top) - height;
+        if (rowTop + kSearchHeight <= shown.bottom) {
+            const float centerY = rowTop + kSearchHeight / 2.0f;
+            const bool typed = !menu_.search.empty();
+            canvas_.Glyph(kGlyphSearch, {rect.left + 26.0f, centerY}, design::kSmallIconSize,
+                          Alpha(typed ? p.onSurface : p.onSurfaceVariant, appear));
+            const D2D1_RECT_F textRect{rect.left + 46.0f, rowTop, rect.right - 16.0f, rowTop + kSearchHeight};
+            if (typed) {
+                const float end =
+                    std::min(textRect.left + canvas_.Measure(menu_.search, TextStyle::BodyLarge) + 1.0f, textRect.right);
+                if (menu_.searchSelected) {
+                    canvas_.FillRound({textRect.left - 2.0f, centerY - 11.0f, end + 2.0f, centerY + 11.0f},
+                                      design::kRadiusExtraSmall, Alpha(p.primary, 0.3f * appear));
+                }
+                canvas_.Text(menu_.search, textRect, TextStyle::BodyLarge, Alpha(p.onSurface, appear));
+                if (!menu_.searchSelected) {
+                    canvas_.FillRect({end, centerY - 9.0f, end + 1.5f, centerY + 9.0f}, Alpha(p.primary, appear));
+                }
+            } else {
+                canvas_.Text(T(Text::MenuSearchHint), textRect, TextStyle::BodySmall,
+                             Alpha(p.onSurfaceVariant, appear));
+            }
+            canvas_.FillRect({rect.left + 12.0f, rowTop + kSearchHeight - 0.5f, rect.right - 12.0f,
+                              rowTop + kSearchHeight + 0.5f},
+                             Alpha(p.outlineVariant, appear));
+        }
+        listRect.top = std::min(shown.bottom, std::max(shown.top, rowTop + kSearchHeight));
+    }
+
     Hit list;
     list.rect = shown;
     list.id = kIdMenuList;
     list.click = [] {};
+    // Three items a notch, as Windows scrolls lists.
     list.wheel = [this](int notches) {
-        menu_.scroll -= notches * kItemHeight;
+        menu_.scroll -= notches * 3.0f * kItemHeight;
         Invalidate();
     };
     AddHit(std::move(list));
 
-    canvas_.PushClip(shown);
-    hitClip_.push_back(shown);
-    float y = rect.top + kPadding - scroll;
-    for (size_t i = 0; i < menu_.items.size(); ++i) {
+    canvas_.PushClip(listRect);
+    hitClip_.push_back(listRect);
+    float y = rect.top + searchRow + kPadding - scroll;
+    if (matches.empty()) {
+        canvas_.Text(T(Text::MenuNoMatches), {rect.left + 18.0f, y, rect.right - 18.0f, y + kItemHeight},
+                     TextStyle::BodyMedium, Alpha(p.onSurfaceVariant, appear));
+    }
+    for (const size_t i : matches) {
         const MenuItem& item = menu_.items[i];
+        // Only what shows is drawn, so long lists (hundreds of game presets) stay smooth.
+        const float itemHeight = item.header ? kTitleHeight : kItemHeight;
+        if (y + itemHeight <= listRect.top || y >= listRect.bottom) {
+            y += itemHeight;
+            continue;
+        }
         if (item.header) {
             canvas_.Text(item.text, {rect.left + 16.0f, y + 6.0f, rect.right - 16.0f, y + kTitleHeight},
                          TextStyle::LabelMedium, Alpha(p.primary, appear));
@@ -1268,13 +1373,25 @@ void Panel::DrawMenu() {
             canvas_.FillRound(row, design::kRadiusMenuItem, Alpha(p.secondaryContainer, appear));
         }
         StateLayer(id, row, design::kRadiusMenuItem, p.onSurface);
-        const D2D1_COLOR_F color = chosen ? p.onSecondaryContainer : p.onSurface;
-        canvas_.Text(item.text, {row.left + 12.0f, y, row.right - (chosen ? 36.0f : 12.0f), y + kItemHeight},
+        const D2D1_COLOR_F color = chosen ? p.onSecondaryContainer : item.action ? p.primary : p.onSurface;
+        if (item.action) {
+            canvas_.FillRect({rect.left + 12.0f, y - 0.5f, rect.right - 12.0f, y + 0.5f},
+                             Alpha(p.outlineVariant, appear));
+        }
+        const float textLeft = item.glyph ? row.left + 44.0f : row.left + 12.0f;
+        if (item.glyph) {
+            canvas_.Glyph(item.glyph, {row.left + 22.0f, y + kItemHeight / 2.0f}, design::kIconSize - 2.0f,
+                          Alpha(color, appear));
+        }
+        canvas_.Text(item.text, {textLeft, y, row.right - (chosen || item.action ? 36.0f : 12.0f), y + kItemHeight},
                      TextStyle::BodyLarge, Alpha(color, appear));
         if (chosen) {
             canvas_.Glyph(kGlyphCheck, {row.right - 20.0f, y + kItemHeight / 2.0f}, 14.0f, Alpha(color, appear));
+        } else if (item.action) {
+            canvas_.Glyph(kGlyphChevronRight, {row.right - 20.0f, y + kItemHeight / 2.0f}, design::kSmallIconSize,
+                          Alpha(color, appear));
         }
-        if (row.bottom > shown.top && row.top < shown.bottom) {
+        if (row.bottom > listRect.top && row.top < listRect.bottom) {
             AddHit({row, id, [this, i] {
                         std::function<void(int)> choose = std::move(menu_.choose);
                         CloseMenu();
@@ -1288,7 +1405,10 @@ void Panel::DrawMenu() {
     hitClip_.pop_back();
     canvas_.PopClip();
     if (maxScroll > 0.0f) {
-        DrawScrollbar(shown, scroll, content);
+        DrawScrollbar(listRect, scroll, content, kIdMenuScrollbar, [this](float offset) {
+            menu_.scroll = offset;
+            SetAnimation(AnimKey(kIdMenuList, 0), offset);
+        });
     }
 }
 
@@ -1346,7 +1466,8 @@ float Panel::HintHeight(const wchar_t* text, float width) {
     return std::ceil(canvas_.MeasureHeight(text, TextStyle::BodySmall, wrap)) + design::kHintBottomGap;
 }
 
-void Panel::DrawScrollbar(const D2D1_RECT_F& area, float offset, float content) {
+void Panel::DrawScrollbar(const D2D1_RECT_F& area, float offset, float content, uint32_t id,
+                          std::function<void(float)> scrollTo) {
     const float visible = area.bottom - area.top;
     if (content <= visible + 0.5f) {
         return;
@@ -1354,10 +1475,32 @@ void Panel::DrawScrollbar(const D2D1_RECT_F& area, float offset, float content) 
     const float trackTop = area.top + 14.0f;
     const float trackHeight = area.bottom - 14.0f - trackTop;
     const float thumbHeight = std::max(24.0f, trackHeight * visible / content);
-    const float thumbTop =
-        trackTop + (trackHeight - thumbHeight) * std::clamp(offset / (content - visible), 0.0f, 1.0f);
-    canvas_.FillRound({area.right - 7.0f, thumbTop, area.right - 4.0f, thumbTop + thumbHeight}, 1.5f,
-                      Alpha(P().onSurfaceVariant, 0.45f));
+    const float range = content - visible;
+    const float thumbTop = trackTop + (trackHeight - thumbHeight) * std::clamp(offset / range, 0.0f, 1.0f);
+    // The thumb widens under the pointer and while dragged, so it is easy to catch.
+    const bool draggable = id != 0 && static_cast<bool>(scrollTo);
+    const float wide = draggable ? Animate(AnimKey(id, 0), hotId_ == id || pressedId_ == id ? 1.0f : 0.0f,
+                                           design::kSpringFastSpatial)
+                                 : 0.0f;
+    const float width = 3.0f + 3.0f * std::clamp(wide, 0.0f, 1.0f);
+    canvas_.FillRound({area.right - 4.0f - width, thumbTop, area.right - 4.0f, thumbTop + thumbHeight}, width / 2.0f,
+                      Alpha(P().onSurfaceVariant, 0.45f + 0.25f * std::clamp(wide, 0.0f, 1.0f)));
+    if (!draggable) {
+        return;
+    }
+    Hit bar;
+    bar.rect = {area.right - 14.0f, trackTop, area.right, trackTop + trackHeight};
+    bar.id = id;
+    bar.drag = [this, trackTop, trackHeight, thumbTop, thumbHeight, range, scrollTo](float, float y) {
+        // A press on the thumb keeps the point it was caught at; a press beside it centers the thumb there.
+        if (pressStarting_) {
+            scrollGrab_ = y >= thumbTop && y <= thumbTop + thumbHeight ? y - thumbTop : thumbHeight / 2.0f;
+        }
+        const float travel = std::max(1.0f, trackHeight - thumbHeight);
+        scrollTo(std::clamp((y - scrollGrab_ - trackTop) / travel, 0.0f, 1.0f) * range);
+        Invalidate();
+    };
+    AddHit(std::move(bar));
 }
 
 void Panel::DrawList(const D2D1_RECT_F& list, uint32_t id, float& scroll, size_t count, float rowHeight,
@@ -1579,8 +1722,57 @@ bool Panel::OnKey(UINT key, bool down) {
     if (field_.id) {
         return FieldKey(key);
     }
+    if (menu_.open && menu_.searchable && (GetKeyState(VK_CONTROL) & 0x8000) &&
+        (key == 'A' || key == 'C' || key == 'X' || key == 'V')) {
+        // The search is selected whole or not at all: Ctrl+A selects it, Ctrl+C and Ctrl+X take it while
+        // selected, Ctrl+V puts the clipboard's text in its place or after it.
+        if (key == 'A') {
+            menu_.searchSelected = !menu_.search.empty();
+        } else if (key == 'V') {
+            const std::wstring pasted = ClipboardText(window_);
+            if (!pasted.empty()) {
+                if (menu_.searchSelected) {
+                    menu_.search.clear();
+                    menu_.searchSelected = false;
+                }
+                menu_.search += pasted;
+                menu_.scroll = 0.0f;
+                SetAnimation(AnimKey(kIdMenuList, 0), 0.0f);
+            }
+        } else if (menu_.searchSelected) {
+            SetClipboardText(window_, menu_.search);
+            if (key == 'X') {
+                menu_.search.clear();
+                menu_.searchSelected = false;
+                menu_.scroll = 0.0f;
+            }
+        }
+        Invalidate();
+        return true;
+    }
     if (key == VK_ESCAPE && menu_.open) {
-        CloseMenu();
+        if (!menu_.search.empty()) {
+            menu_.searchSelected = false;
+            menu_.search.clear();
+            menu_.scroll = 0.0f;
+            Invalidate();
+        } else {
+            CloseMenu();
+        }
+        return true;
+    }
+    if (key == VK_RETURN && menu_.open && !menu_.search.empty() && !ActivateFocus()) {
+        // Without a focused item, Enter takes the first match.
+        for (const size_t i : MenuMatches()) {
+            if (!menu_.items[i].header) {
+                std::function<void(int)> choose = std::move(menu_.choose);
+                CloseMenu();
+                if (choose) {
+                    choose(static_cast<int>(i));
+                }
+                break;
+            }
+        }
         return true;
     }
     if (key == VK_ESCAPE) {
@@ -1601,7 +1793,7 @@ bool Panel::OnKey(UINT key, bool down) {
         return true;
     }
     // Space types into the pages with a text field; Enter activates everywhere.
-    const bool typing = page_ == Page::AddApp || page_ == Page::ColorPicker;
+    const bool typing = page_ == Page::AddApp || page_ == Page::ColorPicker || (menu_.open && menu_.searchable);
     if ((key == VK_RETURN || (key == VK_SPACE && !typing)) && ActivateFocus()) {
         return true;
     }
@@ -1623,6 +1815,37 @@ void Panel::OnChar(wchar_t ch) {
     }
     if (field_.id) {
         FieldChar(ch);
+        return;
+    }
+    if (menu_.open) {
+        if (!menu_.searchable) {
+            return;
+        }
+        // Backspace, Ctrl+Backspace (0x7F) and typing replace a search selected with Ctrl+A.
+        const bool printable = ch >= L' ' && ch != 0x7F;
+        if (menu_.searchSelected && (printable || ch == L'\b' || ch == 0x7F)) {
+            menu_.search.clear();
+            menu_.searchSelected = false;
+            if (!printable) {
+                ch = 0;
+            }
+        }
+        if (ch == L'\b') {
+            if (menu_.search.empty()) {
+                return;
+            }
+            menu_.search.pop_back();
+        } else if (ch == 0x7F) {
+            DeleteLastWord(menu_.search);
+        } else if (printable && !(ch == L' ' && menu_.search.empty())) {
+            menu_.search += ch;
+        } else if (ch != 0) {
+            return;
+        }
+        // The narrowed list starts from its top.
+        menu_.scroll = 0.0f;
+        SetAnimation(AnimKey(kIdMenuList, 0), 0.0f);
+        Invalidate();
         return;
     }
     std::wstring* field = page_ == Page::AddApp ? &filter_ : page_ == Page::ColorPicker ? &hexInput_ : nullptr;

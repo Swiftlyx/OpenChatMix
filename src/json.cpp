@@ -204,6 +204,12 @@ private:
             }
             if (text_[pos_] == ',') {
                 ++pos_;
+                // A comma before the closing bracket is accepted: SteelSeries GG writes some.
+                SkipSpace();
+                if (pos_ < text_.size() && text_[pos_] == ']') {
+                    ++pos_;
+                    return true;
+                }
                 continue;
             }
             if (text_[pos_] == ']') {
@@ -247,6 +253,11 @@ private:
             }
             if (text_[pos_] == ',') {
                 ++pos_;
+                SkipSpace();
+                if (pos_ < text_.size() && text_[pos_] == '}') {
+                    ++pos_;
+                    return true;
+                }
                 continue;
             }
             if (text_[pos_] == '}') {

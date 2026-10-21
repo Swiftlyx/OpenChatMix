@@ -778,6 +778,10 @@ void SendHeadsetCommand(std::span<const uint8_t> command) {
         const unsigned delay = g_app.features->saveDelayMs ? g_app.features->saveDelayMs : kCommitHeadsetDelayMs;
         SetTimer(g_app.window, kTimerCommitHeadset, delay, nullptr);
         g_app.commitPending = true;
+        // A save that waits for the changes to settle is counted down on the equalizer.
+        if (g_app.features->saveDelayMs && g_app.panel) {
+            g_app.panel->SetHeadsetSaving(GetTickCount64() + delay, delay);
+        }
     }
     ScheduleHeadsetVerify(kVerifyAfterCommandMs);
 }
@@ -820,6 +824,9 @@ void CommitHeadset() {
     }
     for (const auto& command : g_app.features->save) {
         g_app.device.SendCommand(std::span<const uint8_t>(command.bytes, command.length));
+    }
+    if (g_app.features->saveDelayMs && g_app.panel) {
+        g_app.panel->SetHeadsetSaved();
     }
 }
 
