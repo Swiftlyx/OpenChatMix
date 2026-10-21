@@ -29,6 +29,7 @@ constexpr double kWarningHoldMs = 5000.0;
 
 constexpr wchar_t kGlyphGame = 0xE7FC;
 constexpr wchar_t kGlyphChat = 0xE8BD;
+constexpr wchar_t kGlyphVolume0 = 0xE992;  // Volume0..Volume3: a speaker with zero to three waves.
 
 std::wstring Percent(int value) {
     return std::to_wstring(value) + L"%";
@@ -59,22 +60,60 @@ Osd::~Osd() {
     Destroy();
 }
 
+void Osd::SetEnabled(bool enabled) {
+    enabled_ = enabled;
+    if (!enabled_ && !warning_) {
+        Destroy();
+    }
+}
+
+void Osd::SetPlacement(bool left, bool bottom) {
+    if (left != left_ || bottom != bottom_) {
+        left_ = left;
+        bottom_ = bottom;
+        Destroy();
+    }
+}
+
 void Osd::Show(Levels levels) {
-    if (message_ && window_) {
+    if (!enabled_) {
+        return;
+    }
+    if ((message_ || volume_) && window_) {
         position_ = static_cast<float>(BalanceFromLevels(levels));
     }
     message_ = false;
+    volume_ = false;
     warning_ = false;
     levels_ = levels;
     Begin();
 }
 
 void Osd::ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail, bool warning) {
+    if (!enabled_ && !warning) {
+        return;
+    }
     message_ = true;
+    volume_ = false;
     warning_ = warning;
     messageGlyph_ = glyph;
     messageTitle_ = title;
     messageDetail_ = detail;
+    Begin();
+}
+
+void Osd::ShowVolume(int percent) {
+    if (!enabled_) {
+        return;
+    }
+    // The bar starts where the volume is, not where a balance shown before left it.
+    if (!volume_ && window_) {
+        position_ = static_cast<float>(percent);
+    }
+    message_ = false;
+    volume_ = true;
+    warning_ = false;
+    volumePercent_ = std::clamp(percent, 0, 100);
     Begin();
 }
 
@@ -84,7 +123,7 @@ void Osd::Begin() {
         if (!CreateOsdWindow()) {
             return;
         }
-        position_ = static_cast<float>(BalanceFromLevels(levels_));
+        position_ = static_cast<float>(volume_ ? volumePercent_ : BalanceFromLevels(levels_));
         opacity_ = 0.0f;
         lastTick_ = lastShow_;
     }
@@ -120,8 +159,10 @@ bool Osd::CreateOsdWindow() {
     const float scale = dpi_ / 96.0f;
     width_ = static_cast<int>(std::lround((kCardWidth + 2.0f * kShadow) * scale));
     height_ = static_cast<int>(std::lround((kCardHeight + 2.0f * kShadow) * scale));
-    origin_.x = info.rcWork.right - static_cast<LONG>(std::lround((kScreenMargin + kCardWidth + kShadow) * scale));
-    origin_.y = info.rcWork.top + static_cast<LONG>(std::lround((kScreenMargin - kShadow) * scale));
+    origin_.x = left_ ? info.rcWork.left + static_cast<LONG>(std::lround((kScreenMargin - kShadow) * scale))
+                      : info.rcWork.right - static_cast<LONG>(std::lround((kScreenMargin + kCardWidth + kShadow) * scale));
+    origin_.y = bottom_ ? info.rcWork.bottom - static_cast<LONG>(std::lround((kScreenMargin + kCardHeight + kShadow) * scale))
+                        : info.rcWork.top + static_cast<LONG>(std::lround((kScreenMargin - kShadow) * scale));
 
     window_ = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                               kWindowClass, L"", WS_POPUP, origin_.x, origin_.y, width_, height_, nullptr, nullptr,
@@ -181,7 +222,7 @@ void Osd::Tick() {
     const bool holding = now - lastShow_ < holdMs;
     opacity_ = holding ? std::min(1.0f, opacity_ + elapsedMs / kFadeInMs)
                        : std::max(0.0f, opacity_ - elapsedMs / kFadeOutMs);
-    const float target = static_cast<float>(BalanceFromLevels(levels_));
+    const float target = static_cast<float>(volume_ ? volumePercent_ : BalanceFromLevels(levels_));
     position_ += (target - position_) * (1.0f - std::exp(-18.0f * elapsedMs / 1000.0f));
     if (std::fabs(target - position_) < 0.02f || reduceMotion_) {
         position_ = target;
@@ -233,18 +274,26 @@ void Osd::Render() {
         canvas_.Text(messageDetail_, {left + 60.0f, card.top + 46.0f, right, card.top + 70.0f}, TextStyle::BodyMedium,
                      p.onSurfaceVariant);
         canvas_.End();
-        const float eased = SmoothStep(opacity_);
-        const LONG slide = static_cast<LONG>(std::lround((1.0f - eased) * kSlideDistance * dpi_ / 96.0f));
-        POINT destination{origin_.x, origin_.y - slide};
-        POINT source{0, 0};
-        SIZE size{width_, height_};
-        BLENDFUNCTION blend{AC_SRC_OVER, 0, static_cast<BYTE>(std::lround(eased * 255.0f)), AC_SRC_ALPHA};
-        UpdateLayeredWindow(window_, nullptr, &destination, &size, memoryDc_, &source, 0, &blend, ULW_ALPHA);
+        Present();
         return;
     }
     const float rowTop = card.top + 14.0f;
     const float rowBottom = card.top + 40.0f;
     const float rowCenter = (rowTop + rowBottom) / 2.0f;
+    const SliderStyle sliderStyle{12.0f, 5.0f, 32.0f};
+
+    if (volume_) {
+        const wchar_t glyph = static_cast<wchar_t>(kGlyphVolume0 + (volumePercent_ == 0 ? 0 : 1 + volumePercent_ / 34));
+        canvas_.Glyph(glyph, {left + 9.0f, rowCenter}, 17.0f, p.primary);
+        canvas_.Text(T(Text::HeadsetVolume), {left + 26.0f, rowTop, right - 64.0f, rowBottom}, TextStyle::LabelLarge,
+                     p.onSurfaceVariant);
+        canvas_.Text(Percent(volumePercent_), {right - 64.0f, rowTop, right, rowBottom}, TextStyle::TitleMedium,
+                     p.primary, TextAlign::Trailing);
+        DrawValueSlider(canvas_, p, left, right, card.top + 64.0f, position_ / 100.0f, 4.0f, sliderStyle, true);
+        canvas_.End();
+        Present();
+        return;
+    }
 
     const std::wstring gameLabel = T(Text::Game);
     const float gameLabelWidth = canvas_.Measure(gameLabel, TextStyle::LabelLarge);
@@ -265,12 +314,17 @@ void Osd::Render() {
     if (BalanceFromLevels(levels_) == 0) {
         DrawBalancedChip(canvas_, p, {(left + right) / 2.0f, rowCenter}, T(Text::Balanced), 1.0f);
     }
-    DrawBalanceSlider(canvas_, p, left, right, card.top + 64.0f, position_, 4.0f, {12.0f, 5.0f, 32.0f});
+    DrawBalanceSlider(canvas_, p, left, right, card.top + 64.0f, position_, 4.0f, sliderStyle);
     canvas_.End();
+    Present();
+}
 
+// Puts the drawn card on screen with the current fade and slide.
+void Osd::Present() {
     const float eased = SmoothStep(opacity_);
+    // It slides in from the screen's edge: down at the top, up at the bottom.
     const LONG slide = static_cast<LONG>(std::lround((1.0f - eased) * kSlideDistance * dpi_ / 96.0f));
-    POINT destination{origin_.x, origin_.y - slide};
+    POINT destination{origin_.x, bottom_ ? origin_.y + slide : origin_.y - slide};
     POINT source{0, 0};
     SIZE size{width_, height_};
     BLENDFUNCTION blend{AC_SRC_OVER, 0, static_cast<BYTE>(std::lround(eased * 255.0f)), AC_SRC_ALPHA};

@@ -23,8 +23,14 @@ public:
     // A short notice in place of the balance, e.g. "Chat muted". A warning (low battery) uses the
     // error colors and stays longer.
     void ShowMessage(wchar_t glyph, const std::wstring& title, const std::wstring& detail, bool warning = false);
+    // The headset volume in percent, after the knob of a GameDAC or base station turned.
+    void ShowVolume(int percent);
     void Hide();
     void SetReduceMotion(bool reduce) { reduceMotion_ = reduce; }
+    // Off: only warnings show. A popup on screen hides at once.
+    void SetEnabled(bool enabled);
+    // The corner of the primary monitor's work area; a popup on screen moves there with the next one.
+    void SetPlacement(bool left, bool bottom);
 
 private:
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -33,6 +39,7 @@ private:
     void Begin();
     void Tick();
     void Render();
+    void Present();
 
     HINSTANCE instance_;
     HWND window_ = nullptr;
@@ -48,12 +55,17 @@ private:
 
     Levels levels_;
     bool message_ = false;
+    bool volume_ = false;  // Shows volumePercent_ instead of the balance.
+    int volumePercent_ = 0;
     wchar_t messageGlyph_ = 0;
     std::wstring messageTitle_;
     std::wstring messageDetail_;
     bool warning_ = false;
     bool reduceMotion_ = false;
-    float position_ = 0.0f;  // Animated slider position in steps.
+    bool enabled_ = true;
+    bool left_ = false;
+    bool bottom_ = false;
+    float position_ = 0.0f;  // Animated slider position: the balance in steps, or the volume in percent.
     float opacity_ = 0.0f;
     double lastShow_ = 0.0;  // NowMs() timestamps.
     double lastTick_ = 0.0;

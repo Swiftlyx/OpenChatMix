@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../app.h"
+#include "../app_info.h"
 #include "../version.h"
 #include "panel.h"
 #include "panel_internal.h"
@@ -181,6 +182,19 @@ void Panel::DrawGeneral() {
                                     [this] { RunFileDialog(FileDialog::ImportSettings); });
                      }};
     y = DrawCard(y, {transfer, HintItem(transferNote_.empty() ? T(Text::SettingsTransferHint) : transferNote_.c_str())}) +
+        design::kSectionGap;
+
+    // The log for bug reports, without editing the settings file.
+    y = SectionTitle(T(Text::LogSection), y);
+    CardRow folder{kRowHeight, [this](float top) {
+                       const float buttonTop = top + (kRowHeight - design::kControlHeight) / 2.0f;
+                       TextButton(kIdLogFolder,
+                                  {kInset, buttonTop, kWidth - kInset, buttonTop + design::kControlHeight},
+                                  kGlyphFolder, T(Text::LogFolder), true, [] { OpenWithExplorer(ConfigDirectory()); });
+                   }};
+    y = DrawCard(y, {SwitchItem(kIdLog, T(Text::LogEnabled), settings_.log,
+                                [this] { Edit([](Settings& s) { s.log = !s.log; }); }, T(Text::LogHint)),
+                     folder}) +
         design::kGroupGap;
 
     CardRow quit{kRowHeight,
@@ -698,18 +712,43 @@ void Panel::DrawNotifications() {
     DrawHeader(T(Text::Notifications));
     float y = BeginScroll(Page::Notifications, kHeaderHeight);
 
-    y = DrawCard(y, {
-        SwitchItem(kIdShowPopup, T(Text::ShowPopup), settings_.showPopup,
-                   [this] { Edit([](Settings& s) { s.showPopup = !s.showPopup; }); }),
-        SwitchItem(kIdDialPopup, T(Text::DialPopup), settings_.dialPopup,
-                   [this] { Edit([](Settings& s) { s.dialPopup = !s.dialPopup; }); }, T(Text::DialPopupHint)),
-    }) + design::kGroupGap;
+    // Popups: one switch for all, their corner, and a switch for each thing that shows one.
+    std::vector<CardRow> popups{
+        SwitchItem(kIdPopups, T(Text::ShowPopups), settings_.popups,
+                   [this] { Edit([](Settings& s) { s.popups = !s.popups; }); }, T(Text::ShowPopupsHint)),
+    };
+    if (settings_.popups) {
+        static constexpr Text kCorners[] = {Text::CornerTopRight, Text::CornerTopLeft, Text::CornerBottomRight,
+                                            Text::CornerBottomLeft};
+        popups.push_back(DropdownItem(
+            kIdPopupCorner, T(Text::PopupCorner), static_cast<int>(settings_.popupCorner),
+            static_cast<int>(std::size(kCorners)), [](int index) { return std::wstring(T(kCorners[index])); },
+            [this](int index) { Edit([index](Settings& s) { s.popupCorner = static_cast<PopupCorner>(index); }); }));
+        popups.push_back(SwitchItem(kIdShowPopup, T(Text::ShowPopup), settings_.showPopup,
+                                    [this] { Edit([](Settings& s) { s.showPopup = !s.showPopup; }); }));
+        // A ChatMix wheel on the headset itself; GameDACs and base stations have a knob that also sets the volume.
+        if (features_ && !features_->volumeKnob) {
+            popups.push_back(SwitchItem(kIdDialPopup, T(Text::DialPopup), settings_.dialPopup,
+                                        [this] { Edit([](Settings& s) { s.dialPopup = !s.dialPopup; }); },
+                                        T(Text::DialPopupHint)));
+        }
+        if (features_ && features_->volumeKnob) {
+            popups.push_back(SwitchItem(kIdKnobPopup, T(Text::KnobPopup), settings_.knobPopup,
+                                        [this] { Edit([](Settings& s) { s.knobPopup = !s.knobPopup; }); },
+                                        T(Text::KnobPopupHint)));
+            popups.push_back(SwitchItem(kIdVolumePopup, T(Text::VolumePopup), settings_.volumePopup,
+                                        [this] { Edit([](Settings& s) { s.volumePopup = !s.volumePopup; }); },
+                                        T(Text::VolumePopupHint)));
+        }
+    }
+    y = DrawCard(y, popups) + design::kGroupGap;
 
     // Wired headsets report no battery, so the warning is not offered for them.
     if ((features_ && features_->batteryQuery) || headset_.battery >= 0) {
         std::vector<CardRow> battery{
             SwitchItem(kIdBatteryAlert, T(Text::BatteryAlert), settings_.battery.enabled,
-                       [this] { Edit([](Settings& s) { s.battery.enabled = !s.battery.enabled; }); }),
+                       [this] { Edit([](Settings& s) { s.battery.enabled = !s.battery.enabled; }); },
+                       settings_.popups ? nullptr : T(Text::BatteryAlertHint)),
         };
         if (settings_.battery.enabled) {
             const int threshold = settings_.battery.threshold;

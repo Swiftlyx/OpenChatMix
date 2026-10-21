@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.5.0 — 2026-10-21
+
+- NVIDIA noise removal for RTX graphics cards, as a plugin: with NVIDIA's Audio Effects redistributable
+  installed for the card, add its `NVAudioEffects.dll` under *Plugins* (the microphone, or a channel of
+  virtual device mode at 48 kHz). The card below the plugin list chooses noise, room echo or both and the
+  strength, and shows the model's state; the model loads on the graphics card in the background, and the
+  sound passes unchanged until it is ready. Requested by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- The log can be turned on in *Settings → General → Diagnostics*, at once and without editing the
+  settings file; *Open the log folder* shows `OpenChatMix.log`. Requested by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- Popups for the knob of a GameDAC or base station: turned in volume mode it shows the headset volume,
+  in ChatMix mode the balance. Each has its own switch in *Settings → Notifications*, on by default and
+  shown only where there is such a knob; the switch for the headset wheel is now shown only for headsets
+  with one. Requested by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- *Settings → Notifications* has one switch for all popups (the low battery warning keeps its own) and a
+  choice of the screen corner they show in.
+- The Arctis Nova Elite's spare battery in the base station shows next to the headset's on the
+  *Headset* tab and in the tray. Requested by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- Nova 7 Gen 2 protocol: the equalizer is saved to the headset once a run of changes has ended (3 seconds
+  after the last), so clicking through presets pops once instead of on every click; other headsets save
+  as before. Reported by [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+- Confirmed: the Gen 2 protocol equalizer and the output switching with the headset's power on both the
+  Nova 7 (`22A1`) and the Nova 7 Gen 2 (`227E`), by [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7); the Nova Elite's settings and output
+  switching, by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+
 ## 2.4.1 — 2026-10-21
 
 - Arctis Nova Elite settings on the *Headset* tab, experimental: microphone volume, sidetone for the boom

@@ -26,6 +26,8 @@ constexpr UINT WM_APP_MIC_LEVEL = WM_APP + 17;        // The level of a micropho
 constexpr UINT WM_APP_GG_EVENT = WM_APP + 18;         // A SteelSeries GG helper handed GG something to show; wParam: GgScreenApp.
 constexpr UINT WM_APP_GG_HEARTBEAT = WM_APP + 19;     // The GG watch learned a helper's heartbeat.
 constexpr UINT WM_APP_GAMESENSE = WM_APP + 20;        // An add-on sent GameSense requests.
+constexpr UINT WM_APP_PLUGIN_STATUS = WM_APP + 21;    // A plugin's model finished loading or failed.
+constexpr UINT WM_APP_HEADSET_VOLUME = WM_APP + 22;   // The volume knob of a GameDAC or base station turned.
 
 inline constexpr wchar_t kAppName[] = L"OpenChatMix";
 inline constexpr wchar_t kMainWindowClass[] = L"OpenChatMix.Main";

@@ -198,6 +198,9 @@ struct AddOnSettings {
 enum class AddOnKind { Generic, Discord };
 AddOnKind AddOnKindOf(const std::wstring& path);
 
+// Where popups show on the primary monitor.
+enum class PopupCorner { TopRight, TopLeft, BottomRight, BottomLeft };
+
 struct Settings {
     std::map<std::wstring, AppRule, NoCaseLess> apps;  // Executable name -> rule; Game apps are not stored.
     Levels levels;                                     // Restored on start and synced to the device.
@@ -208,6 +211,10 @@ struct Settings {
     Language language = Language::English;
     bool showPopup = true;                             // On-screen popup when hotkeys change the balance.
     bool dialPopup = true;                             // Popup for the headset wheel on headsets without a display.
+    bool volumePopup = true;                           // Popup for the volume knob of a GameDAC or base station.
+    bool knobPopup = true;                             // Balance popup for the knob of a GameDAC or base station.
+    bool popups = true;                                // Popups at all; the low battery warning has its own switch.
+    PopupCorner popupCorner = PopupCorner::TopRight;
     bool warnGg = true;                                // Notify when SteelSeries GG takes over the headset.
     bool mediaGroup = false;                           // Offer the Media group outside the virtual device mode.
     bool equalizer = false;                            // Equalizer tab and processing in virtual device mode.
@@ -255,6 +262,8 @@ std::wstring ExeDirectory();
 // Next to the executable when OpenChatMix.ini already lives there (portable mode),
 // otherwise %APPDATA%\OpenChatMix. The directory is created on demand.
 std::wstring ConfigDirectory();
+// Writes the Log key at once, for the switch in Settings; Save keeps a Log key that exists.
+void SaveLogSetting(const std::wstring& path, bool log);
 
 Settings LoadSettings(const std::wstring& path);
 void SaveSettings(const std::wstring& path, const Settings& settings);

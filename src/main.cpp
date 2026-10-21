@@ -55,6 +55,7 @@
 #include "ui/spring.h"
 #include "ui/theme.h"
 #include "updater.h"
+#include "version.h"
 
 namespace {
 
@@ -179,6 +180,7 @@ public:
     void OnPluginMove(EqChannel channel, size_t from, size_t to) override;
     void OnPluginEditor(EqChannel channel, size_t index) override;
     void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) override;
+    void OnPluginNvidiaAfx(EqChannel channel, size_t index, const NvidiaAfxSettings& settings) override;
     void OnOutputChoose(const std::wstring& id) override;
     void OnOutputMove(size_t from, size_t to) override;
     void OnOutputExclude(const std::wstring& id, bool excluded) override;
@@ -287,6 +289,7 @@ struct App {
     bool updateBalloon = false;   // The shown balloon is about the update.
     ULONGLONG levelsSentTick = 0;
     bool levelsUnverified = false;  // The last balance sent is not confirmed by a state reply yet.
+    bool commitPending = false;     // Settings were sent and the headset's save is still to come.
     AppRouting appRouting;
     std::map<std::wstring, std::wstring, NoCaseLess> routedNow;  // Executable -> device set this session ("" default).
     bool chatMuted = false;
@@ -566,6 +569,10 @@ std::wstring TrayDeviceText() {
         if (battery.charging) {
             device += std::wstring(L" · ") + T(Text::Charging);
         }
+        if (g_app.device.IsOpen() && g_app.headset.spareBattery >= 0) {
+            device += std::wstring(L" · ") + T(Text::SpareBattery) + L" " + std::to_wstring(g_app.headset.spareBattery) +
+                      L"%";
+        }
     }
     return device;
 }
@@ -768,7 +775,9 @@ void SendHeadsetCommand(std::span<const uint8_t> command) {
     NoteActivity();
     g_app.device.SendCommand(command);
     if (g_app.features && !g_app.features->save.empty()) {
-        SetTimer(g_app.window, kTimerCommitHeadset, kCommitHeadsetDelayMs, nullptr);
+        const unsigned delay = g_app.features->saveDelayMs ? g_app.features->saveDelayMs : kCommitHeadsetDelayMs;
+        SetTimer(g_app.window, kTimerCommitHeadset, delay, nullptr);
+        g_app.commitPending = true;
     }
     ScheduleHeadsetVerify(kVerifyAfterCommandMs);
 }
@@ -804,12 +813,22 @@ void VerifyDeviceLevels(int game, int chat) {
 }
 
 void CommitHeadset() {
+    KillTimer(g_app.window, kTimerCommitHeadset);
+    g_app.commitPending = false;
     if (!g_app.features) {
         return;
     }
     for (const auto& command : g_app.features->save) {
         g_app.device.SendCommand(std::span<const uint8_t>(command.bytes, command.length));
     }
+}
+
+// Whether popups show, warnings aside, and in which corner of the screen.
+void ApplyPopupSettings() {
+    const PopupCorner corner = g_app.settings.popupCorner;
+    g_app.osd->SetEnabled(g_app.settings.popups);
+    g_app.osd->SetPlacement(corner == PopupCorner::TopLeft || corner == PopupCorner::BottomLeft,
+                            corner == PopupCorner::BottomLeft || corner == PopupCorner::BottomRight);
 }
 
 void SendEqualizerCurve(const EqCurve& curve) {
@@ -1306,6 +1325,7 @@ void PushPluginViews(EqChannel channel) {
             plugin.loaded = true;
             plugin.hasEditor = instance.HasEditor();
             plugin.deepFilter = instance.DeepFilter();
+            plugin.nvidiaAfx = instance.NvidiaAfx();
             if (plugin.enabled) {
                 latency += instance.LatencySamples();
             }
@@ -2251,6 +2271,28 @@ void ProbeUnsupportedHeadsets() {
     g_app.probe.Start(productIds);
 }
 
+// The log was turned on or off in Settings: it takes effect at once, with the hang watch and the probe for
+// unknown headsets that come with it.
+void ApplyLogSetting() {
+    const std::wstring directory = ConfigDirectory();
+    SaveLogSetting(g_app.iniPath, g_app.settings.log);
+    if (!g_app.settings.log) {
+        Log("log off");
+        g_app.hangWatch.Stop();
+        g_app.probe.Stop();
+        LogClose();
+        return;
+    }
+    LogOpen(directory + L"\\OpenChatMix.log");
+    Log("log on: %s %s", Utf8(ExePath()).c_str(), APP_VERSION_STRING);
+    g_app.hangWatch.Start(g_app.window, directory);
+    if (g_app.device.IsOpen()) {
+        Log("headset: %ls (%04x)", g_app.device.Model()->name, g_app.device.Model()->productId);
+    } else {
+        ProbeUnsupportedHeadsets();
+    }
+}
+
 void ConnectDevice() {
     if (g_app.device.IsOpen()) {
         return;
@@ -2563,6 +2605,10 @@ void Cleanup() {
     g_app.micLevels.Stop();
     g_app.pluginThread.Stop();
     g_app.probe.Stop();
+    // A save still waiting for the changes to settle goes out before the headset is let go.
+    if (g_app.commitPending) {
+        CommitHeadset();
+    }
     // Windows persists per-app volume, so every app changed by ChatMix goes back to full level.
     g_app.device.Stop();
     g_app.mixer.ResetVolumes();
@@ -2941,6 +2987,22 @@ void Host::OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterS
     PushPluginViews(channel);
 }
 
+void Host::OnPluginNvidiaAfx(EqChannel channel, size_t index, const NvidiaAfxSettings& settings) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    const std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
+    if (index >= loaded.plugins.size() || !loaded.plugins[index] || index >= plugins.size()) {
+        return;
+    }
+    AudioPlugin* plugin = loaded.plugins[index].get();
+    const std::wstring path = PluginStatePath(plugins[index]);
+    // Kept at once, as for DeepFilterNet; a new effect loads on the plugin's own thread.
+    g_app.pluginThread.Run([plugin, &settings, &path] {
+        plugin->SetNvidiaAfx(settings);
+        WriteFileBytes(path, plugin->SaveState());
+    });
+    PushPluginViews(channel);
+}
+
 std::vector<AudioEndpoint> Host::PlaybackDevices() {
     std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
     std::erase_if(endpoints, IsSonarEndpoint);
@@ -2988,12 +3050,18 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
     if (!(before.addOns == after.addOns)) {
         UpdateAddOns();
     }
+    if (before.popups != after.popups || before.popupCorner != after.popupCorner) {
+        ApplyPopupSettings();
+    }
     if (!(before.visualizer == after.visualizer)) {
         UpdateDisplayUse();
         CheckIdleScreen();
     }
     if (before.wheelModifiers != after.wheelModifiers) {
         UpdateMouseHook();
+    }
+    if (before.log != after.log) {
+        ApplyLogSetting();
     }
     if (before.mic.enabled != after.mic.enabled || before.mic.input != after.mic.input ||
         before.mic.output != after.mic.output || before.mic.keepLevels != after.mic.keepLevels ||
@@ -3464,6 +3532,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     switch (message) {
     case WM_CREATE: {
         g_app.window = window;
+        SetPluginStatusWindow(window);
         DEV_BROADCAST_DEVICEINTERFACE_W filter{};
         filter.dbcc_size = sizeof(filter);
         filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
@@ -3541,8 +3610,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             const bool turned = levels != g_app.levels;
             SetLevels(levels, true);
             ScheduleHeadsetVerify(kVerifyAfterDialMs);
-            // Headsets without a display show nothing when their wheel turns.
-            if (turned && g_app.settings.dialPopup && g_app.features && !g_app.features->oled) {
+            // A wheel on the headset and the knob of a GameDAC or base station have a switch each.
+            const bool knob = g_app.features && g_app.features->volumeKnob;
+            if (turned && g_app.features && (knob ? g_app.settings.knobPopup : g_app.settings.dialPopup)) {
                 g_app.osd->Show(g_app.levels);
             }
         }
@@ -3551,6 +3621,22 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
     case WM_APP_DIAL_MODE:
         UpdateStatus();
+        return 0;
+
+    case WM_APP_HEADSET_VOLUME:
+        if (g_app.settings.volumePopup && g_app.features && g_app.features->volumeKnob && g_app.device.IsOpen()) {
+            if (const int volume = g_app.device.CurrentVolume(); volume >= 0) {
+                g_app.osd->ShowVolume(volume);
+            }
+        }
+        return 0;
+
+    case WM_APP_PLUGIN_STATUS:
+        for (const EqChannel channel : kPluginChains) {
+            if (LoadedOf(channel).loaded) {
+                PushPluginViews(channel);
+            }
+        }
         return 0;
 
     case WM_APP_HEADSET:
@@ -3906,6 +3992,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     g_app.panel->SetTrayAnchor(g_app.window, kTrayId);
     g_app.panel->SetLevels(g_app.levels);
     g_app.osd->SetReduceMotion(g_app.settings.appearance.reduceMotion);
+    ApplyPopupSettings();
     g_app.trayFlyout = std::make_unique<ui::TrayFlyout>(instance, g_app.window);
     g_app.trayFlyout->SetReduceMotion(g_app.settings.appearance.reduceMotion);
     PushSettings();

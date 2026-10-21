@@ -56,6 +56,8 @@ public:
     bool TakeLevels(Levels& levels);
     // Posts WM_APP_DIAL_MODE when it changes; Unknown until the knob is turned.
     DialMode CurrentDialMode() const { return dialMode_.load(); }
+    // The volume the knob was last turned to, in percent; -1 until then. Posts WM_APP_HEADSET_VOLUME on each turn.
+    int CurrentVolume() const { return volume_.load(); }
 
     // Sends a native setting, e.g. {0x37, 7}; the report ID is added here.
     bool SendCommand(std::span<const uint8_t> payload);
@@ -103,6 +105,7 @@ private:
     std::atomic<bool> pushEventsSeen_{false};
     std::atomic<bool> pollFailing_{false};
     std::atomic<DialMode> dialMode_{DialMode::Unknown};
+    std::atomic<int> volume_{-1};
     std::atomic<ULONGLONG> lastEventTick_{0};
 
     SRWLOCK updatesLock_ = SRWLOCK_INIT;

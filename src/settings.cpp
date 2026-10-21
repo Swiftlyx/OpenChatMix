@@ -642,6 +642,10 @@ std::wstring ExeDirectory() {
     return path.substr(0, path.find_last_of(L"\\/"));
 }
 
+void SaveLogSetting(const std::wstring& path, bool log) {
+    WriteString(path, L"Log", log ? L"1" : L"0");
+}
+
 std::wstring ConfigDirectory() {
     const std::wstring portable = ExeDirectory();
     if (GetFileAttributesW((portable + L"\\" + kConfigFile).c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -697,6 +701,10 @@ Settings LoadSettings(const std::wstring& path) {
     settings.lastUpdateCheck = _wtoi64(ReadString(path, kMainSection, L"LastUpdateCheck", L"0").c_str());
     settings.showPopup = ReadInt(path, L"ShowPopup", 1) != 0;
     settings.dialPopup = ReadInt(path, L"DialPopup", 1) != 0;
+    settings.volumePopup = ReadInt(path, L"VolumePopup", 1) != 0;
+    settings.knobPopup = ReadInt(path, L"KnobPopup", 1) != 0;
+    settings.popups = ReadInt(path, L"Popups", 1) != 0;
+    settings.popupCorner = static_cast<PopupCorner>(std::clamp(ReadInt(path, L"PopupCorner", 0), 0, 3));
     settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
     settings.chatVolume = std::clamp(ReadInt(path, L"ChatVolume", 100), 0, 100);
     settings.warnGg = ReadInt(path, L"WarnGg", 1) != 0;
@@ -804,7 +812,8 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
 
     WriteString(path, L"Game", std::to_wstring(settings.levels.game).c_str());
     WriteString(path, L"Chat", std::to_wstring(settings.levels.chat).c_str());
-    // Log is only ever set by hand in this file, so an edit made while OpenChatMix runs stays.
+    // Log is set by hand or by the switch in Settings, which writes it at once; an edit made in this file while
+    // OpenChatMix runs stays.
     if (ReadString(path, kMainSection, L"Log", L"").empty()) {
         WriteString(path, L"Log", settings.log ? L"1" : L"0");
     }
@@ -813,6 +822,10 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"ShowPopup", settings.showPopup ? L"1" : L"0");
     WriteString(path, L"ChatDefaults", std::to_wstring(kChatAppsKnown).c_str());
     WriteString(path, L"DialPopup", settings.dialPopup ? L"1" : L"0");
+    WriteString(path, L"VolumePopup", settings.volumePopup ? L"1" : L"0");
+    WriteString(path, L"KnobPopup", settings.knobPopup ? L"1" : L"0");
+    WriteString(path, L"Popups", settings.popups ? L"1" : L"0");
+    WriteString(path, L"PopupCorner", std::to_wstring(static_cast<int>(settings.popupCorner)).c_str());
     WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());
     WriteString(path, L"ChatVolume", std::to_wstring(settings.chatVolume).c_str());
     WriteString(path, L"WarnGg", settings.warnGg ? L"1" : L"0");

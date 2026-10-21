@@ -141,6 +141,7 @@ const HeadsetFeatures kNovaProWired{
     .equalizer = {.bandsCommand = 0x33, .baseline = 0x14, .range = 20, .presetCommand = 0x2E, .presets = kNova7Presets},
     .stateQuery = 0x20,
     .oled = true,
+    .volumeKnob = true,
 };
 const HeadsetFeatures kNovaProWireless{
     .sections = kNovaProWirelessSections,
@@ -149,6 +150,7 @@ const HeadsetFeatures kNovaProWireless{
     .batteryQuery = 0xB0,
     .oled = true,
     .bluetooth = true,
+    .volumeKnob = true,
 };
 // The dongles answer the b0 status request with the battery too (see ParseStatusBattery).
 constexpr uint8_t kStatusRequest = 0xB0;
@@ -166,6 +168,8 @@ const HeadsetFeatures kNova7Gen2{
                   .format = EqFormat::Parametric,
                   .experimental = true},
     .save = kSaveState,
+    // The sound pops while these headsets save (issue #7), so a run of changes is saved once, after it ends.
+    .saveDelayMs = 3000,
     .batteryQuery = kStatusRequest,
 };
 const HeadsetFeatures kArctis7Plus{
@@ -179,7 +183,6 @@ const HeadsetFeatures kNova5X{
     .save = kNova5XSave,
     .batteryQuery = kStatusRequest,
 };
-// Battery only for now; the Elite's settings and equalizer are not known well enough to offer.
 // Nova Elite base station (experimental): the commands of Linux-Arctis-Manager's device description, with the
 // value ranges the base station reports in its own events (the log in issue #6). The stream mix and line out
 // work as on the GameDAC.
@@ -231,6 +234,7 @@ const HeadsetFeatures kNovaElite{
     .stateQuery = kEliteDisplayQuery,
     .batteryQuery = kStatusRequest,
     .experimental = true,
+    .volumeKnob = true,
 };
 
 constexpr uint8_t kNovaProEventReportId = 0x07;
@@ -334,7 +338,8 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
         return {{.kind = Kind::Battery,
                  .value = std::min<int>(data[6], 100),
                  .charging = data[15] == kEliteCharging,
-                 .headsetOff = data[14] != kEliteLinkConnected},
+                 .headsetOff = data[14] != kEliteLinkConnected,
+                 .spare = std::min<int>(data[7], 100)},
                 {.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]},
                 setting(0xB2, data[2]),
                 setting(0xB3, data[3]),
@@ -355,7 +360,8 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
         return {{.kind = Kind::Battery,
                  .value = std::min<int>(data[2], 100),
                  .charging = data[4] == kEliteCharging,
-                 .headsetOff = data[4] == kEliteNoHeadset}};
+                 .headsetOff = data[4] == kEliteNoHeadset,
+                 .spare = std::min<int>(data[3], 100)}};
     }
     if ((command == kEliteBoomSidetone || command == kEliteOnEarSidetone) && size >= 4) {
         return {setting(command, data[2] ? data[3] : 0)};
@@ -484,6 +490,7 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         break;
     case Kind::Battery:
         state.battery = update.value;
+        state.spareBattery = update.spare;
         state.charging = update.charging;
         state.headsetOff = update.headsetOff;
         break;

@@ -61,3 +61,8 @@ std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sam
 // so a failure there is final and the DLL is not tried as a VST 2 plugin.
 std::unique_ptr<AudioPlugin> LoadDeepFilterPlugin(const std::wstring& path, double sampleRate, int blockSize,
                                                   int channels, bool& recognized);
+
+// Implemented in nvidia_afx_plugin.cpp. recognized tells whether the DLL is NVIDIA's NVAudioEffects.dll, as for
+// LoadDeepFilterPlugin.
+std::unique_ptr<AudioPlugin> LoadNvidiaAfxPlugin(const std::wstring& path, double sampleRate, int blockSize,
+                                                 int channels, bool& recognized);

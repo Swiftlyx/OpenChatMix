@@ -523,11 +523,22 @@ LRESULT CALLBACK EditorWindow::WindowProc(HWND window, UINT message, WPARAM wPar
 namespace {
 
 std::atomic<bool> g_modulesLoaded{false};
+std::atomic<HWND> g_statusWindow{nullptr};
 
 }  // namespace
 
 bool PluginModulesLoaded() {
     return g_modulesLoaded;
+}
+
+void SetPluginStatusWindow(HWND window) {
+    g_statusWindow = window;
+}
+
+void NotifyPluginStatus() {
+    if (HWND window = g_statusWindow.load()) {
+        PostMessageW(window, WM_APP_PLUGIN_STATUS, 0, 0);
+    }
 }
 
 std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize,
@@ -538,6 +549,10 @@ std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sa
     }
     bool deepFilter = false;
     if (auto plugin = LoadDeepFilterPlugin(path, sampleRate, blockSize, channels, deepFilter); plugin || deepFilter) {
+        return plugin;
+    }
+    bool nvidiaAfx = false;
+    if (auto plugin = LoadNvidiaAfxPlugin(path, sampleRate, blockSize, channels, nvidiaAfx); plugin || nvidiaAfx) {
         return plugin;
     }
     auto plugin = std::make_unique<Vst2Plugin>();

@@ -75,6 +75,7 @@ struct PluginView {
     bool loaded = false;
     bool hasEditor = false;
     std::optional<DeepFilterSettings> deepFilter;  // Set for the DeepFilterNet plugin once it loaded.
+    std::optional<NvidiaAfxSettings> nvidiaAfx;    // Set for the NVIDIA Audio Effects plugin once it loaded.
 };
 
 // The plugins of the microphone chain or of a virtual device channel, in the order of their settings.
@@ -163,6 +164,7 @@ public:
     virtual void OnPluginMove(EqChannel channel, size_t from, size_t to) = 0;
     virtual void OnPluginEditor(EqChannel channel, size_t index) = 0;
     virtual void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) = 0;
+    virtual void OnPluginNvidiaAfx(EqChannel channel, size_t index, const NvidiaAfxSettings& settings) = 0;
     // Uses the device now.
     virtual void OnOutputChoose(const std::wstring& id) = 0;
     // Moves a device from one place to another among the listed ones, in the order of preference.

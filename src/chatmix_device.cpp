@@ -17,6 +17,7 @@ constexpr uint8_t kNovaProChatMixEnable = 0x49;  // 1: dial controls the ChatMix
 constexpr uint8_t kNovaProChatMixIcon = 0x8D;    // 1: ChatMix icon on the display
 constexpr uint8_t kNovaProEventReportId = 0x07;
 constexpr uint8_t kNovaProVolume = 0x25;         // Event: knob turned in volume mode.
+constexpr int kVolumeSteps = 56;                 // The knob's attenuation: 0 is the loudest, 56 the quietest.
 // Events the Nova Pro Wireless base station sends on its own, as Linux-Arctis-Manager lists them.
 constexpr uint8_t kNovaProLinkEvent = 0xB5;      // The 2.4 GHz link to the headset changed.
 constexpr uint8_t kNovaProBatteryEvent = 0xB7;   // Headset or spare battery level changed.
@@ -354,6 +355,10 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         const DialMode mode = data[1] == kNovaProVolume ? DialMode::Volume : DialMode::ChatMix;
         if (dialMode_.exchange(mode) != mode) {
             PostMessageW(notify_, WM_APP_DIAL_MODE, 0, 0);
+        }
+        if (mode == DialMode::Volume && size >= 3) {
+            volume_ = ((kVolumeSteps - std::min<int>(data[2], kVolumeSteps)) * 100 + kVolumeSteps / 2) / kVolumeSteps;
+            PostMessageW(notify_, WM_APP_HEADSET_VOLUME, 0, 0);
         }
     }
 

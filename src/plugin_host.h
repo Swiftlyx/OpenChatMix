@@ -20,7 +20,18 @@ struct DeepFilterSettings {
     bool operator==(const DeepFilterSettings&) const = default;
 };
 
-// An effect plugin: VST2 (.dll), VST3 (.vst3) or OpenChatMix's DeepFilterNet DLL. The microphone chain runs
+// Settings of the NVIDIA Audio Effects plugin, shown by the panel like DeepFilterNet's.
+struct NvidiaAfxSettings {
+    enum class Effect { Denoiser, Dereverb, DereverbDenoiser };
+    enum class Status { Loading, Ready, Failed };
+    Effect effect = Effect::Denoiser;
+    int intensityPercent = 100;       // How strongly the effect works, 0..100.
+    Status status = Status::Loading;  // The model's state, reported by the plugin; not a setting.
+
+    bool operator==(const NvidiaAfxSettings&) const = default;
+};
+
+// An effect plugin: VST2 (.dll), VST3 (.vst3), OpenChatMix's DeepFilterNet DLL or NVIDIA's NVAudioEffects.dll. The microphone chain runs
 // plugins as mono, the virtual device channels as stereo.
 // Everything but Process runs on the plugin thread (PluginThread); Process runs on the audio thread.
 class AudioPlugin {
@@ -47,6 +58,9 @@ public:
     // The DeepFilterNet plugin's settings; nothing for other plugins.
     virtual std::optional<DeepFilterSettings> DeepFilter() const { return std::nullopt; }
     virtual void SetDeepFilter(const DeepFilterSettings& settings) { (void)settings; }
+    // The NVIDIA Audio Effects plugin's settings and model state; nothing for other plugins.
+    virtual std::optional<NvidiaAfxSettings> NvidiaAfx() const { return std::nullopt; }
+    virtual void SetNvidiaAfx(const NvidiaAfxSettings& settings) { (void)settings; }
 };
 
 // Loads a plugin and prepares it for sampleRate, blocks of up to blockSize frames and the layout the caller
@@ -83,6 +97,11 @@ private:
 // Whether a plugin module was loaded in this process. Modules stay loaded until the process ends: some plugins
 // (Supertone Clear) crash in their own unload code.
 bool PluginModulesLoaded();
+
+// A plugin's own state changed outside a call from the panel, e.g. a model finished loading: posts
+// WM_APP_PLUGIN_STATUS to the window set here. Any thread.
+void SetPluginStatusWindow(HWND window);
+void NotifyPluginStatus();
 
 // The thread that owns all plugins and their editor windows. Plugin user interfaces expect a
 // single-threaded COM apartment and a message loop, which the main thread (MTA) does not offer.

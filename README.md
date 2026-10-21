@@ -81,7 +81,8 @@ native settings, so GG and Sonar can stay closed:
 - **Hardware dial.** The GameDAC / base station dial drives the Game–Chat balance. While
   OpenChatMix runs, the ChatMix icon is shown on the GameDAC display, so a glance tells you it is active.
 - **Volume stays hardware.** Only ChatMix reports are used; turning the knob in volume mode keeps
-  working as before. The panel shows which mode the dial is in.
+  working as before, and a popup shows the volume as you turn it. The panel shows which mode the dial
+  is in.
 - **Your own volumes stay.** ChatMix does not move the app sliders of the Windows volume mixer, so a
   volume you set for an app yourself keeps working on top of the balance. In virtual device mode the
   taskbar slider and the volume keys work too, while recordings of the Game and Chat devices (for
@@ -166,8 +167,9 @@ native settings, so GG and Sonar can stay closed:
   it by single percents; the mouse wheel and the hotkeys by 10%.
 - **Optional extras**, each with its own switch: lower the game while someone talks in chat
   (ducking), app profiles that set the balance and the Game, Chat, Media and headset equalizers while
-  an app or a game runs, a popup for the ChatMix wheel on headsets without a display, and a low
-  battery popup for wireless headsets (at 15% by default).
+  an app or a game runs, popups for the ChatMix wheel and for the knob of a GameDAC or base station
+  (the balance, or the volume in volume mode) in the screen corner you choose, and a low battery popup
+  for wireless headsets (at 15% by default).
 - **Material 3 tray panel** with an automatic, light or dark theme in soft, pastel colors: the
   Windows accent (the default), eight presets or any color for Game, and a color of its own for Chat
   that always stays easy to tell apart from Game. Standard, medium or high contrast, and an Acrylic, Mica or
@@ -219,10 +221,10 @@ works with any headset.
 | Arctis Nova Pro Wired (PC, Xbox) | `12CB`, `12CD` | ✅ Tested |
 | Arctis 7+ / 7P+ / 7X+ / 7+ Destiny | `220E`, `2212`, `2216`, `2236` | ✅ Tested (Arctis 7+) |
 | Arctis Nova Pro Wireless (PC, Xbox) | `12E0`, `12E5` | ✅ Works, reported by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) |
-| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the Gen 2 protocol equalizer works on `22A1` ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) and is not yet checked on `227E` |
+| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the Gen 2 protocol equalizer works on `22A1` and `227E` ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
-| Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial and battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its settings are experimental since 2.4.1, and its own equalizer is not supported yet |
+| Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial, battery, settings and output switching work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its own equalizer is not supported yet |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -289,7 +291,8 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Remove an app from a group | Open the group → the trash icon next to the app. It follows Game again; a closed app leaves the list. |
 | Theme, contrast, Game and Chat colors, battery color, background, tray icon | *Settings* → *Appearance*. |
 | Use the panel from the keyboard | `Tab` / `Shift + Tab` move between controls, `Enter` (or `Space`) presses, the arrows change sliders and values, `Esc` goes back. |
-| Hotkeys, popups, battery warning | *Settings* → *Hotkeys* / *Notifications*. |
+| Hotkeys, popups and their corner, battery warning | *Settings* → *Hotkeys* / *Notifications*. |
+| Write a log for a bug report | *Settings* → *General* → *Diagnostics* → *Write a log*; *Open the log folder* shows `OpenChatMix.log`. |
 | Language, startup, the tour | *Settings* → *General*. |
 | Back up the settings or move them to another PC | *Settings* → *General* → *Export*; *Import* there takes them back and restarts OpenChatMix. The previous settings go to `%APPDATA%\OpenChatMix\Backups` first. |
 | Recover the headset | Tray menu → *Reconnect headset*. |
@@ -429,6 +432,7 @@ The hint above the list shows what they delay the channel by. Nothing is loaded 
 plugins; they load with virtual device mode and the equalizer, and their settings are kept in
 `%APPDATA%\OpenChatMix\PluginStates`. On Chat, [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll)
 removes noise from the voices of others: it filters the mix of both sides at 48 kHz and adds about 30 ms.
+NVIDIA's `NVAudioEffects.dll` (see [Microphone](#microphone)) works there too, at 48 kHz.
 
 ### Microphone
 
@@ -465,6 +469,11 @@ under *Processing order* to change it, for example to run a plugin before the no
   thoroughly than RNNoise, with its DeepFilterNet3 model inside (about 17 MB). *Max noise reduction*
   (6–60 dB or unlimited) and *Post-filter* appear below the plugin list. It adds about 20 ms and takes
   about 3% of one CPU core; nothing of it is loaded until you add it.
+- **NVIDIA noise removal** (optional, RTX graphics cards): install NVIDIA's Audio Effects redistributable
+  for your card from [NVIDIA's SDK page](https://www.nvidia.com/broadcast-sdk-resources), then add `NVAudioEffects.dll` from `C:\Program Files\NVIDIA Corporation\NVIDIA Audio Effects SDK` under *Plugins*. It runs NVIDIA's
+  models for noise and room echo (the ones behind NVIDIA Broadcast) on the graphics card; *Effect* and
+  *Strength* appear below the plugin list. The model loads in the background within a few seconds, and
+  the sound passes unchanged until then.
 - A limiter at the end keeps the result from clipping.
 
 The chain adds about 30–50 ms of latency, depending on the devices. With *Keep levels at 100%* on,
@@ -524,7 +533,7 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | PC → device | `06 8D 01` / `06 8D 00` | Show / hide the ChatMix icon |
 | | PC → device | `06 45 gg cc` | Set the balance (game, chat 0–100) |
 | | device → PC | `07 45 gg cc` | Dial turned in ChatMix mode |
-| | device → PC | `07 25 vv` | Knob turned in volume mode |
+| | device → PC | `07 25 vv` | Knob turned in volume mode; `vv` is the attenuation, 0 the loudest and 56 the quietest (the Nova Elite sends the same) |
 | | PC → device | `06 20` | Query settings: reply `06 20` with gain (byte 4), EQ preset (6), 10 EQ bands (7–16), mic volume (17), sidetone (18) — verified on a Nova Pro Wired |
 | | PC → device | `06 2E n` / `06 33 b1…b10` | EQ preset (4 = custom) / custom bands, `0x14` = 0 dB, 0.5 dB steps |
 | | PC → device | `06 37` `06 39` `06 27` `06 85` `06 83` | Mic volume, sidetone, gain (1 Low, 2 High), display brightness, screen dimming |
@@ -535,7 +544,7 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | device → PC | `45 gg cc` | Dial event (Gen 2 firmware); polling stops once seen |
 | | PC → device | `00 33 b1…b10 00` | Custom EQ bands on the original Nova 7 firmware, `0x14` = 0 dB, 0.5 dB steps |
 | Nova Elite (interface 3, experimental) | PC → device | `01 8D 01` · `01 49 01` | As on the Nova Pro, with report ID `0x01` |
-| | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
+| | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, spare battery at 7, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
 | | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` | Dial event; battery event (headset %, spare %, charging state) |
 | | PC → device | `01 37` `01 BF` `01 BD` `01 B8` `01 B9` `01 27` `01 85` `01 83` `01 89` `01 C1` `01 B2` `01 B3` | Settings (experimental): mic volume, mute LED, noise control (0 off, 1 transparency, 2 ANC), ANC level, transparency level, volume limiter, brightness, dimming, home screen, auto-off, Bluetooth at power-on, during calls; line out and stream mix as on the Nova Pro; `01 09` saves 500 ms later |
 | | PC → device | `01 38 on level` · `01 39 on level` | Sidetone of the boom and the built-in microphone |
@@ -652,9 +661,12 @@ are in `src/ui/design.h`.
 - **A plugin "could not be loaded".** Only 64-bit effect plugins work; instruments and 32-bit plugins
   do not. For a VST 3 bundle, choose the `.vst3` folder's inner file
   (`Contents\x86_64-win\Name.vst3`) or the bundle itself.
-- **Collecting a log.** Quit OpenChatMix first (tray menu → *Quit*): it saves its settings when it
-  exits and would undo the change. Set `Log=1` in `%APPDATA%\OpenChatMix\OpenChatMix.ini`, start
-  OpenChatMix and reproduce the problem. `OpenChatMix.log` appears next to the ini file and records every
+- **NVIDIA Audio Effects says the model did not load.** It needs an NVIDIA RTX card and NVIDIA's Audio
+  Effects redistributable for that card's generation (RTX 20, 30, 40 or 50 series). With the log on,
+  the lines starting with `nvafx:` name the reason.
+- **Collecting a log.** Turn on *Settings* → *General* → *Diagnostics* → *Write a log* and reproduce
+  the problem; *Open the log folder* shows `OpenChatMix.log`. (Setting `Log=1` in
+  `%APPDATA%\OpenChatMix\OpenChatMix.ini` while OpenChatMix is closed works too.) The log records every
   report from the headset. With a SteelSeries headset OpenChatMix does not support yet, the log lists its
   HID collections and the reports it sends (only read, nothing is sent to it): turn the dial, press its
   buttons, then attach the log to an issue. If OpenChatMix stops responding while the log is on, it also
@@ -683,6 +695,9 @@ protocol details they documented:
 - [EarTrumpet](https://github.com/File-New-Project/EarTrumpet) by File-New-Project — the layout and
   interface IDs of `IAudioPolicyConfigFactory` for per-app playback devices.
 - Robert Bristow-Johnson's *Audio EQ Cookbook* — the filter formulas of the equalizer.
+- The [NVIDIA Maxine Audio Effects SDK](https://github.com/NVIDIA-Maxine/Maxine-AFX-SDK) — the C API
+  (function and parameter names, MIT) that the optional NVIDIA plugin calls; the SDK itself is NVIDIA's
+  redistributable, installed by the user.
 - [RNNoise](https://github.com/xiph/rnnoise) by Jean-Marc Valin, Xiph.Org and Mozilla — the noise
   suppression of the microphone chain, included in `third_party/rnnoise` (BSD 3-clause).
 - [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet) by Hendrik Schröter — the AI noise suppression and its DeepFilterNet3 model in

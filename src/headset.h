@@ -89,11 +89,13 @@ struct HeadsetFeatures {
     std::span<const SettingSection> sections;
     EqualizerSpec equalizer;
     std::span<const SaveCommand> save;  // Sent after changes so the headset keeps them.
+    unsigned saveDelayMs = 0;            // Quiet time after the last change before the save; 0 for the default.
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
     uint8_t batteryQuery = 0;            // Answered with the battery status (Nova Pro Wireless, dongles' b0).
     bool oled = false;                   // 128x64 display that accepts drawing reports (06 93).
     bool bluetooth = false;              // The battery reply also tells the base station's Bluetooth.
     bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
+    bool volumeKnob = false;             // A knob that sets the volume itself and reports it (07 25).
 
     bool HasSettings() const { return !sections.empty() || equalizer.bandsCommand != 0; }
     const SettingSpec* FindSetting(uint8_t command) const;
@@ -110,6 +112,7 @@ struct HeadsetState {
     EqCurve eqCurve{};                // The custom curve.
     bool eqCurveKnown = false;
     int battery = -1;                 // Percent; -1 unknown.
+    int spareBattery = -1;            // Percent of the spare battery in the base station; -1 unknown or none.
     bool charging = false;
     bool headsetOff = false;
     BluetoothState bluetooth = BluetoothState::Unknown;
@@ -127,6 +130,7 @@ struct HeadsetUpdate {
     EqCurve curve{};
     bool charging = false;
     bool headsetOff = false;
+    int spare = -1;  // Battery: the spare battery's percent, where the base station has one.
 };
 
 // Settings and battery reported by the headset, e.g. after a change on the GameDAC menu.

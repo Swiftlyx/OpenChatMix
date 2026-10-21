@@ -160,6 +160,60 @@ float Panel::DrawPlugins(float y, EqChannel channel) {
                            T(Text::DeepFilterPostFilterHint)),
             });
     }
+
+    // NVIDIA Audio Effects has no window either: the effect, its strength and the state of its model.
+    for (size_t index = 0; index < plugins.size() && index < chain.plugins.size(); ++index) {
+        if (!chain.plugins[index].nvidiaAfx) {
+            continue;
+        }
+        const NvidiaAfxSettings afx = *chain.plugins[index].nvidiaAfx;
+        const std::wstring& key = plugins[index].id;
+        y = SectionTitle(chain.plugins[index].name.c_str(), y + design::kSectionGap);
+        auto apply = [this, channel, index](NvidiaAfxSettings changed) {
+            host_.OnPluginNvidiaAfx(channel, index, changed);
+        };
+        const int intensity = afx.intensityPercent;
+        const Text status = afx.status == NvidiaAfxSettings::Status::Ready    ? Text::NvidiaAfxReady
+                            : afx.status == NvidiaAfxSettings::Status::Failed ? Text::NvidiaAfxFailed
+                                                                              : Text::NvidiaAfxLoading;
+        y = DrawCard(
+            y,
+            {
+                ChoiceItem(HashId(kKindPlugin, key + L"/effect"), T(Text::NvidiaAfxEffect),
+                           {T(Text::NvidiaAfxNoise), T(Text::NvidiaAfxEcho), T(Text::NvidiaAfxBoth)},
+                           static_cast<int>(afx.effect),
+                           [afx, apply](int selected) {
+                               NvidiaAfxSettings changed = afx;
+                               changed.effect = static_cast<NvidiaAfxSettings::Effect>(selected);
+                               apply(changed);
+                           }),
+                NumberItem(
+                    HashId(kKindPlugin, key + L"/intensity"), T(Text::NvidiaAfxIntensity), Percent(intensity),
+                    intensity > 0, intensity < 100,
+                    [afx, apply, intensity] {
+                        NvidiaAfxSettings changed = afx;
+                        changed.intensityPercent = std::max(0, intensity - 10);
+                        apply(changed);
+                    },
+                    [afx, apply, intensity] {
+                        NvidiaAfxSettings changed = afx;
+                        changed.intensityPercent = std::min(100, intensity + 10);
+                        apply(changed);
+                    },
+                    [afx, apply](const std::wstring& text) {
+                        const int value = _wtoi(text.c_str());
+                        if (value < 0 || (value == 0 && text.find(L'0') == std::wstring::npos)) {
+                            return false;
+                        }
+                        NvidiaAfxSettings changed = afx;
+                        changed.intensityPercent = std::clamp(value, 0, 100);
+                        apply(changed);
+                        return true;
+                    },
+                    T(Text::NvidiaAfxIntensityHint)),
+                HintItem(T(status)),
+            });
+    }
     return y;
 }
 

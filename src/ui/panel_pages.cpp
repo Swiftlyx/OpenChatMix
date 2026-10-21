@@ -127,6 +127,9 @@ void Panel::DrawHeadset() {
                 text += std::wstring(L" · ") + T(Text::Charging);
             }
         }
+        if (headset_.spareBattery >= 0) {
+            text += std::wstring(L" · ") + T(Text::SpareBattery) + L" " + Percent(headset_.spareBattery);
+        }
         const wchar_t glyph = static_cast<wchar_t>((headset_.charging ? kGlyphBatteryCharging0 : kGlyphBattery0) +
                                                    std::clamp(headset_.battery / 10, 0, 10));
         canvas_.Glyph(glyph, {kInset + 6.0f, y + 12.0f}, 16.0f, p.onSurfaceVariant);

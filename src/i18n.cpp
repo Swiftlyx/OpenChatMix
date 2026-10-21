@@ -41,11 +41,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"General",                                                            // General
     L"Language",                                                           // LanguageLabel
     L"Start with Windows",                                                 // StartWithWindows
-    L"Show popup for hotkeys",                                             // ShowPopup
+    L"For hotkeys",                                                        // ShowPopup
     L"Quit OpenChatMix",                                                   // Quit
     L"Works with any headset or speakers: the balance applies to the default output and is controlled with hotkeys "
     L"or the mouse wheel. The ChatMix dial and native settings work on Arctis Nova Pro Wired and Wireless, Nova 7, "
-    L"7X, 7 Gen 2, Arctis 7+ and Nova 5X.",  // SupportFooter
+    L"7X, 7 Gen 2, Nova Elite, Arctis 7+ and Nova 5X.",  // SupportFooter
     L"Open",                                                               // TrayOpen
     L"Settings",                                                           // TraySettings
     L"Reconnect headset",                                                  // TrayReconnect
@@ -193,8 +193,8 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Lower game during chat",  // Ducking
     L"While there is sound in chat, the Game side gets quieter.",  // DuckingHint
     L"Lower by",  // DuckingAmount
-    L"Popup for the headset wheel",  // DialPopup
-    L"Shows the balance when the ChatMix wheel turns, on headsets without a display.",  // DialPopupHint
+    L"For the headset wheel",  // DialPopup
+    L"Shows the balance when the ChatMix wheel on the headset turns.",  // DialPopupHint
     L"Low battery warning",  // BatteryAlert
     L"Warn at",  // BatteryThreshold
     L"Low battery",  // BatteryLowTitle
@@ -268,7 +268,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Makes quiet speech louder and loud speech quieter.",  // CompressorHint
     L"Equalizer",  // MicEqualizer
     L"Plugins",  // Plugins
-    L"VST 2 and VST 3 effects run after the built-in steps, top to bottom; click a plugin to open its window. For AI noise suppression, add DeepFilterNet-OpenChatMix.dll from the OpenChatMix releases on GitHub.",  // PluginsHint
+    L"VST 2 and VST 3 effects run after the built-in steps, top to bottom; click a plugin to open its window. For AI noise suppression, add DeepFilterNet-OpenChatMix.dll from the OpenChatMix releases on GitHub, or, with an NVIDIA RTX card, NVAudioEffects.dll from NVIDIA's Audio Effects redistributable.",  // PluginsHint
     L"Add plugin",  // AddPlugin
     L"Choose a plugin",  // PluginTitle
     L"Plugins",  // PluginFilter
@@ -282,7 +282,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Priority",  // Priority
     L"Disconnected and disabled devices are not shown here. To manage one, first turn it on in the Windows sound settings (System → Sound → All sound devices). Virtual cables are left out. Click a device to use it now; the Next output device hotkey follows this order.",  // PriorityHint
     L"adds",  // AddsLatency
-    L"Language, start with Windows, backup, quit",  // GeneralSummary
+    L"Language, start with Windows, backup, log, quit",  // GeneralSummary
     L"Processing order",  // ProcessingOrder
     L"Drag the steps to change the order the microphone passes through them.",  // ProcessingOrderHint
     L"Listen to the microphone",  // MicMonitor
@@ -495,6 +495,29 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Simple",  // OptSimple
     L"The settings of this headset are experimental: they follow a description of its protocol and are not yet confirmed on it. If one does not apply, please report it on GitHub.",  // HeadsetExperimental
     L"Mode",  // NoiseMode
+    L"Diagnostics",  // LogSection
+    L"Write a log",  // LogEnabled
+    L"OpenChatMix.log records what the headset reports and any errors, for bug reports on GitHub. It may contain device and app names; turn it off when you are done.",  // LogHint
+    L"Open the log folder",  // LogFolder
+    L"For the knob in volume mode",  // VolumePopup
+    L"Shows the headset volume when the knob on the GameDAC or base station turns.",  // VolumePopupHint
+    L"Headset volume",  // HeadsetVolume
+    L"spare",  // SpareBattery
+    L"Effect",  // NvidiaAfxEffect
+    L"Noise",  // NvidiaAfxNoise
+    L"Room echo",  // NvidiaAfxEcho
+    L"Both",  // NvidiaAfxBoth
+    L"Strength",  // NvidiaAfxIntensity
+    L"Lower values leave more of the original sound.",  // NvidiaAfxIntensityHint
+    L"Loading the model on the graphics card…",  // NvidiaAfxLoading
+    L"Runs on the NVIDIA graphics card.",  // NvidiaAfxReady
+    L"The model did not load, so the sound passes unchanged. Install NVIDIA's Audio Effects redistributable for this graphics card; with the log on, it names the reason.",  // NvidiaAfxFailed
+    L"Show popups",  // ShowPopups
+    L"The balance, the volume and short notices in a corner of the screen.",  // ShowPopupsHint
+    L"Corner of the screen",  // PopupCorner
+    L"For the knob in ChatMix mode",  // KnobPopup
+    L"Shows the balance when the knob on the GameDAC or base station turns.",  // KnobPopupHint
+    L"Shows even while popups are off.",  // BatteryAlertHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -532,9 +555,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Загальне",
     L"Мова",
     L"Запускати разом з Windows",
-    L"Спливаюче вікно для гарячих клавіш",
+    L"Для гарячих клавіш",
     L"Вийти з OpenChatMix",
-    L"Працює з будь-якими навушниками чи колонками: баланс застосовується до типового пристрою виводу й керується гарячими клавішами або колесом миші. Коліщатко ChatMix і налаштування гарнітури доступні для Arctis Nova Pro Wired і Wireless, Nova 7, 7X, 7 Gen 2, Arctis 7+ і Nova 5X.",
+    L"Працює з будь-якими навушниками чи колонками: баланс застосовується до типового пристрою виводу й керується гарячими клавішами або колесом миші. Коліщатко ChatMix і налаштування гарнітури доступні для Arctis Nova Pro Wired і Wireless, Nova 7, 7X, 7 Gen 2, Nova Elite, Arctis 7+ і Nova 5X.",
     L"Відкрити",
     L"Налаштування",
     L"Перепідключити гарнітуру",
@@ -682,8 +705,8 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Приглушувати гру під час чату",
     L"Поки в чаті є звук, сторона гри стає тихішою.",
     L"Приглушувати на",
-    L"Спливаюче вікно для коліщатка",
-    L"Показує баланс під час обертання коліщатка ChatMix на гарнітурах без екрана.",
+    L"Для коліщатка на гарнітурі",
+    L"Показує баланс під час обертання коліщатка ChatMix на гарнітурі.",
     L"Попередження про низький заряд",
     L"Попереджати при",
     L"Низький заряд",
@@ -757,7 +780,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Робить тиху мову гучнішою, а гучну — тихішою.",
     L"Еквалайзер",
     L"Плагіни",
-    L"Ефекти VST 2 і VST 3 працюють після вбудованих кроків, згори донизу; натисніть на плагін, щоб відкрити його вікно. Для шумодаву на основі ШІ додайте DeepFilterNet-OpenChatMix.dll з релізів OpenChatMix на GitHub.",
+    L"Ефекти VST 2 і VST 3 працюють після вбудованих кроків, згори донизу; натисніть на плагін, щоб відкрити його вікно. Для шумодаву на основі ШІ додайте DeepFilterNet-OpenChatMix.dll з релізів OpenChatMix на GitHub або, з відеокартою NVIDIA RTX, NVAudioEffects.dll з пакета NVIDIA Audio Effects.",
     L"Додати плагін",
     L"Оберіть плагін",
     L"Плагіни",
@@ -771,7 +794,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Пріоритет",
     L"Відключені й вимкнені пристрої тут не показуються. Щоб керувати таким пристроєм, спершу увімкніть його в параметрах звуку Windows (Система → Звук → Усі звукові пристрої). Віртуальні кабелі приховано. Натисніть на пристрій, щоб перемкнутися на нього; гаряча клавіша «Наступний пристрій виводу» перемикає в цьому порядку.",
     L"додає",
-    L"Мова, запуск з Windows, резервна копія, вихід",
+    L"Мова, запуск з Windows, резервна копія, лог, вихід",
     L"Порядок обробки",
     L"Перетягуйте кроки, щоб змінити порядок, у якому їх проходить мікрофон.",
     L"Слухати мікрофон",
@@ -984,6 +1007,29 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Простий",
     L"Налаштування цієї гарнітури експериментальні: вони працюють за описом її протоколу й ще не підтверджені на ній. Якщо якесь не застосовується, повідомте про це на GitHub.",
     L"Режим",
+    L"Діагностика",
+    L"Вести лог",
+    L"OpenChatMix.log записує, що повідомляє гарнітура, і помилки, для звітів про баги на GitHub. Він може містити назви пристроїв і програм; вимкніть його, коли закінчите.",
+    L"Відкрити папку з логом",
+    L"Для коліщатка в режимі гучності",
+    L"Показує гучність навушників під час обертання коліщатка на GameDAC або базовій станції.",
+    L"Гучність навушників",
+    L"запасна",
+    L"Ефект",
+    L"Шум",
+    L"Луна кімнати",
+    L"Обидва",
+    L"Сила",
+    L"Менші значення лишають більше початкового звуку.",
+    L"Модель завантажується на відеокарту…",
+    L"Працює на відеокарті NVIDIA.",
+    L"Модель не завантажилась, тож звук проходить без змін. Установіть пакет NVIDIA Audio Effects для цієї відеокарти; з увімкненим логом у ньому буде причина.",
+    L"Показувати спливаючі вікна",
+    L"Баланс, гучність і короткі повідомлення в куті екрана.",
+    L"Кут екрана",
+    L"Для коліщатка в режимі ChatMix",
+    L"Показує баланс під час обертання коліщатка на GameDAC або базовій станції.",
+    L"З'являється, навіть коли спливаючі вікна вимкнено.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

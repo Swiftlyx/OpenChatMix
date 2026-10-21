@@ -155,6 +155,7 @@ struct Preview {
     int choice = 0;
     int battery = 75;
     DeepFilterSettings deepFilter;  // Settings of a DeepFilterNet DLL in the plugin list.
+    NvidiaAfxSettings nvidiaAfx{.status = NvidiaAfxSettings::Status::Ready};  // Of an NVAudioEffects.dll.
     bool charging = false;
     bool headsetOff = false;
     BluetoothState bluetooth = BluetoothState::Connected;
@@ -344,6 +345,8 @@ void PushStatus() {
 void PushHeadset() {
     const HeadsetFeatures* features = Features();
     g.headset.battery = BatteryShown() ? g.battery : -1;
+    // The Nova Elite's base station holds a spare battery, shown full.
+    g.headset.spareBattery = BatteryShown() && Current().family == DeviceFamily::NovaElite ? 100 : -1;
     g.headset.charging = g.charging && !BluetoothBattery();
     g.headset.headsetOff = features && features->batteryQuery && g.headsetOff;
     g.headset.bluetooth = features && features->bluetooth ? g.bluetooth : BluetoothState::Unknown;
@@ -401,7 +404,8 @@ void PushMic() {
                       T(Text::MillisecondsShort);
     }
     g.panel->SetMic(view);
-    // Plugins are listed by their file, as loaded; the preview loads none. A DeepFilterNet DLL shows its settings.
+    // Plugins are listed by their file, as loaded; the preview loads none. DeepFilterNet and NVIDIA Audio Effects DLLs
+    // show their settings.
     for (const EqChannel channel : {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media}) {
         ui::PluginChainView chain;
         for (const ChainPlugin& plugin : PluginsOf(g.settings, channel)) {
@@ -413,6 +417,10 @@ void PushMic() {
                 row.hasEditor = false;
                 row.deepFilter = g.deepFilter;
                 chain.latencyMs += channel == EqChannel::Mic ? 20 : 30;
+            } else if (_wcsicmp(name.c_str(), L"NVAudioEffects") == 0) {
+                row.name = L"NVIDIA Audio Effects";
+                row.hasEditor = false;
+                row.nvidiaAfx = g.nvidiaAfx;
             }
             chain.plugins.push_back(std::move(row));
         }
@@ -700,6 +708,11 @@ public:
     }
     void OnPluginDeepFilter(EqChannel, size_t, const DeepFilterSettings& settings) override {
         g.deepFilter = settings;
+        PushMic();
+    }
+    void OnPluginNvidiaAfx(EqChannel, size_t, const NvidiaAfxSettings& settings) override {
+        g.nvidiaAfx = settings;
+        g.nvidiaAfx.status = NvidiaAfxSettings::Status::Ready;
         PushMic();
     }
     void OnOutputChoose(const std::wstring& id) override {
