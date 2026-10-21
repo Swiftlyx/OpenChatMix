@@ -29,6 +29,9 @@ constexpr wchar_t kChatEqSection[] = L"Equalizer.Chat";
 constexpr wchar_t kMicEqSection[] = L"Equalizer.Mic";
 constexpr wchar_t kMediaEqSection[] = L"Equalizer.Media";
 constexpr wchar_t kMicSection[] = L"Microphone";
+constexpr wchar_t kGamePluginsSection[] = L"Plugins.Game";
+constexpr wchar_t kChatPluginsSection[] = L"Plugins.Chat";
+constexpr wchar_t kMediaPluginsSection[] = L"Plugins.Media";
 constexpr wchar_t kOutputsSection[] = L"Outputs";
 constexpr const wchar_t* kNoiseNames[] = {L"off", L"standard", L"strong"};
 constexpr const wchar_t* kCompressorNames[] = {L"off", L"light", L"medium", L"strong"};
@@ -193,6 +196,49 @@ void SaveProfiles(const std::wstring& path, const Settings& settings) {
     WritePrivateProfileSectionW(kProfilesSection, section.c_str(), path.c_str());
 }
 
+// Plugin1=enabled|id|path, numbered from 1 without gaps.
+void LoadPlugins(const std::wstring& path, const wchar_t* section, std::vector<ChainPlugin>& plugins) {
+    for (int index = 1;; ++index) {
+        const std::wstring key = L"Plugin" + std::to_wstring(index);
+        const std::wstring value = ReadString(path, section, key.c_str(), L"");
+        const size_t first = value.find(kPathSeparator);
+        const size_t second = first == std::wstring::npos ? std::wstring::npos : value.find(kPathSeparator, first + 1);
+        if (second == std::wstring::npos) {
+            break;
+        }
+        ChainPlugin plugin;
+        plugin.enabled = value.substr(0, first) != L"0";
+        plugin.id = value.substr(first + 1, second - first - 1);
+        plugin.path = value.substr(second + 1);
+        if (!plugin.path.empty() && !plugin.id.empty()) {
+            plugins.push_back(std::move(plugin));
+        }
+    }
+}
+
+// Appends the Plugin keys to a whole-section string.
+void AddPlugins(std::wstring& section, const std::vector<ChainPlugin>& plugins) {
+    for (size_t index = 0; index < plugins.size(); ++index) {
+        const ChainPlugin& plugin = plugins[index];
+        section += L"Plugin" + std::to_wstring(index + 1) + L"=" + (plugin.enabled ? L"1" : L"0") + kPathSeparator +
+                   plugin.id + kPathSeparator + plugin.path;
+        section += L'\0';
+    }
+}
+
+// A channel's plugins as a section of their own, written whole so removed plugins do not linger; no section while
+// there are none.
+void SavePlugins(const std::wstring& path, const wchar_t* section, const std::vector<ChainPlugin>& plugins) {
+    if (plugins.empty()) {
+        WritePrivateProfileStringW(section, nullptr, nullptr, path.c_str());
+        return;
+    }
+    std::wstring text;
+    AddPlugins(text, plugins);
+    text += L'\0';
+    WritePrivateProfileSectionW(section, text.c_str(), path.c_str());
+}
+
 // [Microphone] Plugin1=enabled|id|path
 void LoadMic(const std::wstring& path, MicSettings& mic) {
     mic.enabled = ReadSectionInt(path, kMicSection, L"Enabled", 0) != 0;
@@ -222,22 +268,7 @@ void LoadMic(const std::wstring& path, MicSettings& mic) {
     if (count == kMicStageCount) {
         mic.order = parsed;
     }
-    for (int index = 1;; ++index) {
-        const std::wstring key = L"Plugin" + std::to_wstring(index);
-        const std::wstring value = ReadString(path, kMicSection, key.c_str(), L"");
-        const size_t first = value.find(kPathSeparator);
-        const size_t second = first == std::wstring::npos ? std::wstring::npos : value.find(kPathSeparator, first + 1);
-        if (second == std::wstring::npos) {
-            break;
-        }
-        MicPlugin plugin;
-        plugin.enabled = value.substr(0, first) != L"0";
-        plugin.id = value.substr(first + 1, second - first - 1);
-        plugin.path = value.substr(second + 1);
-        if (!plugin.path.empty() && !plugin.id.empty()) {
-            mic.plugins.push_back(std::move(plugin));
-        }
-    }
+    LoadPlugins(path, kMicSection, mic.plugins);
 }
 
 void SaveMic(const std::wstring& path, const MicSettings& mic) {
@@ -259,11 +290,7 @@ void SaveMic(const std::wstring& path, const MicSettings& mic) {
         order += (order.empty() ? L"" : L",") + std::wstring(kMicStageNames[static_cast<int>(stage)]);
     }
     add(L"Order", order);
-    for (size_t index = 0; index < mic.plugins.size(); ++index) {
-        const MicPlugin& plugin = mic.plugins[index];
-        add(L"Plugin" + std::to_wstring(index + 1),
-            std::wstring(plugin.enabled ? L"1" : L"0") + kPathSeparator + plugin.id + kPathSeparator + plugin.path);
-    }
+    AddPlugins(section, mic.plugins);
     section += L'\0';
     WritePrivateProfileSectionW(kMicSection, section.c_str(), path.c_str());
 }
@@ -584,6 +611,20 @@ const EqChannelSettings& EqStateOf(const Settings& settings, EqChannel channel) 
     return EqStateOf(const_cast<Settings&>(settings), channel);
 }
 
+std::vector<ChainPlugin>& PluginsOf(Settings& settings, EqChannel channel) {
+    switch (channel) {
+    case EqChannel::Chat: return settings.chatPlugins;
+    case EqChannel::Mic: return settings.mic.plugins;
+    case EqChannel::Media: return settings.mediaPlugins;
+    case EqChannel::Game: break;
+    }
+    return settings.gamePlugins;
+}
+
+const std::vector<ChainPlugin>& PluginsOf(const Settings& settings, EqChannel channel) {
+    return PluginsOf(const_cast<Settings&>(settings), channel);
+}
+
 std::wstring ExePath() {
     std::wstring path(MAX_PATH, L'\0');
     for (;;) {
@@ -699,6 +740,9 @@ Settings LoadSettings(const std::wstring& path) {
     LoadEqChannel(path, kChatEqSection, settings.chatEq);
     LoadEqChannel(path, kMicEqSection, settings.micEq);
     LoadEqChannel(path, kMediaEqSection, settings.mediaEq);
+    LoadPlugins(path, kGamePluginsSection, settings.gamePlugins);
+    LoadPlugins(path, kChatPluginsSection, settings.chatPlugins);
+    LoadPlugins(path, kMediaPluginsSection, settings.mediaPlugins);
     LoadMic(path, settings.mic);
     LoadProfiles(path, settings);
     settings.routing.enabled = GetPrivateProfileIntW(kRoutingSection, L"Enabled", 0, path.c_str()) != 0;
@@ -804,6 +848,9 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     SaveEqChannel(path, kChatEqSection, settings.chatEq);
     SaveEqChannel(path, kMicEqSection, settings.micEq);
     SaveEqChannel(path, kMediaEqSection, settings.mediaEq);
+    SavePlugins(path, kGamePluginsSection, settings.gamePlugins);
+    SavePlugins(path, kChatPluginsSection, settings.chatPlugins);
+    SavePlugins(path, kMediaPluginsSection, settings.mediaPlugins);
     SaveMic(path, settings.mic);
     SaveProfiles(path, settings);
     WritePrivateProfileStringW(kRoutingSection, L"Enabled", settings.routing.enabled ? L"1" : L"0", path.c_str());

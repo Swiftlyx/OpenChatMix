@@ -628,6 +628,17 @@ float Panel::DrawRoutingSettings(float y) {
                             }});
         }
     }
+    if (!on) {
+        // Without virtual devices each group can still play on a device of its own.
+        constexpr Text kGroupNames[] = {Text::Game, Text::Chat, Text::Media};
+        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
+        for (int group = 0; group < (settings_.mediaGroup ? 3 : 2); ++group) {
+            const RoutingSlot output = kOutputs[group];
+            rows.push_back(ValueItem(kIdRoutingRow + 16 + group, T(kGroupNames[group]),
+                                     routing_.names[static_cast<int>(output)], [this, output] { OpenPicker(output); }));
+        }
+        rows.push_back(HintItem(T(Text::GroupOutputsHint)));
+    }
     y = DrawCard(y, rows) + design::kGroupGap;
     if (on) {
         // How the mode treats Windows: the devices it switches and the apps it sends to them.
@@ -692,7 +703,9 @@ void Panel::DrawPickDevice() {
     case RoutingSlot::Media: items.push_back({L"", T(Text::RoutingMediaNone), std::nullopt}); break;
     case RoutingSlot::GameOutput:
     case RoutingSlot::ChatOutput:
-    case RoutingSlot::MediaOutput: items.push_back({L"", T(Text::SameAsOutput), std::nullopt}); break;
+    case RoutingSlot::MediaOutput:
+        items.push_back({L"", T(routing_.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput), std::nullopt});
+        break;
     case RoutingSlot::Game:
     case RoutingSlot::Chat: break;
     }

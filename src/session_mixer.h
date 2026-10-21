@@ -35,8 +35,10 @@ public:
     // Targets the render endpoints of a SteelSeries product, or the default output when empty
     // or when the product exposes no endpoint.
     void SetTarget(std::optional<uint16_t> productId);
-    // Further endpoints whose apps are listed and counted, e.g. the virtual Game and Chat devices.
-    void SetExtraEndpoints(std::vector<std::wstring> ids);
+    // Further endpoints whose apps are listed and get their levels, e.g. the virtual Game and Chat devices.
+    // heard: what plays there reaches the target too (virtual devices bridged to it), so it counts in
+    // PeakLevel(); speakers a group plays on directly do not.
+    void SetExtraEndpoints(std::vector<std::wstring> ids, bool heard = true);
     // Re-resolves endpoints after audio devices change.
     void Rebind();
     // The headset's own playback device when it has one, else the default output; empty when there is none.
@@ -69,6 +71,7 @@ private:
         Microsoft::WRL::ComPtr<IAudioSessionManager2> manager;
         Microsoft::WRL::ComPtr<IAudioSessionNotification> notifier;
         Microsoft::WRL::ComPtr<IAudioMeterInformation> meter;
+        bool heard = true;  // Counts in PeakLevel().
     };
 
     struct Session {
@@ -104,6 +107,7 @@ private:
     HWND notify_ = nullptr;
     std::optional<uint16_t> target_;
     std::vector<std::wstring> extraIds_;
+    bool extraHeard_ = true;
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator_;
     Microsoft::WRL::ComPtr<IMMNotificationClient> endpointNotifier_;
     std::vector<Endpoint> endpoints_;

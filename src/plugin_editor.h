@@ -47,10 +47,17 @@ private:
     bool resizing_ = false;  // SetClientSize is running; its WM_SIZE is not a user resize.
 };
 
+// Fills a plugin's input channels from interleaved samples: mono goes to every input; of stereo, a single input
+// takes the mix of both sides and further inputs repeat left and right.
+void SplitChannels(const float* samples, size_t frames, int channels, float* const* inputs, int inputCount);
+// Writes a plugin's outputs back: a mono stream takes the mix of the first two, a single output plays on both
+// sides. Channels beyond the first two stay as they are.
+void JoinChannels(const float* const* outputs, int outputCount, size_t frames, float* samples, int channels);
+
 // Implemented in vst3_host.cpp.
-std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sampleRate, int blockSize);
+std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sampleRate, int blockSize, int channels);
 
 // Implemented in deep_filter_plugin.cpp. recognized tells whether the DLL is OpenChatMix's DeepFilterNet build,
 // so a failure there is final and the DLL is not tried as a VST 2 plugin.
 std::unique_ptr<AudioPlugin> LoadDeepFilterPlugin(const std::wstring& path, double sampleRate, int blockSize,
-                                                  bool& recognized);
+                                                  int channels, bool& recognized);

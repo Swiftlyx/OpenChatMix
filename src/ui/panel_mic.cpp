@@ -1,4 +1,4 @@
-// Microphone chain: devices, the processing steps and their order, and VST plugins.
+// Microphone chain: devices, the processing steps and their order, and the plugin list.
 
 #include <algorithm>
 #include <string>
@@ -18,11 +18,6 @@ constexpr Text kCompressorLabels[kMicCompressorCount] = {Text::OptOff, Text::Com
                                                          Text::CompressorStrong};
 constexpr Text kStageLabels[kMicStageCount] = {Text::NoiseSuppressionLabel, Text::MicEqualizer, Text::CompressorLabel,
                                                Text::Plugins};
-
-std::wstring FileNameOfPath(const std::wstring& path) {
-    const size_t slash = path.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? path : path.substr(slash + 1);
-}
 
 }  // namespace
 
@@ -138,125 +133,8 @@ void Panel::DrawMicrophone() {
             [](size_t) {}) +
         design::kSectionGap;
 
-    y = DrawMicPlugins(y);
+    y = DrawPlugins(y, EqChannel::Mic);
     EndScroll(Page::Microphone, kHeaderHeight, y);
-}
-
-// DeepFilterNet's maximum reduction steps in 6 dB up to 60 dB, then unlimited.
-constexpr int kDeepFilterStepDb = 6;
-constexpr int kDeepFilterMaxStepsDb = 60;
-
-float Panel::DrawMicPlugins(float y) {
-    const Palette& p = P();
-    y = SectionTitle(T(Text::Plugins), y);
-    y = PageHint(T(Text::PluginsHint), y);
-
-    const std::vector<MicPlugin>& plugins = settings_.mic.plugins;
-    if (!plugins.empty()) {
-        std::vector<uint32_t> ids;
-        for (const MicPlugin& plugin : plugins) {
-            ids.push_back(HashId(kKindPlugin, plugin.id));
-        }
-        y = DrawDragCard(
-                y, kIdPluginList, ids, design::kTwoLineRowHeight,
-                [this, &p, &plugins](size_t index, size_t, const D2D1_RECT_F& row, bool) {
-                    const MicPlugin& plugin = plugins[index];
-                    const MicPluginView view = index < mic_.plugins.size() ? mic_.plugins[index] : MicPluginView{};
-                    const uint32_t id = HashId(kKindPlugin, plugin.id);
-                    const float middle = (row.top + row.bottom) / 2.0f;
-                    canvas_.Glyph(view.loaded && view.hasEditor ? kGlyphOpenWindow : kGlyphPlugin,
-                                  {design::kLeadingIconCenter, middle}, design::kIconSize,
-                                  view.loaded ? p.primary : p.error);
-                    // Remove and the on/off switch left of the drag handle.
-                    const float switchRight = design::kTrailingIconCenter - design::kIconSize / 2.0f - design::kSpace3;
-                    const float switchLeft = switchRight - design::kSwitchWidth;
-                    const float textRight = switchLeft - design::kIconButtonSize - design::kSpace2;
-                    const std::wstring name = view.name.empty() ? FileNameOfPath(plugin.path) : view.name;
-                    canvas_.Text(name, {design::kLeadingTextInset, row.top + 9.0f, textRight, row.top + 31.0f},
-                                 TextStyle::BodyLarge, plugin.enabled ? p.onSurface : p.onSurfaceVariant);
-                    const std::wstring detail = view.loaded
-                                                    ? FileNameOfPath(plugin.path)
-                                                    : FileNameOfPath(plugin.path) + L" · " + T(Text::PluginNotLoaded);
-                    canvas_.Text(detail, {design::kLeadingTextInset, row.top + 31.0f, textRight, row.top + 50.0f},
-                                 TextStyle::BodySmall, view.loaded ? p.onSurfaceVariant : p.error);
-                    IconButton(PartId(id, 2), {switchLeft - design::kIconButtonSize / 2.0f - design::kSpace1, middle},
-                               kGlyphDelete, p.onSurfaceVariant, [this, index] { host_.OnMicPluginRemove(index); });
-                    Tooltip(PartId(id, 2), T(Text::TipRemovePlugin));
-                    const D2D1_RECT_F track{switchLeft, middle - design::kSwitchHeight / 2.0f, switchRight,
-                                            middle + design::kSwitchHeight / 2.0f};
-                    DrawSwitch(track, plugin.enabled, PartId(id, 3));
-                    AddHit({Inset(track, -design::kSpace1, -design::kSpace2), PartId(id, 3), [this, index] {
-                                Edit([index](Settings& s) {
-                                    if (index < s.mic.plugins.size()) {
-                                        s.mic.plugins[index].enabled = !s.mic.plugins[index].enabled;
-                                    }
-                                });
-                            }});
-                },
-                [this](size_t from, size_t to) { host_.OnMicPluginMove(from, to); },
-                [this](size_t index) {
-                    if (index < mic_.plugins.size() && mic_.plugins[index].loaded && mic_.plugins[index].hasEditor) {
-                        host_.OnMicPluginEditor(index);
-                    }
-                }) +
-            design::kGroupGap;
-    }
-    TextButton(kIdAddPlugin, {design::kPageGutter, y, kWidth - design::kPageGutter, y + design::kButtonHeight},
-               kGlyphAdd, T(Text::AddPlugin), true, [this] { RunFileDialog(FileDialog::Plugin); });
-    y += design::kButtonHeight;
-
-    // DeepFilterNet has no window of its own: its settings follow the list.
-    for (size_t index = 0; index < plugins.size() && index < mic_.plugins.size(); ++index) {
-        if (!mic_.plugins[index].deepFilter) {
-            continue;
-        }
-        const DeepFilterSettings filter = *mic_.plugins[index].deepFilter;
-        const std::wstring& key = plugins[index].id;
-        y = SectionTitle(mic_.plugins[index].name.c_str(), y + design::kSectionGap);
-        auto apply = [this, index](DeepFilterSettings changed) { host_.OnMicPluginDeepFilter(index, changed); };
-        const int reduction = filter.maxReductionDb;
-        const bool unlimited = reduction >= DeepFilterSettings::kUnlimited;
-        y = DrawCard(
-            y,
-            {
-                NumberItem(
-                    HashId(kKindPlugin, key + L"/reduction"), T(Text::DeepFilterReduction),
-                    unlimited ? std::wstring(T(Text::DeepFilterUnlimited)) : std::to_wstring(reduction) + L" dB",
-                    reduction > kDeepFilterStepDb, !unlimited,
-                    [filter, apply, reduction, unlimited] {
-                        DeepFilterSettings changed = filter;
-                        changed.maxReductionDb = unlimited ? kDeepFilterMaxStepsDb : reduction - kDeepFilterStepDb;
-                        apply(changed);
-                    },
-                    [filter, apply, reduction] {
-                        DeepFilterSettings changed = filter;
-                        changed.maxReductionDb = reduction >= kDeepFilterMaxStepsDb ? DeepFilterSettings::kUnlimited
-                                                                                    : reduction + kDeepFilterStepDb;
-                        apply(changed);
-                    },
-                    [filter, apply](const std::wstring& text) {
-                        const int value = _wtoi(text.c_str());
-                        if (value <= 0) {
-                            return false;
-                        }
-                        DeepFilterSettings changed = filter;
-                        changed.maxReductionDb = value > kDeepFilterMaxStepsDb
-                                                     ? DeepFilterSettings::kUnlimited
-                                                     : std::max(value, kDeepFilterStepDb);
-                        apply(changed);
-                        return true;
-                    },
-                    T(Text::DeepFilterReductionHint)),
-                SwitchItem(HashId(kKindPlugin, key + L"/post-filter"), T(Text::DeepFilterPostFilter), filter.postFilter,
-                           [filter, apply] {
-                               DeepFilterSettings changed = filter;
-                               changed.postFilter = !changed.postFilter;
-                               apply(changed);
-                           },
-                           T(Text::DeepFilterPostFilterHint)),
-            });
-    }
-    return y;
 }
 
 }  // namespace ui

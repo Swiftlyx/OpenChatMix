@@ -90,6 +90,10 @@ native settings, so GG and Sonar can stay closed:
   start in Chat (they appear in the group once installed), and Media apps (music, videos) are never
   touched by ChatMix — like Sonar's Media channel. The Media group is off until you turn it on in
   *Settings → Audio*.
+- **A device per group, no virtual cables needed.** *Settings → Audio → Audio routing* lets each group
+  play on its own device, for example Game and Chat on the headset and Media on the speakers. Windows
+  sends the group's apps there (its per-app device, which OpenChatMix clears again when it exits), and
+  ChatMix still balances Game and Chat wherever they play.
 - **Manual assignment.** Open a group and add any running app, or browse for an `.exe`, even if it
   is closed.
 - **Native headset settings**, shown only for the connected model: the 10-band Engine EQ with the
@@ -142,7 +146,9 @@ native settings, so GG and Sonar can stay closed:
 - **Equalizer for any headset** (virtual device mode, optional). A 10-band parametric EQ for Game
   and for Chat with a response graph like Sonar's, Bass Boost, Voice Clarity, Treble Boost and Smart
   Volume, built-in presets, your own preset files and the presets of a local SteelSeries Sonar
-  installation. It is off until you turn it on in *Settings → Audio*.
+  installation. Each channel can also run your own VST 2 and VST 3 plugins, such as a convolver with
+  impulse responses, crossfeed or a loudness plugin, and DeepFilterNet on Chat removes noise from the
+  voices of others. It is off until you turn it on in *Settings → Audio*.
 - **Hotkeys with an on-screen popup** (`Ctrl + Alt + ← / → / ↓` by default), plus optional hotkeys
   to mute game, chat or media, to send the sound to the next output device or feed the microphone chain
   from the next microphone (virtual cables are skipped), and one that turns the GameDAC screensaver on
@@ -213,7 +219,7 @@ works with any headset.
 | Arctis Nova Pro Wired (PC, Xbox) | `12CB`, `12CD` | ✅ Tested |
 | Arctis 7+ / 7P+ / 7X+ / 7+ Destiny | `220E`, `2212`, `2216`, `2236` | ✅ Tested (Arctis 7+) |
 | Arctis Nova Pro Wireless (PC, Xbox) | `12E0`, `12E5` | ✅ Works, reported by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) |
-| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the equalizer of `22A1` and `227E` (Gen 2 protocol) is experimental ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
+| Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the Gen 2 protocol equalizer works on `22A1` ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) and is not yet checked on `227E` |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
 | Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial and battery work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its settings are not supported yet |
@@ -295,6 +301,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Virtual device mode, Media group, equalizer, ducking | *Settings* → *Audio*. |
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode), once turned on in *Settings* → *Audio*. |
 | Microphone processing and VST plugins | *Settings* → *Microphone*; its equalizer is the *Mic* channel of the *Equalizer* tab. |
+| VST plugins on Game, Chat or Media | *Equalizer* tab (virtual device mode) → the channel → *Plugins*. |
 | Order of output devices, switching on disconnect | *Settings* → *Output devices*; drag a device to its place. |
 | Never switch to a device | *Settings* → *Output devices* → the ⦸ button next to it; ↶ under *Never switch to* brings it back. |
 | Reorder the microphone effects or plugins | *Settings* → *Microphone* → drag a step or a plugin by its handle. |
@@ -411,6 +418,17 @@ Presets come from three places:
 - the game, chat and microphone presets of SteelSeries Sonar, if SteelSeries GG is installed: they are read
   from GG's local database and are not shipped with OpenChatMix;
 - your own presets, saved as files in `%APPDATA%\OpenChatMix\Presets\Parametric`.
+
+**Plugins.** Below the effects, Game, Chat and Media each have a *Plugins* list like the microphone's:
+any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder and click one to open
+its window. A convolver with impulse responses, crossfeed, a loudness or a bass plugin you own shapes
+the sound like a system-wide effects suite, without installing a driver. Plugins run in stereo at the
+channel's own sample rate, before its volume, so a compressor does not undo the ChatMix balance; when a
+sound stops they get silence until their latency and reverb tail have played out (at most 3 seconds).
+The hint above the list shows what they delay the channel by. Nothing is loaded for a channel without
+plugins; they load with virtual device mode and the equalizer, and their settings are kept in
+`%APPDATA%\OpenChatMix\PluginStates`. On Chat, [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll)
+removes noise from the voices of others: it filters the mix of both sides at 48 kHz and adds about 30 ms.
 
 ### Microphone
 
@@ -532,7 +550,8 @@ takes the sound before the Windows volume of the Game and Chat devices, so the b
 `IPolicyConfig` interface that the Windows sound settings use, and sends apps to the Game or Chat
 device through `IAudioPolicyConfigFactory`, the interface behind the per-app device choice in the
 Windows volume mixer; neither needs administrator rights. The equalizer is a chain of biquad filters
-computed in double precision.
+computed in double precision. Plugins on Game, Chat and Media run on the bridge's own MMCSS thread, in
+blocks of up to 20 ms; the plugin list reaches it without a lock the audio thread could wait on.
 
 **Microphone.** A WASAPI capture stream of the microphone and a render stream into the cable, both
 at 48 kHz mono with Windows converting from and to the devices' formats, on an MMCSS "Pro Audio"

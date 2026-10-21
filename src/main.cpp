@@ -9,6 +9,7 @@
 #include <wtsapi32.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <ctime>
 #include <map>
@@ -173,11 +174,11 @@ public:
     void OnSettingsEdit(const std::function<void(Settings&)>& edit) override;
     std::vector<AudioEndpoint> PlaybackDevices() override;
     std::vector<AudioEndpoint> RecordingDevices() override;
-    void OnMicPluginAdd(const std::wstring& path) override;
-    void OnMicPluginRemove(size_t index) override;
-    void OnMicPluginMove(size_t from, size_t to) override;
-    void OnMicPluginEditor(size_t index) override;
-    void OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) override;
+    void OnPluginAdd(EqChannel channel, const std::wstring& path) override;
+    void OnPluginRemove(EqChannel channel, size_t index) override;
+    void OnPluginMove(EqChannel channel, size_t from, size_t to) override;
+    void OnPluginEditor(EqChannel channel, size_t index) override;
+    void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) override;
     void OnOutputChoose(const std::wstring& id) override;
     void OnOutputMove(size_t from, size_t to) override;
     void OnOutputExclude(const std::wstring& id, bool excluded) override;
@@ -202,6 +203,18 @@ struct TrayMotion {
     bool running = false;
     LARGE_INTEGER last{};
 };
+
+// Loaded plugins of one chain, in the order of its settings; null where loading failed. Owned and destroyed on
+// the plugin thread.
+struct LoadedPlugins {
+    std::vector<std::unique_ptr<AudioPlugin>> plugins;
+    bool loaded = false;
+    UINT32 rate = 0;  // The rate they were prepared for.
+};
+
+// The microphone chain and the virtual device channels.
+constexpr EqChannel kPluginChains[] = {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media};
+constexpr EqChannel kOutputChains[] = {EqChannel::Game, EqChannel::Chat, EqChannel::Media};
 
 struct App {
     HINSTANCE instance = nullptr;
@@ -239,10 +252,7 @@ struct App {
     MicChain mic;
     LevelKeeper micLevels;
     PluginThread pluginThread;
-    // Loaded plugins of settings.mic.plugins, same order; null where loading failed. Owned and
-    // destroyed on the plugin thread.
-    std::vector<std::unique_ptr<AudioPlugin>> micPlugins;
-    bool micPluginsLoaded = false;
+    std::array<LoadedPlugins, std::size(kPluginChains)> plugins;  // By EqChannel.
     std::wstring micInputId;    // The microphone the running chain records from.
     std::wstring micMonitorId;  // Where the running chain is listened to; empty when it is not.
     std::set<std::wstring> knownOutputs;  // Connected playback devices at the last check.
@@ -1072,8 +1082,10 @@ void UpdateRouting() {
         routing.output.empty()
             ? std::wstring(T(Text::AutomaticHeadset)) + (outputId.empty() ? L"" : L" · " + nameOf(outputId))
             : nameOf(routing.output));
+    // Empty: the mode's output with virtual devices, the Windows default without them.
     auto channelOutput = [&](ui::RoutingSlot slot, const std::wstring& id) {
-        set(slot, id, id.empty() ? std::wstring(T(Text::SameAsOutput)) : nameOf(id));
+        set(slot, id,
+            id.empty() ? std::wstring(T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput)) : nameOf(id));
     };
     channelOutput(ui::RoutingSlot::GameOutput, routing.gameOutput);
     channelOutput(ui::RoutingSlot::ChatOutput, routing.chatOutput);
@@ -1109,6 +1121,7 @@ void ShowTrayNotice(const std::wstring& title, const std::wstring& text, DWORD i
 void PushEqualizers();
 void UpdateMixerEndpoints();
 void RouteApps();
+void SyncOutputPlugins();
 
 void StartRouting() {
     g_app.router.Stop();
@@ -1134,6 +1147,7 @@ void StartRouting() {
         }
         RouteApps();
     }
+    SyncOutputPlugins();
     UpdateRouting();
     RefreshOutputName();
     UpdateStatus();
@@ -1169,7 +1183,7 @@ void PushEqualizers() {
 
 // ---- Microphone chain -------------------------------------------------------------------------------
 
-std::wstring PluginStatePath(const MicPlugin& plugin) {
+std::wstring PluginStatePath(const ChainPlugin& plugin) {
     const std::wstring directory = ConfigDirectory() + L"\\PluginStates";
     CreateDirectoryW(directory.c_str(), nullptr);
     return directory + L"\\" + plugin.id + L".bin";
@@ -1233,6 +1247,8 @@ std::wstring MicOutputId(const std::vector<AudioEndpoint>& endpoints) {
     return cable ? cable->id : L"";
 }
 
+void PushPluginViews(EqChannel channel);
+
 void PushMic() {
     const MicSettings& settings = g_app.settings.mic;
     ui::MicView view;
@@ -1265,76 +1281,150 @@ void PushMic() {
             view.status = outputId.empty() ? T(Text::MicNoCable) : T(Text::RoutingDeviceMissing);
         }
     }
-    for (size_t index = 0; index < settings.plugins.size(); ++index) {
-        ui::MicPluginView plugin;
-        plugin.path = settings.plugins[index].path;
-        plugin.enabled = settings.plugins[index].enabled;
-        if (index < g_app.micPlugins.size() && g_app.micPlugins[index]) {
-            plugin.name = g_app.micPlugins[index]->Name();
+    g_app.panel->SetMic(view);
+    PushPluginViews(EqChannel::Mic);
+}
+
+// ---- Plugin chains ----------------------------------------------------------------------------------
+
+LoadedPlugins& LoadedOf(EqChannel channel) {
+    return g_app.plugins[static_cast<size_t>(channel)];
+}
+
+void PushPluginViews(EqChannel channel) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    const std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
+    ui::PluginChainView view;
+    int latency = 0;
+    for (size_t index = 0; index < plugins.size(); ++index) {
+        ui::PluginView plugin;
+        plugin.path = plugins[index].path;
+        plugin.enabled = plugins[index].enabled;
+        if (index < loaded.plugins.size() && loaded.plugins[index]) {
+            const AudioPlugin& instance = *loaded.plugins[index];
+            plugin.name = instance.Name();
             plugin.loaded = true;
-            plugin.hasEditor = g_app.micPlugins[index]->HasEditor();
-            plugin.deepFilter = g_app.micPlugins[index]->DeepFilter();
+            plugin.hasEditor = instance.HasEditor();
+            plugin.deepFilter = instance.DeepFilter();
+            if (plugin.enabled) {
+                latency += instance.LatencySamples();
+            }
         } else {
             // Not loaded yet while the chain is off; only a failed load counts as an error.
-            plugin.loaded = !g_app.micPluginsLoaded;
+            plugin.loaded = !loaded.loaded;
         }
         view.plugins.push_back(std::move(plugin));
     }
-    g_app.panel->SetMic(view);
+    if (loaded.rate > 0) {
+        view.latencyMs = static_cast<int>(std::lround(latency * 1000.0 / loaded.rate));
+    }
+    g_app.panel->SetPlugins(channel, view);
 }
 
 // The enabled plugins that loaded, in order, to the audio thread.
-void PushMicPlugins() {
-    MicPluginList list;
-    for (size_t index = 0; index < g_app.micPlugins.size() && index < g_app.settings.mic.plugins.size(); ++index) {
-        if (g_app.micPlugins[index] && g_app.settings.mic.plugins[index].enabled) {
-            list.push_back(g_app.micPlugins[index].get());
+void PushPlugins(EqChannel channel) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    const std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
+    PluginList list;
+    for (size_t index = 0; index < loaded.plugins.size() && index < plugins.size(); ++index) {
+        if (loaded.plugins[index] && plugins[index].enabled) {
+            list.push_back(loaded.plugins[index].get());
         }
     }
-    g_app.mic.SetPlugins(std::move(list));
+    if (channel == EqChannel::Mic) {
+        g_app.mic.SetPlugins(std::move(list));
+    } else {
+        g_app.router.SetPlugins(channel, std::move(list), loaded.rate);
+    }
 }
 
-std::unique_ptr<AudioPlugin> LoadMicPlugin(const MicPlugin& plugin) {
+// Mono in the microphone chain's blocks, stereo in the bridge's.
+std::unique_ptr<AudioPlugin> LoadPlugin(EqChannel channel, const ChainPlugin& plugin) {
+    const UINT32 rate = LoadedOf(channel).rate;
+    const bool mic = channel == EqChannel::Mic;
+    const int block = static_cast<int>(mic ? MicProcessor::kBlock : AudioBridge::PluginBlock(rate));
     std::unique_ptr<AudioPlugin> loaded;
     g_app.pluginThread.Run([&] {
-        loaded = LoadAudioPlugin(plugin.path, MicProcessor::kRate, static_cast<int>(MicProcessor::kBlock));
+        loaded = LoadAudioPlugin(plugin.path, rate, block, mic ? 1 : 2);
         if (loaded) {
             loaded->LoadState(ReadFileBytes(PluginStatePath(plugin)));
         }
     });
+    if (!loaded) {
+        Log("plugin not loaded: %s", Utf8(plugin.path).c_str());
+    }
     return loaded;
 }
 
-void LoadMicPlugins() {
-    if (g_app.micPluginsLoaded || !g_app.pluginThread.Start()) {
-        return;
-    }
-    g_app.micPluginsLoaded = true;
-    for (const MicPlugin& plugin : g_app.settings.mic.plugins) {
-        g_app.micPlugins.push_back(LoadMicPlugin(plugin));
-    }
-    SetTimer(g_app.window, kTimerSavePlugins, kSavePluginsMs, nullptr);
-}
-
-void SaveMicPluginStates() {
-    for (size_t index = 0; index < g_app.micPlugins.size() && index < g_app.settings.mic.plugins.size(); ++index) {
-        if (AudioPlugin* plugin = g_app.micPlugins[index].get()) {
-            const std::wstring path = PluginStatePath(g_app.settings.mic.plugins[index]);
+void SavePluginStates(EqChannel channel) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    const std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
+    for (size_t index = 0; index < loaded.plugins.size() && index < plugins.size(); ++index) {
+        if (AudioPlugin* plugin = loaded.plugins[index].get()) {
+            const std::wstring path = PluginStatePath(plugins[index]);
             g_app.pluginThread.Run([&] { WriteFileBytes(path, plugin->SaveState()); });
         }
     }
 }
 
-// Plugins are only loaded while the chain is on.
-void UnloadMicPlugins() {
-    if (!g_app.micPluginsLoaded) {
+void SaveAllPluginStates() {
+    for (const EqChannel channel : kPluginChains) {
+        SavePluginStates(channel);
+    }
+}
+
+void UnloadPlugins(EqChannel channel) {
+    LoadedPlugins& loaded = LoadedOf(channel);
+    if (!loaded.loaded) {
         return;
     }
-    SaveMicPluginStates();
-    g_app.mic.SetPlugins({});
-    g_app.pluginThread.Run([] { g_app.micPlugins.clear(); });
-    g_app.micPluginsLoaded = false;
-    KillTimer(g_app.window, kTimerSavePlugins);
+    SavePluginStates(channel);
+    // The audio thread lets go of them before they are destroyed on their own thread.
+    if (channel == EqChannel::Mic) {
+        g_app.mic.SetPlugins({});
+    } else {
+        g_app.router.SetPlugins(channel, {}, loaded.rate);
+    }
+    g_app.pluginThread.Run([&loaded] { loaded.plugins.clear(); });
+    loaded.loaded = false;
+    loaded.rate = 0;
+    if (std::none_of(g_app.plugins.begin(), g_app.plugins.end(), [](const LoadedPlugins& chain) { return chain.loaded; })) {
+        KillTimer(g_app.window, kTimerSavePlugins);
+    }
+}
+
+// Loads a chain's plugins for rate, or again with their saved settings when they were loaded for another rate.
+void LoadPlugins(EqChannel channel, UINT32 rate) {
+    LoadedPlugins& loaded = LoadedOf(channel);
+    if (loaded.loaded && loaded.rate == rate) {
+        return;
+    }
+    UnloadPlugins(channel);
+    if (!g_app.pluginThread.Start()) {
+        return;
+    }
+    loaded.loaded = true;
+    loaded.rate = rate;
+    for (const ChainPlugin& plugin : PluginsOf(g_app.settings, channel)) {
+        loaded.plugins.push_back(LoadPlugin(channel, plugin));
+    }
+    SetTimer(g_app.window, kTimerSavePlugins, kSavePluginsMs, nullptr);
+}
+
+// Plugins of the virtual device channels run with the equalizer. A chain loads at its bridge's rate once the
+// bridge runs and stays loaded while bridges restart; a channel without plugins loads nothing.
+void SyncOutputPlugins() {
+    const bool active = g_app.settings.routing.enabled && g_app.settings.equalizer;
+    for (const EqChannel channel : kOutputChains) {
+        const UINT32 rate = g_app.router.Rate(channel);
+        if (!active || PluginsOf(g_app.settings, channel).empty()) {
+            UnloadPlugins(channel);
+        } else if (rate > 0) {
+            LoadPlugins(channel, rate);
+            PushPlugins(channel);
+        }
+        PushPluginViews(channel);
+    }
 }
 
 void StartMic() {
@@ -1343,16 +1433,16 @@ void StartMic() {
     KillTimer(g_app.window, kTimerMicRetry);
     const MicSettings& settings = g_app.settings.mic;
     if (!settings.enabled) {
-        UnloadMicPlugins();
+        UnloadPlugins(EqChannel::Mic);
         PushMic();
         return;
     }
-    LoadMicPlugins();
+    LoadPlugins(EqChannel::Mic, MicProcessor::kRate);
     g_app.micInputId = settings.input.empty() ? DefaultCaptureEndpoint(eCommunications) : settings.input;
     const std::vector<AudioEndpoint> renders = ListRenderEndpoints();
     const std::wstring output = MicOutputId(renders);
     g_app.mic.SetSettings(MicDsp());
-    PushMicPlugins();
+    PushPlugins(EqChannel::Mic);
     // Listening goes where ChatMix plays: the routing output, or the Windows default device.
     const std::wstring monitor = settings.monitor ? CurrentOutput() : L"";
     g_app.micMonitorId = monitor;
@@ -1390,8 +1480,34 @@ void UpdateMixerEndpoints() {
                 extra.push_back(*id);
             }
         }
+        g_app.mixer.SetExtraEndpoints(std::move(extra));
+        return;
     }
-    g_app.mixer.SetExtraEndpoints(std::move(extra));
+    // Devices the groups play on directly: their apps are listed and get the balance there.
+    for (const std::wstring* id : {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput}) {
+        if (!id->empty() && std::find(extra.begin(), extra.end(), *id) == extra.end()) {
+            extra.push_back(*id);
+        }
+    }
+    g_app.mixer.SetExtraEndpoints(std::move(extra), false);
+}
+
+// Without virtual devices, a group whose device is chosen plays there through the per-app device of
+// Windows; the others follow the Windows default. A chosen device that is not connected counts as none.
+bool DirectGroupOutputs() {
+    const RoutingSettings& routing = g_app.settings.routing;
+    return !routing.enabled &&
+           (!routing.gameOutput.empty() || !routing.chatOutput.empty() || !routing.mediaOutput.empty());
+}
+
+std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& connected) {
+    const RoutingSettings& routing = g_app.settings.routing;
+    const std::wstring& id = group == AppGroup::Chat    ? routing.chatOutput
+                             : group == AppGroup::Media ? routing.mediaOutput
+                                                        : routing.gameOutput;
+    const bool present = std::any_of(connected.begin(), connected.end(),
+                                     [&](const AudioEndpoint& endpoint) { return endpoint.id == id; });
+    return present ? id : std::wstring();
 }
 
 void RememberRouted(const std::wstring& exe, bool routed) {
@@ -1410,10 +1526,12 @@ void RememberRouted(const std::wstring& exe, bool routed) {
 // explicitly otherwise.
 void RouteApps() {
     const RoutingSettings& routing = g_app.settings.routing;
-    if (!routing.enabled || !routing.autoRoute || !g_app.appRouting.Available() || routing.game.empty() ||
-        routing.chat.empty()) {
+    const bool direct = DirectGroupOutputs();
+    if (!g_app.appRouting.Available() ||
+        (!direct && (!routing.enabled || !routing.autoRoute || routing.game.empty() || routing.chat.empty()))) {
         return;
     }
+    const std::vector<AudioEndpoint> connected = direct ? ListRenderEndpoints() : std::vector<AudioEndpoint>{};
     bool changed = false;
     for (const auto& app : g_app.mixer.ActiveApps()) {
         if (app.pid == 0) {
@@ -1421,8 +1539,9 @@ void RouteApps() {
         }
         const AppGroup group = g_app.settings.EffectiveGroupOf(app.exe);
         const bool chat = group == AppGroup::Chat;
-        const bool media = group == AppGroup::Media && MediaRouted();
-        const std::wstring target = chat    ? routing.chat
+        const bool media = group == AppGroup::Media && (direct || MediaRouted());
+        const std::wstring target = direct  ? DirectTarget(group, connected)
+                                    : chat  ? routing.chat
                                     : media ? routing.media
                                             : (routing.manageDevices ? L"" : routing.game);
         const auto now = g_app.routedNow.find(app.exe);
@@ -1471,7 +1590,7 @@ void UnrouteApps() {
 
 void SyncAppRouting() {
     const RoutingSettings& routing = g_app.settings.routing;
-    if (routing.enabled && routing.autoRoute) {
+    if ((routing.enabled && routing.autoRoute) || DirectGroupOutputs()) {
         RouteApps();
     } else if (!routing.routedApps.empty()) {
         UnrouteApps();
@@ -2437,7 +2556,9 @@ void Cleanup() {
     g_app.osd.reset();
     g_app.router.Stop();
     ReleaseRoutingDevices(true);
-    UnloadMicPlugins();
+    for (const EqChannel channel : kPluginChains) {
+        UnloadPlugins(channel);
+    }
     g_app.mic.Stop();
     g_app.micLevels.Stop();
     g_app.pluginThread.Stop();
@@ -2616,7 +2737,9 @@ void Host::OnRoutingEnabled(bool enabled) {
         ReleaseRoutingDevices(true);
         routing.enabled = false;
         Save();
+        SyncOutputPlugins();
         UpdateMixerEndpoints();
+        SyncAppRouting();
         ApplyLevels();
         RefreshApps();
         UpdateRouting();
@@ -2657,6 +2780,10 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
     if (routing.enabled) {
         StartRouting();
     } else {
+        UpdateMixerEndpoints();
+        SyncAppRouting();
+        ApplyLevels();
+        RefreshApps();
         UpdateRouting();
     }
     PushSettings();
@@ -2739,74 +2866,79 @@ std::vector<AudioEndpoint> Host::RecordingDevices() {
     return endpoints;
 }
 
-void Host::OnMicPluginAdd(const std::wstring& path) {
-    MicPlugin plugin{path, NewPluginId(), true};
-    g_app.settings.mic.plugins.push_back(plugin);
-    if (g_app.micPluginsLoaded) {
-        g_app.micPlugins.push_back(LoadMicPlugin(plugin));
-        PushMicPlugins();
-        if (!g_app.micPlugins.back()) {
-            Log("plugin not loaded: %s", Utf8(path).c_str());
-        }
+void Host::OnPluginAdd(EqChannel channel, const std::wstring& path) {
+    const ChainPlugin plugin{path, NewPluginId(), true};
+    PluginsOf(g_app.settings, channel).push_back(plugin);
+    LoadedPlugins& loaded = LoadedOf(channel);
+    if (loaded.loaded) {
+        loaded.plugins.push_back(LoadPlugin(channel, plugin));
+        PushPlugins(channel);
+    } else if (channel != EqChannel::Mic) {
+        SyncOutputPlugins();
     }
     Save();
     PushSettings();
-    PushMic();
+    PushPluginViews(channel);
 }
 
-void Host::OnMicPluginRemove(size_t index) {
-    std::vector<MicPlugin>& plugins = g_app.settings.mic.plugins;
+void Host::OnPluginRemove(EqChannel channel, size_t index) {
+    std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
     if (index >= plugins.size()) {
         return;
     }
     DeleteFileW(PluginStatePath(plugins[index]).c_str());
     plugins.erase(plugins.begin() + index);
-    if (index < g_app.micPlugins.size()) {
-        std::unique_ptr<AudioPlugin> removed = std::move(g_app.micPlugins[index]);
-        g_app.micPlugins.erase(g_app.micPlugins.begin() + index);
+    LoadedPlugins& loaded = LoadedOf(channel);
+    if (index < loaded.plugins.size()) {
+        std::unique_ptr<AudioPlugin> removed = std::move(loaded.plugins[index]);
+        loaded.plugins.erase(loaded.plugins.begin() + index);
         // The audio thread lets go of it before it is destroyed on its own thread.
-        PushMicPlugins();
+        PushPlugins(channel);
         g_app.pluginThread.Run([&] { removed.reset(); });
     }
     Save();
     PushSettings();
-    PushMic();
+    PushPluginViews(channel);
 }
 
-void Host::OnMicPluginMove(size_t from, size_t to) {
-    std::vector<MicPlugin>& plugins = g_app.settings.mic.plugins;
+void Host::OnPluginMove(EqChannel channel, size_t from, size_t to) {
+    std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
     if (from >= plugins.size() || to >= plugins.size() || from == to) {
         return;
     }
     MoveItem(plugins, from, to);
-    if (from < g_app.micPlugins.size() && to < g_app.micPlugins.size()) {
-        MoveItem(g_app.micPlugins, from, to);
-        PushMicPlugins();
+    LoadedPlugins& loaded = LoadedOf(channel);
+    if (from < loaded.plugins.size() && to < loaded.plugins.size()) {
+        MoveItem(loaded.plugins, from, to);
+        PushPlugins(channel);
     }
     Save();
     PushSettings();
-    PushMic();
+    PushPluginViews(channel);
 }
 
-void Host::OnMicPluginEditor(size_t index) {
-    if (index < g_app.micPlugins.size() && g_app.micPlugins[index]) {
-        AudioPlugin* plugin = g_app.micPlugins[index].get();
+void Host::OnPluginEditor(EqChannel channel, size_t index) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    if (index < loaded.plugins.size() && loaded.plugins[index]) {
+        AudioPlugin* plugin = loaded.plugins[index].get();
         g_app.pluginThread.Run([plugin] { plugin->OpenEditor(); });
     }
 }
 
-void Host::OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) {
-    if (index >= g_app.micPlugins.size() || !g_app.micPlugins[index] || index >= g_app.settings.mic.plugins.size()) {
+void Host::OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) {
+    const LoadedPlugins& loaded = LoadedOf(channel);
+    const std::vector<ChainPlugin>& plugins = PluginsOf(g_app.settings, channel);
+    if (index >= loaded.plugins.size() || !loaded.plugins[index] || index >= plugins.size()) {
         return;
     }
-    AudioPlugin* plugin = g_app.micPlugins[index].get();
-    const std::wstring path = PluginStatePath(g_app.settings.mic.plugins[index]);
+    AudioPlugin* plugin = loaded.plugins[index].get();
+    const std::wstring path = PluginStatePath(plugins[index]);
     // Kept at once, like the settings: the plugin has no window whose closing would save it.
     g_app.pluginThread.Run([plugin, &settings, &path] {
         plugin->SetDeepFilter(settings);
         WriteFileBytes(path, plugin->SaveState());
     });
-    PushMic();
+    PushPluginViews(channel);
 }
 
 std::vector<AudioEndpoint> Host::PlaybackDevices() {
@@ -2840,6 +2972,9 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
         before.equalizer != after.equalizer) {
         PushEqualizers();
     }
+    if (before.equalizer != after.equalizer) {
+        SyncOutputPlugins();
+    }
     if (before.outputs.switchOnLoss != after.outputs.switchOnLoss ||
         before.outputs.returnToPreferred != after.outputs.returnToPreferred) {
         // The order as shown becomes the order kept, so it holds while devices come and go.
@@ -2869,9 +3004,13 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
                !(before.micEq == after.micEq) || before.equalizer != after.equalizer) {
         g_app.mic.SetSettings(MicDsp());
     }
-    if (before.mic.plugins != after.mic.plugins) {
-        PushMicPlugins();
-        PushMic();
+    for (const EqChannel channel : kPluginChains) {
+        if (PluginsOf(before, channel) != PluginsOf(after, channel)) {
+            if (LoadedOf(channel).loaded) {
+                PushPlugins(channel);
+            }
+            PushPluginViews(channel);
+        }
     }
     if (!(before.ducking == after.ducking)) {
         UpdateDucking();
@@ -2948,6 +3087,13 @@ std::vector<AudioEndpoint> PreferredOutputs() {
     return endpoints;
 }
 
+// A wireless SteelSeries headset that is switched off counts as disconnected: its base station or dongle
+// stays in Windows as a playback device.
+bool HeadsetSwitchedOff(const AudioEndpoint& endpoint) {
+    return g_app.device.IsOpen() && g_app.headset.headsetOff &&
+           endpoint.steelSeriesProductId == g_app.device.Model()->productId;
+}
+
 // The connected devices the order may switch to: PreferredOutputs() without the excluded ones.
 std::vector<AudioEndpoint> AllowedOutputs() {
     std::vector<AudioEndpoint> endpoints = PreferredOutputs();
@@ -2995,7 +3141,8 @@ void SwitchOutput(const AudioEndpoint& target, bool popup) {
 
 // The next device in the order of preference after the current one; excluded devices are skipped.
 void NextOutputDevice() {
-    const std::vector<AudioEndpoint> outputs = AllowedOutputs();
+    std::vector<AudioEndpoint> outputs = AllowedOutputs();
+    std::erase_if(outputs, HeadsetSwitchedOff);
     const std::wstring current = CurrentOutput();
     const auto found = std::find_if(outputs.begin(), outputs.end(),
                                     [&](const AudioEndpoint& endpoint) { return endpoint.id == current; });
@@ -3045,7 +3192,8 @@ void NextMicrophone() {
 // most preferred device again when it reconnects. A device the user picks by hand stays otherwise.
 void FollowOutputPriority() {
     const OutputSettings& settings = g_app.settings.outputs;
-    const std::vector<AudioEndpoint> outputs = PreferredOutputs();
+    std::vector<AudioEndpoint> outputs = PreferredOutputs();
+    std::erase_if(outputs, HeadsetSwitchedOff);
     std::vector<std::wstring> connected;
     for (const auto& endpoint : outputs) {
         connected.push_back(endpoint.id);
@@ -3276,7 +3424,7 @@ bool Host::OnSettingsExport(const std::wstring& path) {
     }
     SaveSettings(g_app.iniPath, own);
     SaveHeadset();
-    SaveMicPluginStates();
+    SaveAllPluginStates();
     const bool ok = ExportSettings(ConfigDirectory(), path);
     Log("settings %s to %s", ok ? "exported" : "not exported", Utf8(path).c_str());
     return ok;
@@ -3407,6 +3555,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
     case WM_APP_HEADSET:
         if (g_app.features) {
+            const bool wasOff = g_app.headset.headsetOff;
             for (const auto& update : g_app.device.TakeHeadsetUpdates()) {
                 if (update.kind == HeadsetUpdate::Kind::ChatMix) {
                     VerifyDeviceLevels(update.value, update.chat);
@@ -3424,6 +3573,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             UpdateStatus();
             ScheduleHeadsetSave();
             CheckBattery();
+            if (g_app.headset.headsetOff != wasOff) {
+                Log("headset switched %s", g_app.headset.headsetOff ? "off" : "on");
+                FollowOutputPriority();
+            }
         }
         return 0;
 
@@ -3531,6 +3684,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             g_app.mixer.Rebind();
             ApplyLevels();
             RefreshApps();
+            // A group's device that came or went: its apps move there or back to the default.
+            if (DirectGroupOutputs()) {
+                SyncAppRouting();
+            }
             if (g_app.settings.routing.enabled && !g_app.router.IsRunning()) {
                 StartRouting();
             }
@@ -3563,7 +3720,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             }
         } else if (wParam == kTimerSavePlugins) {
             SetTimer(window, kTimerSavePlugins, kSavePluginsMs, nullptr);
-            SaveMicPluginStates();
+            SaveAllPluginStates();
         } else if (wParam == kTimerRoutingRetry) {
             if (g_app.settings.routing.enabled && !g_app.router.IsRunning()) {
                 StartRouting();
@@ -3780,6 +3937,9 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     UpdateRouting();
     FollowOutputPriority();
     StartMic();
+    if (!g_app.settings.routing.enabled) {
+        UpdateMixerEndpoints();
+    }
     SyncAppRouting();
     CheckProfiles(processes);
     PushUpdate();

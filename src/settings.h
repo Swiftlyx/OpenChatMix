@@ -95,13 +95,14 @@ struct DuckingSettings {
     bool operator==(const DuckingSettings&) const = default;
 };
 
-// A VST plugin in the microphone chain. Its settings live in PluginStates\<id>.bin in the config directory.
-struct MicPlugin {
+// A plugin in the microphone chain or on a virtual device channel. Its settings live in PluginStates\<id>.bin in
+// the config directory.
+struct ChainPlugin {
     std::wstring path;
     std::wstring id;
     bool enabled = true;
 
-    bool operator==(const MicPlugin&) const = default;
+    bool operator==(const ChainPlugin&) const = default;
 };
 
 // The microphone through noise suppression, equalizer, compressor and plugins into a virtual cable.
@@ -114,7 +115,7 @@ struct MicSettings {
     MicCompressor compressor = MicCompressor::Off;
     MicStageOrder order = kDefaultMicOrder;
     bool monitor = false;  // Also plays the result on the output, to listen to it.
-    std::vector<MicPlugin> plugins;
+    std::vector<ChainPlugin> plugins;
 
     bool operator==(const MicSettings&) const = default;
 };
@@ -219,6 +220,10 @@ struct Settings {
     EqChannelSettings chatEq;
     EqChannelSettings micEq;
     EqChannelSettings mediaEq;
+    // Plugins of the virtual device channels; they run with the equalizer, before the channel's volume.
+    std::vector<ChainPlugin> gamePlugins;
+    std::vector<ChainPlugin> chatPlugins;
+    std::vector<ChainPlugin> mediaPlugins;
     MicSettings mic;
     DuckingSettings ducking;
     BatteryAlertSettings battery;
@@ -241,6 +246,9 @@ struct Settings {
 
 EqChannelSettings& EqStateOf(Settings& settings, EqChannel channel);
 const EqChannelSettings& EqStateOf(const Settings& settings, EqChannel channel);
+// The plugins of a channel; Mic gives the microphone chain's.
+std::vector<ChainPlugin>& PluginsOf(Settings& settings, EqChannel channel);
+const std::vector<ChainPlugin>& PluginsOf(const Settings& settings, EqChannel channel);
 
 std::wstring ExePath();
 std::wstring ExeDirectory();

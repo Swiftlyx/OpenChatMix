@@ -474,6 +474,12 @@ enum class Text {
     DeepFilterUnlimited,
     DeepFilterPostFilter,
     DeepFilterPostFilterHint,
+    WindowsDefaultOutput,
+    GroupOutputsHint,
+    ChannelPluginsHint,
+    ChatPluginsHint,
+    PluginsLatency,
+    DeepFilterChannelHint,
     Count,
 };
 

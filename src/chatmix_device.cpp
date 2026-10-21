@@ -21,6 +21,7 @@ constexpr uint8_t kNovaProVolume = 0x25;         // Event: knob turned in volume
 constexpr uint8_t kNovaProLinkEvent = 0xB5;      // The 2.4 GHz link to the headset changed.
 constexpr uint8_t kNovaProBatteryEvent = 0xB7;   // Headset or spare battery level changed.
 constexpr uint8_t kNovaStatusRequest = 0xB0;
+constexpr uint8_t kNovaStatusLinkEvent = 0xB9;   // Dongles: the 2.4 GHz link to the headset changed.
 
 constexpr DWORD kCommandGapMs = 10;
 constexpr DWORD kStatusPollMs = 100;
@@ -357,6 +358,16 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
     }
 
     QueueHeadsetUpdates(ParseHeadsetReport(*model_, data, size));
+
+    // The headset was switched on or off: its status is asked for at once instead of at the next battery poll,
+    // so the output can follow within a moment.
+    const uint8_t batteryQuery = FeaturesFor(model_->family).batteryQuery;
+    const bool linkChanged = PushesEvents(*model_)
+                                 ? size >= 2 && data[0] == kNovaProEventReportId && data[1] == kNovaProLinkEvent
+                                 : size >= 1 && data[0] == kNovaStatusLinkEvent;
+    if (batteryQuery && linkChanged) {
+        Send({batteryQuery});
+    }
 
     bool pushed = false;
     if (const auto levels = ParseChatMixReport(*model_, data, size, pushed)) {

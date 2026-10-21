@@ -176,11 +176,12 @@ void SessionMixer::SetTarget(std::optional<uint16_t> productId) {
     Rebind();
 }
 
-void SessionMixer::SetExtraEndpoints(std::vector<std::wstring> ids) {
-    if (ids == extraIds_) {
+void SessionMixer::SetExtraEndpoints(std::vector<std::wstring> ids, bool heard) {
+    if (ids == extraIds_ && heard == extraHeard_) {
         return;
     }
     extraIds_ = std::move(ids);
+    extraHeard_ = heard;
     Rebind();
 }
 
@@ -232,6 +233,9 @@ std::vector<SessionMixer::Endpoint> SessionMixer::ResolveEndpoints() {
             DWORD state = 0;
             if (SUCCEEDED(device->GetState(&state)) && state == DEVICE_STATE_ACTIVE) {
                 add(device.Get(), EndpointFriendlyName(device.Get()));
+                if (!result.empty() && result.back().id == id) {
+                    result.back().heard = extraHeard_;
+                }
             }
         }
     }
@@ -400,7 +404,7 @@ float SessionMixer::PeakLevel() const {
     float peak = 0.0f;
     for (const auto& endpoint : endpoints_) {
         float value = 0.0f;
-        if (endpoint.meter && SUCCEEDED(endpoint.meter->GetPeakValue(&value))) {
+        if (endpoint.heard && endpoint.meter && SUCCEEDED(endpoint.meter->GetPeakValue(&value))) {
             peak = std::max(peak, value);
         }
     }

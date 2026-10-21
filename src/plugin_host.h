@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -19,7 +20,8 @@ struct DeepFilterSettings {
     bool operator==(const DeepFilterSettings&) const = default;
 };
 
-// An effect plugin in the microphone chain: VST2 (.dll) or VST3 (.vst3), processed as mono.
+// An effect plugin: VST2 (.dll), VST3 (.vst3) or OpenChatMix's DeepFilterNet DLL. The microphone chain runs
+// plugins as mono, the virtual device channels as stereo.
 // Everything but Process runs on the plugin thread (PluginThread); Process runs on the audio thread.
 class AudioPlugin {
 public:
@@ -34,19 +36,49 @@ public:
     virtual std::vector<uint8_t> SaveState() = 0;
     virtual void LoadState(const std::vector<uint8_t>& state) = 0;
 
-    // Processes frames (at most the block size it was loaded with) in place.
-    virtual void Process(float* mono, size_t frames) = 0;
+    // Processes frames (at most the block size it was loaded with) of interleaved samples in place. The plugin
+    // takes the first two channels; further channels pass unchanged.
+    virtual void Process(float* samples, size_t frames, int channels) = 0;
 
     // Samples the plugin delays the sound by, beyond the block it is handed.
     virtual int LatencySamples() const { return 0; }
+    // Samples the output keeps sounding after the input fell silent (reverb), beyond the latency.
+    virtual int TailSamples() const { return 0; }
     // The DeepFilterNet plugin's settings; nothing for other plugins.
     virtual std::optional<DeepFilterSettings> DeepFilter() const { return std::nullopt; }
     virtual void SetDeepFilter(const DeepFilterSettings& settings) { (void)settings; }
 };
 
-// Loads a plugin and prepares it for sampleRate and blockSize. A .vst3 path may be the bundle folder
-// or the binary. Returns null when the file is no usable effect plugin. Call on the plugin thread.
-std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize);
+// Loads a plugin and prepares it for sampleRate, blocks of up to blockSize frames and the layout the caller
+// processes: 1 for mono, 2 for stereo. A .vst3 path may be the bundle folder or the binary. Returns null when the
+// file is no usable effect plugin. Call on the plugin thread.
+std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize,
+                                             int channels);
+
+using PluginList = std::vector<AudioPlugin*>;
+
+// Hands the plugins to run from their owner to an audio thread. Set() returns once the audio thread no longer
+// uses the previous list, so plugins left out of the new one may then be destroyed.
+class PluginHandoff {
+public:
+    // The audio thread is about to start and holds no list yet.
+    void Attach() { seen_ = generation_.load(); }
+    // The audio thread ended; Set() no longer waits for it.
+    void Detach() { seen_ = UINT64_MAX; }
+    void Set(PluginList plugins);
+
+    // Audio thread: the list for one pass, then Release() with the generation once the pass no longer uses it.
+    std::shared_ptr<const PluginList> Acquire(uint64_t& generation) const {
+        generation = generation_.load();
+        return list_.load();
+    }
+    void Release(uint64_t generation) { seen_ = generation; }
+
+private:
+    std::atomic<std::shared_ptr<const PluginList>> list_{std::make_shared<const PluginList>()};
+    std::atomic<uint64_t> generation_{0};
+    std::atomic<uint64_t> seen_{UINT64_MAX};  // Generation the audio thread finished a pass with.
+};
 
 // Whether a plugin module was loaded in this process. Modules stay loaded until the process ends: some plugins
 // (Supertone Clear) crash in their own unload code.

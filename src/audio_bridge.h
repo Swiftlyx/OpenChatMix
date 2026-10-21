@@ -11,6 +11,7 @@
 
 #include "balance.h"
 #include "parametric_eq.h"
+#include "plugin_host.h"
 
 enum class BridgeError {
     None,
@@ -37,6 +38,14 @@ public:
     void SetVolume(float volume) { volume_ = volume; }
     // Equalizer for the stream; null bypasses it. Takes effect within one engine period.
     void SetEqualizer(std::shared_ptr<const ParametricEq> eq) { eq_.store(std::move(eq)); }
+    // Plugins that run on the stream before its volume, in order, prepared for rate and blocks of
+    // PluginBlock(rate); the caller keeps them alive. A bridge that plays at another rate leaves them out.
+    // Returns once the audio thread no longer uses the previous list.
+    void SetPlugins(PluginList plugins, UINT32 rate);
+    // The rate the bridge plays at while it runs; 0 otherwise.
+    UINT32 Rate() const { return rate_; }
+    // Most frames plugins get at once: 20 ms rounded up to a power of two.
+    static UINT32 PluginBlock(UINT32 rate);
     // Largest output sample since the last call, after the volume.
     float TakePeak() { return peak_.exchange(0.0f); }
     // The same for the level meters in the panel, kept apart so they don't take ducking's peaks.
@@ -57,6 +66,9 @@ private:
     HANDLE readyEvent_ = nullptr;
     std::atomic<float> volume_{1.0f};
     std::atomic<std::shared_ptr<const ParametricEq>> eq_;
+    PluginHandoff plugins_;
+    std::atomic<UINT32> pluginRate_{0};
+    std::atomic<UINT32> rate_{0};
     std::atomic<float> peak_{0.0f};
     std::atomic<float> meterPeak_{0.0f};
     std::atomic<bool> running_{false};
@@ -95,6 +107,10 @@ public:
     void UpdateDeviceVolumes();
     void SetEqualizers(std::shared_ptr<const ParametricEq> game, std::shared_ptr<const ParametricEq> chat,
                        std::shared_ptr<const ParametricEq> media);
+    // Game, Chat or Media; see AudioBridge::SetPlugins.
+    void SetPlugins(EqChannel channel, PluginList plugins, UINT32 rate);
+    // The rate the channel's bridge plays at; 0 while it does not run.
+    UINT32 Rate(EqChannel channel) const;
     // Largest Chat output sample since the last call.
     float TakeChatPeak() { return chat_.TakePeak(); }
     // Largest Game and Chat output samples since the last call, for the level meters.
@@ -111,6 +127,7 @@ private:
 
     static void WatchVolume(const std::wstring& id, HWND notifyWindow, DeviceVolume& volume);
     void ApplyVolumes();
+    AudioBridge* BridgeOf(EqChannel channel);
 
     AudioBridge game_;
     AudioBridge chat_;

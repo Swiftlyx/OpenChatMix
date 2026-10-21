@@ -68,7 +68,7 @@ struct OutputView {
     bool excluded = false;  // Never switched to automatically or by the hotkey.
 };
 
-struct MicPluginView {
+struct PluginView {
     std::wstring name;
     std::wstring path;
     bool enabled = true;
@@ -77,13 +77,18 @@ struct MicPluginView {
     std::optional<DeepFilterSettings> deepFilter;  // Set for the DeepFilterNet plugin once it loaded.
 };
 
+// The plugins of the microphone chain or of a virtual device channel, in the order of their settings.
+struct PluginChainView {
+    std::vector<PluginView> plugins;
+    int latencyMs = 0;  // What the enabled plugins delay the sound by.
+};
+
 // The microphone chain as shown in the panel.
 struct MicView {
     std::wstring inputName;   // Empty while the Windows default is used.
     std::wstring outputName;  // The cable in use, also when chosen automatically.
     std::wstring status;
     bool error = false;
-    std::vector<MicPluginView> plugins;
 };
 
 // Peak levels the panel shows, as linear samples (1 is 0 dBFS).
@@ -151,12 +156,13 @@ public:
     virtual void OnSettingsEdit(const std::function<void(Settings&)>& edit) = 0;
     virtual std::vector<AudioEndpoint> PlaybackDevices() = 0;
     virtual std::vector<AudioEndpoint> RecordingDevices() = 0;
-    virtual void OnMicPluginAdd(const std::wstring& path) = 0;
-    virtual void OnMicPluginRemove(size_t index) = 0;
+    // Plugins of the microphone chain (EqChannel::Mic) or of a virtual device channel.
+    virtual void OnPluginAdd(EqChannel channel, const std::wstring& path) = 0;
+    virtual void OnPluginRemove(EqChannel channel, size_t index) = 0;
     // Moves the plugin at from to the place to, shifting the ones between.
-    virtual void OnMicPluginMove(size_t from, size_t to) = 0;
-    virtual void OnMicPluginEditor(size_t index) = 0;
-    virtual void OnMicPluginDeepFilter(size_t index, const DeepFilterSettings& settings) = 0;
+    virtual void OnPluginMove(EqChannel channel, size_t from, size_t to) = 0;
+    virtual void OnPluginEditor(EqChannel channel, size_t index) = 0;
+    virtual void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) = 0;
     // Uses the device now.
     virtual void OnOutputChoose(const std::wstring& id) = 0;
     // Moves a device from one place to another among the listed ones, in the order of preference.
@@ -248,6 +254,7 @@ public:
     void SetIdleScreen(const IdleScreenView& idle);
     void SetAddOns(const AddOnsView& addOns);
     void SetMic(const MicView& mic);
+    void SetPlugins(EqChannel channel, const PluginChainView& view);
     void SetOutputs(std::vector<OutputView> outputs);
     void SetUpdate(const UpdateView& update);
     // Redraws after the language or theme changed.
@@ -511,7 +518,8 @@ private:
 
     // Microphone chain (panel_mic.cpp).
     void DrawMicrophone();
-    float DrawMicPlugins(float top);
+    // Plugin list of a chain (panel_plugins.cpp).
+    float DrawPlugins(float top, EqChannel channel);
     void DrawOutputs();
     bool MicSlot() const { return pickSlot_ == RoutingSlot::MicInput || pickSlot_ == RoutingSlot::MicOutput; }
     // The picker chooses for one channel's page rather than for the Audio page.
@@ -577,6 +585,8 @@ private:
     IdleScreenView idle_;
     AddOnsView addOns_;
     MicView mic_;
+    std::array<PluginChainView, 4> pluginChains_;  // By EqChannel.
+    EqChannel pluginDialog_ = EqChannel::Mic;      // The chain the plugin file dialog adds to.
     std::vector<OutputView> outputs_;
     UpdateView update_;
     std::vector<AudioEndpoint> endpoints_;

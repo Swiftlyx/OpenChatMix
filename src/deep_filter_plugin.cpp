@@ -1,11 +1,14 @@
-// OpenChatMix's build of DeepFilterNet (tools/deepfilter) as a microphone chain plugin: a DLL with a small C ABI
-// around libDF and its embedded DeepFilterNet3 model, which users download and add like a VST plugin.
+// OpenChatMix's build of DeepFilterNet (tools/deepfilter) as a plugin: a DLL with a small C ABI around libDF and
+// its embedded DeepFilterNet3 model, which users download and add like a VST plugin. The microphone chain hands it
+// whole frames; on a virtual device channel (Chat: the voices of others) it filters the mix of both sides in
+// frames of its own, one frame later.
 
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "log.h"
 #include "plugin_editor.h"
@@ -41,7 +44,7 @@ public:
         // The module stays loaded; see PluginModulesLoaded().
     }
 
-    bool Load(HMODULE module, double sampleRate, int blockSize) {
+    bool Load(HMODULE module, double sampleRate, int blockSize, int channels) {
         const auto description = Export<DescriptionFn>(module, "ocm_df_description");
         const auto create = Export<CreateFn>(module, "ocm_df_create");
         const auto rate = Export<SampleRateFn>(module, "ocm_df_sample_rate");
@@ -60,12 +63,17 @@ public:
             return false;
         }
         frameLength_ = frame(state_);
-        if (rate(state_) != static_cast<uint32_t>(sampleRate) || frameLength_ != static_cast<size_t>(blockSize)) {
-            Log("deepfilter: works at %u Hz in %zu samples, the chain at %.0f Hz in %d", rate(state_), frameLength_,
-                sampleRate, blockSize);
+        if (rate(state_) != static_cast<uint32_t>(sampleRate) || frameLength_ == 0) {
+            Log("deepfilter: works at %u Hz, the chain at %.0f Hz", rate(state_), sampleRate);
             return false;
         }
-        Log("deepfilter: loaded %s", description());
+        // Anything but mono in whole frames goes through the frame buffers.
+        buffered_ = channels != 1 || frameLength_ != static_cast<size_t>(blockSize);
+        if (buffered_) {
+            input_.assign(frameLength_, 0.0f);
+            output_.assign(frameLength_, 0.0f);
+        }
+        Log("deepfilter: loaded %s%s", description(), buffered_ ? ", buffered" : "");
         return true;
     }
 
@@ -93,28 +101,41 @@ public:
         SetDeepFilter(settings);
     }
 
-    void Process(float* mono, size_t frames) override {
-        // Anything but whole frames, or a model that failed once, passes through unchanged.
-        if (frames != frameLength_ || failed_) {
+    void Process(float* samples, size_t frames, int channels) override {
+        // A model that failed once lets the sound pass unchanged.
+        if (failed_) {
             return;
         }
-        const int reduction = maxReduction_.load();
-        if (reduction != appliedReduction_) {
-            setLimit_(state_, static_cast<float>(reduction));
-            appliedReduction_ = reduction;
+        if (!buffered_) {
+            // Anything but a whole frame passes through unchanged.
+            if (frames == frameLength_ && channels == 1) {
+                ProcessFrame(samples, samples);
+            }
+            return;
         }
-        const bool postFilter = postFilter_.load();
-        if (postFilter != appliedPostFilter_) {
-            setPostFilter_(state_, postFilter ? kPostFilterBeta : 0.0f);
-            appliedPostFilter_ = postFilter;
-        }
-        if (process_(state_, mono, mono) != 0) {
-            failed_ = true;
-            Log("deepfilter: processing failed, the microphone passes through unprocessed");
+        // Each sample goes into the input frame and leaves from the frame filtered before it.
+        for (size_t frame = 0; frame < frames; ++frame) {
+            float* sample = samples + frame * channels;
+            const float in = channels == 1 ? sample[0] : 0.5f * (sample[0] + sample[1]);
+            const float out = output_[position_];
+            input_[position_] = in;
+            sample[0] = out;
+            if (channels > 1) {
+                sample[1] = out;
+            }
+            if (++position_ == frameLength_) {
+                position_ = 0;
+                ProcessFrame(input_.data(), output_.data());
+                if (failed_) {
+                    return;
+                }
+            }
         }
     }
 
-    int LatencySamples() const override { return failed_ ? 0 : kLookAheadSamples; }
+    int LatencySamples() const override {
+        return failed_ ? 0 : kLookAheadSamples + (buffered_ ? static_cast<int>(frameLength_) : 0);
+    }
 
     std::optional<DeepFilterSettings> DeepFilter() const override {
         return DeepFilterSettings{maxReduction_.load(), postFilter_.load()};
@@ -130,8 +151,29 @@ public:
     }
 
 private:
+    void ProcessFrame(const float* in, float* out) {
+        const int reduction = maxReduction_.load();
+        if (reduction != appliedReduction_) {
+            setLimit_(state_, static_cast<float>(reduction));
+            appliedReduction_ = reduction;
+        }
+        const bool postFilter = postFilter_.load();
+        if (postFilter != appliedPostFilter_) {
+            setPostFilter_(state_, postFilter ? kPostFilterBeta : 0.0f);
+            appliedPostFilter_ = postFilter;
+        }
+        if (process_(state_, in, out) != 0) {
+            failed_ = true;
+            Log("deepfilter: processing failed, the sound passes through unprocessed");
+        }
+    }
+
     void* state_ = nullptr;
     size_t frameLength_ = 0;
+    bool buffered_ = false;
+    std::vector<float> input_;   // Buffered mode, audio thread only: the frame being filled,
+    std::vector<float> output_;  // and the one filtered before it, being played.
+    size_t position_ = 0;
     ProcessFn process_ = nullptr;
     SetFloatFn setLimit_ = nullptr;
     SetFloatFn setPostFilter_ = nullptr;
@@ -148,7 +190,7 @@ private:
 }  // namespace
 
 std::unique_ptr<AudioPlugin> LoadDeepFilterPlugin(const std::wstring& path, double sampleRate, int blockSize,
-                                                  bool& recognized) {
+                                                  int channels, bool& recognized) {
     recognized = false;
     HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!module) {
@@ -164,7 +206,7 @@ std::unique_ptr<AudioPlugin> LoadDeepFilterPlugin(const std::wstring& path, doub
         return nullptr;
     }
     auto plugin = std::make_unique<DeepFilterPlugin>();
-    if (!plugin->Load(module, sampleRate, blockSize)) {
+    if (!plugin->Load(module, sampleRate, blockSize, channels)) {
         return nullptr;
     }
     return plugin;

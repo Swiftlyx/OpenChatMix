@@ -356,6 +356,25 @@ std::optional<AudioEndpoint> FindMicCable(const std::vector<AudioEndpoint>& endp
     return std::nullopt;
 }
 
+namespace {
+
+// The device interface of an endpoint's adapter without the filter's reference string, e.g.
+// "{2}.\\?\root#media#0001#{6994ad04-...}": the render and capture filters of one cable driver differ only after it.
+std::wstring AdapterInterfaceOf(IMMDeviceEnumerator* enumerator, const std::wstring& endpointId) {
+    ComPtr<IMMDevice> device;
+    if (FAILED(enumerator->GetDevice(endpointId.c_str(), &device))) {
+        return {};
+    }
+    const std::wstring adapter = EndpointAdapterId(device.Get());
+    const size_t slash = adapter.find_last_of(L'\\');
+    if (slash == std::wstring::npos || slash == 0 || adapter[slash - 1] != L'}') {
+        return adapter;
+    }
+    return adapter.substr(0, slash);
+}
+
+}  // namespace
+
 std::wstring PairedCaptureEndpoint(const AudioEndpoint& render, const std::vector<AudioEndpoint>& captures) {
     std::wstring wanted = render.name;
     if (const size_t at = wanted.find(L" Input"); at != std::wstring::npos) {
@@ -368,7 +387,27 @@ std::wstring PairedCaptureEndpoint(const AudioEndpoint& render, const std::vecto
             return capture.id;
         }
     }
-    return {};
+    // An end renamed in the Windows sound settings no longer pairs by name; then the other end is the one
+    // recording endpoint of the same driver device. Drivers with several cables (Virtual Audio Cable lines) give
+    // no answer this way.
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))) {
+        return {};
+    }
+    const std::wstring adapter = AdapterInterfaceOf(enumerator.Get(), render.id);
+    if (adapter.empty()) {
+        return {};
+    }
+    std::wstring found;
+    for (const auto& capture : captures) {
+        if (AdapterInterfaceOf(enumerator.Get(), capture.id) == adapter) {
+            if (!found.empty()) {
+                return {};
+            }
+            found = capture.id;
+        }
+    }
+    return found;
 }
 
 std::wstring DefaultRenderEndpoint(ERole role) {

@@ -13,9 +13,7 @@
 
 #include "audio_bridge.h"
 #include "mic_dsp.h"
-
-class AudioPlugin;
-using MicPluginList = std::vector<AudioPlugin*>;
+#include "plugin_host.h"
 
 // Takes the microphone, runs it through the built-in effects and the plugins, and plays the result
 // into a virtual cable, whose recording side apps use as their microphone. Runs on its own MMCSS
@@ -38,7 +36,7 @@ public:
     void SetSettings(MicDspSettings settings);
     // The plugins to run, in order; the caller keeps them alive. Returns once the audio thread no
     // longer uses the previous list, so plugins left out of it may be destroyed.
-    void SetPlugins(MicPluginList plugins);
+    void SetPlugins(PluginList plugins) { plugins_.Set(std::move(plugins)); }
     int LatencyMs() const { return latencyMs_; }
     // Largest output sample since the last call.
     float TakePeak() { return peak_.exchange(0.0f); }
@@ -56,9 +54,7 @@ private:
     HANDLE stopEvent_ = nullptr;
     HANDLE readyEvent_ = nullptr;
     std::atomic<std::shared_ptr<const MicDspSettings>> settings_{std::make_shared<const MicDspSettings>()};
-    std::atomic<std::shared_ptr<const MicPluginList>> plugins_{std::make_shared<const MicPluginList>()};
-    std::atomic<uint64_t> pluginsGeneration_{0};
-    std::atomic<uint64_t> pluginsSeen_{0};  // Generation the audio thread finished a block with.
+    PluginHandoff plugins_;
     std::atomic<float> peak_{0.0f};
     std::atomic<bool> running_{false};
     std::atomic<BridgeError> error_{BridgeError::None};

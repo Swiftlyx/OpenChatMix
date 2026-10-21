@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -36,6 +37,11 @@ constexpr ULONGLONG kUnderrunLogMs = 30000; // Underruns are logged at most this
 // Render wakeups (one period each) without a capture packet after which the source counts as silent:
 // loopback capture delivers nothing while no app plays on the device.
 constexpr int kSilentWakeups = 6;
+// Once the source fell silent, plugins get silence until their latency and tail have played out and their output
+// stayed below the floor for a while, but no longer than the limit.
+constexpr UINT32 kFlushLimitMs = 3000;
+constexpr UINT32 kFlushQuietMs = 50;
+constexpr float kFlushFloor = 1e-5f;  // -100 dBFS.
 
 struct CoTaskMemDeleter {
     void operator()(void* pointer) const { CoTaskMemFree(pointer); }
@@ -70,7 +76,30 @@ float DeviceGain(IAudioEndpointVolume* volume) {
     return std::pow(10.0f, std::min(decibels, 0.0f) / 20.0f);
 }
 
+// Runs the plugins over interleaved frames in blocks of at most maxBlock.
+void RunPlugins(const PluginList& plugins, float* samples, size_t frames, int channels, size_t maxBlock) {
+    for (size_t done = 0; done < frames; done += maxBlock) {
+        const size_t block = std::min(maxBlock, frames - done);
+        for (AudioPlugin* plugin : plugins) {
+            plugin->Process(samples + done * channels, block, channels);
+        }
+    }
+}
+
 }  // namespace
+
+UINT32 AudioBridge::PluginBlock(UINT32 rate) {
+    return std::bit_ceil(std::max(rate / 50, 1u));
+}
+
+void AudioBridge::SetPlugins(PluginList plugins, UINT32 rate) {
+    // The old list leaves first when the rate changes, so no pass pairs it with the new rate.
+    if (rate != pluginRate_.load()) {
+        plugins_.Set({});
+        pluginRate_ = rate;
+    }
+    plugins_.Set(std::move(plugins));
+}
 
 AudioBridge::~AudioBridge() {
     Stop();
@@ -82,6 +111,7 @@ bool AudioBridge::Start(const std::wstring& sourceId, const std::wstring& target
     target_ = targetId;
     notify_ = notifyWindow;
     error_ = BridgeError::None;
+    plugins_.Attach();
     stopEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     readyEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     thread_ = CreateThread(nullptr, 0, ThreadProc, this, 0, nullptr);
@@ -118,7 +148,9 @@ void AudioBridge::Stop() {
             *event = nullptr;
         }
     }
+    plugins_.Detach();
     running_ = false;
+    rate_ = 0;
     latencyMs_ = 0;
 }
 
@@ -138,6 +170,7 @@ DWORD WINAPI AudioBridge::ThreadProc(void* self) {
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
     bridge->Run();
+    bridge->plugins_.Detach();
     if (mmcss) {
         AvRevertMmThreadCharacteristics(mmcss);
     }
@@ -232,6 +265,9 @@ void AudioBridge::Run() {
     DriftQueue queue(channels, rate, rate);
     EqProcessor equalizer(rate, channels);
     std::vector<float> scratch;
+    const size_t pluginBlock = PluginBlock(rate);
+    const UINT32 flushLimit = rate * kFlushLimitMs / 1000;
+    const UINT32 flushQuietFrames = rate * kFlushQuietMs / 1000;
     Log("bridge: %u Hz, %d ch, period %u frames, buffer %u frames, target %u frames", rate, channels, periodFrames,
         bufferFrames, renderTarget);
     unsigned underruns = 0;
@@ -240,12 +276,19 @@ void AudioBridge::Run() {
     bool playing = false;
     int quietWakeups = 0;  // Wakeups since the last capture packet.
     bool holding = true;   // The source is silent or has just come back; nothing is played.
+    bool flushing = false;  // Holding, while the plugins still play out what they hold.
+    UINT32 flushed = 0;     // Frames of silence run through the plugins since the source fell silent,
+    UINT32 flushQuiet = 0;  // and of those, frames since their output was last above the floor.
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    double slowestPluginsMs = 0.0;  // Longest pass through the plugins, reported with the underruns.
 
     if (FAILED(capture->Start()) || FAILED(render->Start())) {
         error_ = BridgeError::Unsupported;
         CloseHandle(renderEvent);
         return;
     }
+    rate_ = rate;
     running_ = true;
     SetEvent(readyEvent_);
 
@@ -287,6 +330,18 @@ void AudioBridge::Run() {
             break;
         }
 
+        uint64_t generation = 0;
+        std::shared_ptr<const PluginList> plugins = plugins_.Acquire(generation);
+        const bool processing = !plugins->empty() && pluginRate_.load() == rate;
+        int64_t pluginDelay = 0;
+        int64_t pluginTail = 0;
+        if (processing) {
+            for (const AudioPlugin* plugin : *plugins) {
+                pluginDelay += plugin->LatencySamples();
+                pluginTail += plugin->TailSamples();
+            }
+        }
+
         // While the source is silent the queue holds: steering toward an empty queue would wind the
         // speed up to its limit, and the next sound would play off pitch for seconds. Playback resumes
         // once a render target is queued, so it starts at the target latency.
@@ -295,9 +350,12 @@ void AudioBridge::Run() {
             if (!holding) {
                 queue.Hold();
                 holding = true;
+                flushing = processing;
+                flushed = flushQuiet = 0;
             }
         } else if (holding && queue.Size() + padding >= renderTarget) {
             holding = false;
+            flushing = false;
         }
         // The two devices run on separate clocks: the queue plays a hair faster or slower to hold
         // the latency, and only skips audio after a stall left far too much behind.
@@ -315,10 +373,47 @@ void AudioBridge::Run() {
         }
         const UINT32 wanted = padding < renderTarget ? renderTarget - padding : 0;
         UINT32 frames = 0;
-        if (!holding && wanted > 0 && queue.Size() >= 4.0) {
-            scratch.resize(static_cast<size_t>(std::min(wanted, bufferFrames - padding)) * channels);
+        const bool fromQueue = !holding && wanted > 0 && queue.Size() >= 4.0;
+        const bool flush = holding && flushing && processing && wanted > 0;
+        if (fromQueue || flush) {
+            const UINT32 room = std::min(wanted, bufferFrames - padding);
+            scratch.resize(static_cast<size_t>(room) * channels);
             const float target = std::clamp(volume_.load(), 0.0f, 1.0f);
-            frames = static_cast<UINT32>(queue.Pop(scratch.data(), scratch.size() / channels, gain, target));
+            if (flush) {
+                std::fill(scratch.begin(), scratch.end(), 0.0f);
+                frames = room;
+            } else {
+                // With plugins the volume comes after them: a compressor must not undo the ChatMix balance.
+                frames = static_cast<UINT32>(
+                    queue.Pop(scratch.data(), room, processing ? 1.0f : gain, processing ? 1.0f : target));
+            }
+            if (processing && frames > 0) {
+                LARGE_INTEGER start{};
+                LARGE_INTEGER end{};
+                QueryPerformanceCounter(&start);
+                RunPlugins(*plugins, scratch.data(), frames, channels, pluginBlock);
+                QueryPerformanceCounter(&end);
+                slowestPluginsMs = std::max(
+                    slowestPluginsMs, static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart);
+                if (flush) {
+                    float loudest = 0.0f;
+                    for (size_t i = 0; i < static_cast<size_t>(frames) * channels; ++i) {
+                        loudest = std::max(loudest, std::fabs(scratch[i]));
+                    }
+                    flushed += frames;
+                    flushQuiet = loudest > kFlushFloor ? 0 : flushQuiet + frames;
+                    const int64_t minimum = std::min<int64_t>(pluginDelay + pluginTail, flushLimit);
+                    if ((flushed >= minimum && flushQuiet >= flushQuietFrames) || flushed >= flushLimit) {
+                        flushing = false;
+                    }
+                }
+                for (UINT32 frame = 0; frame < frames; ++frame) {
+                    const float ramp = gain + (target - gain) * (frame + 1) / static_cast<float>(frames);
+                    for (int channel = 0; channel < channels; ++channel) {
+                        scratch[static_cast<size_t>(frame) * channels + channel] *= ramp;
+                    }
+                }
+            }
             gain = target;
             BYTE* out = nullptr;
             if (frames > 0 && SUCCEEDED(renderClient->GetBuffer(frames, &out))) {
@@ -339,13 +434,18 @@ void AudioBridge::Run() {
             }
         }
         playing = frames > 0 || padding > 0;
+        plugins.reset();
+        plugins_.Release(generation);
         if ((underruns > 0 || captureGaps > 0) && GetTickCount64() - underrunLogged > kUnderrunLogMs) {
-            Log("bridge: output ran dry %u times, capture gaps %u; speed %.4f", underruns, captureGaps, queue.Speed());
+            Log("bridge: output ran dry %u times, capture gaps %u; speed %.4f; slowest plugin pass %.1f ms", underruns,
+                captureGaps, queue.Speed(), slowestPluginsMs);
             underruns = captureGaps = 0;
+            slowestPluginsMs = 0.0;
             underrunLogged = GetTickCount64();
         }
         // While holding, the latency the next sound starts with.
-        const double queued = holding ? latencyTarget : queue.Size() + padding + frames;
+        const double queued =
+            (holding ? latencyTarget : queue.Size() + padding + frames) + static_cast<double>(pluginDelay);
         latencyMs_ = static_cast<int>(queued * 1000 / rate + (capturePeriod + renderLatency) / 10000);
     }
 
@@ -435,6 +535,32 @@ void AudioRouter::ApplyVolumes() {
     game_.SetVolume(levels_.game / 100.0f * gameVolume_.gain);
     chat_.SetVolume(levels_.chat / 100.0f * chatVolume_.gain * (chatWithGame_ ? gameVolume_.gain : 1.0f));
     media_.SetVolume(mediaLevel_ * mediaVolume_.gain * (mediaWithGame_ ? gameVolume_.gain : 1.0f));
+}
+
+AudioBridge* AudioRouter::BridgeOf(EqChannel channel) {
+    switch (channel) {
+    case EqChannel::Game: return &game_;
+    case EqChannel::Chat: return &chat_;
+    case EqChannel::Media: return &media_;
+    case EqChannel::Mic: break;
+    }
+    return nullptr;
+}
+
+void AudioRouter::SetPlugins(EqChannel channel, PluginList plugins, UINT32 rate) {
+    if (AudioBridge* bridge = BridgeOf(channel)) {
+        bridge->SetPlugins(std::move(plugins), rate);
+    }
+}
+
+UINT32 AudioRouter::Rate(EqChannel channel) const {
+    switch (channel) {
+    case EqChannel::Game: return game_.Rate();
+    case EqChannel::Chat: return chat_.Rate();
+    case EqChannel::Media: return mediaRouted_ ? media_.Rate() : 0;
+    case EqChannel::Mic: break;
+    }
+    return 0;
 }
 
 void AudioRouter::SetEqualizers(std::shared_ptr<const ParametricEq> game, std::shared_ptr<const ParametricEq> chat,

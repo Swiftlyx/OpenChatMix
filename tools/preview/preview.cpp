@@ -374,7 +374,8 @@ void PushRouting() {
     for (const auto& [slot, id] : {std::pair{ui::RoutingSlot::GameOutput, routing.gameOutput},
                                    std::pair{ui::RoutingSlot::ChatOutput, routing.chatOutput},
                                    std::pair{ui::RoutingSlot::MediaOutput, routing.mediaOutput}}) {
-        set(slot, id, id.empty() ? std::wstring(T(Text::SameAsOutput)) : named(id, L""));
+        set(slot, id,
+            id.empty() ? std::wstring(T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput)) : named(id, L""));
     }
     view.mediaRouted = routing.enabled && g.settings.mediaGroup && !routing.media.empty();
     view.manageDevices = routing.manageDevices;
@@ -399,19 +400,24 @@ void PushMic() {
         view.status = std::wstring(T(Text::RoutingRunning)) + L" · " + T(Text::AddsLatency) + L" ~6 " +
                       T(Text::MillisecondsShort);
     }
-    // Plugins are listed by their file, as loaded; the preview loads none. A DeepFilterNet DLL shows its settings.
-    for (const MicPlugin& plugin : mic.plugins) {
-        std::wstring name = FileNameOf(plugin.path);
-        name = name.substr(0, name.find_last_of(L'.'));
-        ui::MicPluginView row{name, plugin.path, plugin.enabled, true, true};
-        if (name.find(L"DeepFilterNet") != std::wstring::npos) {
-            row.name = L"DeepFilterNet";
-            row.hasEditor = false;
-            row.deepFilter = g.deepFilter;
-        }
-        view.plugins.push_back(std::move(row));
-    }
     g.panel->SetMic(view);
+    // Plugins are listed by their file, as loaded; the preview loads none. A DeepFilterNet DLL shows its settings.
+    for (const EqChannel channel : {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media}) {
+        ui::PluginChainView chain;
+        for (const ChainPlugin& plugin : PluginsOf(g.settings, channel)) {
+            std::wstring name = FileNameOf(plugin.path);
+            name = name.substr(0, name.find_last_of(L'.'));
+            ui::PluginView row{name, plugin.path, plugin.enabled, true, true};
+            if (name.find(L"DeepFilterNet") != std::wstring::npos) {
+                row.name = L"DeepFilterNet";
+                row.hasEditor = false;
+                row.deepFilter = g.deepFilter;
+                chain.latencyMs += channel == EqChannel::Mic ? 20 : 30;
+            }
+            chain.plugins.push_back(std::move(row));
+        }
+        g.panel->SetPlugins(channel, chain);
+    }
 }
 
 void PushIdleScreen() {
@@ -661,36 +667,38 @@ public:
         std::erase_if(endpoints, IsSonarEndpoint);
         return endpoints;
     }
-    void OnMicPluginAdd(const std::wstring& path) override {
-        g.settings.mic.plugins.push_back({path, L"preview", true});
+    void OnPluginAdd(EqChannel channel, const std::wstring& path) override {
+        static int added = 0;
+        PluginsOf(g.settings, channel).push_back({path, L"preview-" + std::to_wstring(++added), true});
         Save();
         PushSettings();
         PushMic();
     }
-    void OnMicPluginRemove(size_t index) override {
-        if (index < g.settings.mic.plugins.size()) {
-            g.settings.mic.plugins.erase(g.settings.mic.plugins.begin() + static_cast<std::ptrdiff_t>(index));
+    void OnPluginRemove(EqChannel channel, size_t index) override {
+        std::vector<ChainPlugin>& plugins = PluginsOf(g.settings, channel);
+        if (index < plugins.size()) {
+            plugins.erase(plugins.begin() + static_cast<std::ptrdiff_t>(index));
             Save();
             PushSettings();
             PushMic();
         }
     }
-    void OnMicPluginMove(size_t from, size_t to) override {
-        std::vector<MicPlugin>& plugins = g.settings.mic.plugins;
+    void OnPluginMove(EqChannel channel, size_t from, size_t to) override {
+        std::vector<ChainPlugin>& plugins = PluginsOf(g.settings, channel);
         if (from >= plugins.size() || to >= plugins.size() || from == to) {
             return;
         }
-        MicPlugin moved = plugins[from];
+        ChainPlugin moved = plugins[from];
         plugins.erase(plugins.begin() + static_cast<std::ptrdiff_t>(from));
         plugins.insert(plugins.begin() + static_cast<std::ptrdiff_t>(to), moved);
         Save();
         PushSettings();
         PushMic();
     }
-    void OnMicPluginEditor(size_t) override {
+    void OnPluginEditor(EqChannel, size_t) override {
         MessageBoxW(g.panel->Handle(), Texts().pluginNote, Texts().title, MB_OK | MB_ICONINFORMATION);
     }
-    void OnMicPluginDeepFilter(size_t, const DeepFilterSettings& settings) override {
+    void OnPluginDeepFilter(EqChannel, size_t, const DeepFilterSettings& settings) override {
         g.deepFilter = settings;
         PushMic();
     }

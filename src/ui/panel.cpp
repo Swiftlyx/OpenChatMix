@@ -1903,7 +1903,7 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
         host_.OnIdleImage(*owned);
         break;
     case FileDialog::Plugin:
-        host_.OnMicPluginAdd(*owned);
+        host_.OnPluginAdd(pluginDialog_, *owned);
         break;
     case FileDialog::ExportSettings:
         transferNote_ = host_.OnSettingsExport(*owned) ? std::wstring(T(Text::SettingsExported)) + L" " + FileNameOf(*owned)

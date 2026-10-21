@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <cstring>
 
 #include "app.h"
@@ -20,6 +21,7 @@ constexpr UINT_PTR kIdleTimer = 1;
 constexpr UINT kIdleMs = 33;
 constexpr DWORD kStartTimeoutMs = 5000;
 constexpr DWORD kStopTimeoutMs = 5000;
+constexpr DWORD kHandoffTimeoutMs = 500;
 
 std::wstring FileStem(const std::wstring& path) {
     const size_t slash = path.find_last_of(L"\\/");
@@ -89,6 +91,7 @@ enum : int32_t {
     effSetChunk = 24,
     effGetEffectName = 45,
     effGetProductString = 48,
+    effGetTailSize = 52,
     effStartProcess = 71,
     effStopProcess = 72,
     effSetProcessPrecision = 77,
@@ -187,7 +190,12 @@ public:
         }
         Dispatch(effMainsChanged, 0, 1);
         Dispatch(effStartProcess);
-        Log("vst2: loaded %s (%d in, %d out)", Utf8(name_).c_str(), effect_->numInputs, effect_->numOutputs);
+        latency_ = std::max(effect_->initialDelay, 0);
+        // 0 means the plugin does not say, 1 that it has no tail.
+        const intptr_t tail = Dispatch(effGetTailSize);
+        tail_ = tail > 1 ? static_cast<int>(std::min<intptr_t>(tail, INT_MAX)) : 0;
+        Log("vst2: loaded %s (%d in, %d out, latency %d, tail %d)", Utf8(name_).c_str(), effect_->numInputs,
+            effect_->numOutputs, latency_.load(), tail_);
         return true;
     }
 
@@ -262,25 +270,15 @@ public:
         }
     }
 
-    void Process(float* mono, size_t frames) override {
+    void Process(float* samples, size_t frames, int channels) override {
         frames = std::min<size_t>(frames, block_);
-        for (float* input : inputPointers_) {
-            std::memcpy(input, mono, frames * sizeof(float));
-        }
+        SplitChannels(samples, frames, channels, inputPointers_.data(), effect_->numInputs);
         effect_->processReplacing(effect_, inputPointers_.data(), outputPointers_.data(), static_cast<int32_t>(frames));
-        // A stereo effect gets the microphone on both sides; its sides are averaged back to mono.
-        const int32_t outputs = std::min(effect_->numOutputs, 2);
-        if (outputs <= 0) {
-            return;
-        }
-        for (size_t frame = 0; frame < frames; ++frame) {
-            float sum = 0.0f;
-            for (int32_t channel = 0; channel < outputs; ++channel) {
-                sum += outputPointers_[channel][frame];
-            }
-            mono[frame] = sum / outputs;
-        }
+        JoinChannels(outputPointers_.data(), effect_->numOutputs, frames, samples, channels);
     }
+
+    int LatencySamples() const override { return latency_; }
+    int TailSamples() const override { return tail_; }
 
 private:
     intptr_t Dispatch(int32_t opcode, int32_t index = 0, intptr_t value = 0, void* ptr = nullptr, float opt = 0.0f) {
@@ -332,12 +330,18 @@ private:
                 return 1;
             }
             return 0;
+        case audioMasterIOChanged:
+            // The plugin changed its latency (initialDelay), e.g. with a lookahead setting.
+            if (self && effect) {
+                self->latency_ = std::max(effect->initialDelay, 0);
+                return 1;
+            }
+            return 0;
         case audioMasterAutomate:
         case audioMasterBeginEdit:
         case audioMasterEndEdit:
         case audioMasterIdle:
         case audioMasterUpdateDisplay:
-        case audioMasterIOChanged:
         case audioMasterGetTime:
         case audioMasterGetCurrentProcessLevel:
             return 0;
@@ -354,10 +358,55 @@ private:
     std::vector<float> outputs_;
     std::vector<float*> inputPointers_;
     std::vector<float*> outputPointers_;
+    std::atomic<int> latency_{0};
+    int tail_ = 0;
     EditorWindow editor_;
 };
 
 }  // namespace
+
+// ---- Channel layout ---------------------------------------------------------------------------------
+
+void SplitChannels(const float* samples, size_t frames, int channels, float* const* inputs, int inputCount) {
+    for (int input = 0; input < inputCount; ++input) {
+        float* target = inputs[input];
+        if (channels == 1) {
+            std::memcpy(target, samples, frames * sizeof(float));
+        } else if (inputCount == 1) {
+            for (size_t frame = 0; frame < frames; ++frame) {
+                target[frame] = 0.5f * (samples[frame * channels] + samples[frame * channels + 1]);
+            }
+        } else {
+            const int side = input % 2;
+            for (size_t frame = 0; frame < frames; ++frame) {
+                target[frame] = samples[frame * channels + side];
+            }
+        }
+    }
+}
+
+void JoinChannels(const float* const* outputs, int outputCount, size_t frames, float* samples, int channels) {
+    if (outputCount <= 0) {
+        return;
+    }
+    if (channels == 1) {
+        const int used = std::min(outputCount, 2);
+        for (size_t frame = 0; frame < frames; ++frame) {
+            float sum = 0.0f;
+            for (int output = 0; output < used; ++output) {
+                sum += outputs[output][frame];
+            }
+            samples[frame] = sum / used;
+        }
+        return;
+    }
+    const float* left = outputs[0];
+    const float* right = outputs[outputCount > 1 ? 1 : 0];
+    for (size_t frame = 0; frame < frames; ++frame) {
+        samples[frame * channels] = left[frame];
+        samples[frame * channels + 1] = right[frame];
+    }
+}
 
 // ---- Editor window --------------------------------------------------------------------------------
 
@@ -481,13 +530,14 @@ bool PluginModulesLoaded() {
     return g_modulesLoaded;
 }
 
-std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize) {
+std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sampleRate, int blockSize,
+                                             int channels) {
     g_modulesLoaded = true;
     if (EndsWithNoCase(path, L".vst3")) {
-        return LoadVst3Plugin(path, sampleRate, blockSize);
+        return LoadVst3Plugin(path, sampleRate, blockSize, channels);
     }
     bool deepFilter = false;
-    if (auto plugin = LoadDeepFilterPlugin(path, sampleRate, blockSize, deepFilter); plugin || deepFilter) {
+    if (auto plugin = LoadDeepFilterPlugin(path, sampleRate, blockSize, channels, deepFilter); plugin || deepFilter) {
         return plugin;
     }
     auto plugin = std::make_unique<Vst2Plugin>();
@@ -495,6 +545,15 @@ std::unique_ptr<AudioPlugin> LoadAudioPlugin(const std::wstring& path, double sa
         return nullptr;
     }
     return plugin;
+}
+
+void PluginHandoff::Set(PluginList plugins) {
+    list_.store(std::make_shared<const PluginList>(std::move(plugins)));
+    const uint64_t generation = ++generation_;
+    const ULONGLONG deadline = GetTickCount64() + kHandoffTimeoutMs;
+    while (seen_.load() < generation && GetTickCount64() < deadline) {
+        Sleep(1);
+    }
 }
 
 // ---- Plugin thread ---------------------------------------------------------------------------------

@@ -295,6 +295,10 @@ void Panel::DrawEqualizerPage() {
     float y = BeginScroll(Page::Equalizer, scrollTop);
     y = DrawBandEditor(y + design::kSpace2, state.eq);
     y = DrawEqEffects(y, state.eq);
+    // The microphone's plugins have their place in its chain, on the Microphone page.
+    if (eqChannel_ != EqChannel::Mic) {
+        y = DrawPlugins(y + design::kSectionGap - design::kGroupGap, eqChannel_) + design::kGroupGap;
+    }
     EndScroll(Page::Equalizer, scrollTop, y - design::kGroupGap);
 }
 

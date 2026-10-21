@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.4.0 — 2026-10-21
+
+- VST 2 and VST 3 plugins on the Game, Chat and Media channels of virtual device mode: the *Equalizer*
+  tab has a *Plugins* list for each channel below *Effects*, like the microphone's (drag to reorder, a
+  switch per plugin, click to open its window). A convolver with impulse responses, crossfeed, a loudness
+  or a bass plugin you own shapes the sound without a system-wide driver. Plugins run in stereo at the
+  channel's own sample rate, before its volume, so a compressor does not undo the ChatMix balance, and
+  when a sound stops they get silence until their latency and reverb tail have played out. Nothing loads
+  for a channel without plugins; they load with virtual device mode and the equalizer, stay loaded while
+  the bridges restart and keep their settings in `PluginStates`.
+- DeepFilterNet works on Chat too: added there, [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll) removes noise from the
+  voices of others. On a channel it filters the mix of both sides and adds about 30 ms.
+- Plugin latency counts: VST 2 and VST 3 plugins that delay the sound (look-ahead, linear phase) are now
+  part of the latency shown for the microphone chain and virtual device mode; before, they counted as
+  0 ms. The *Plugins* hint shows what a channel's plugins add.
+- The audio threads no longer wait for a VST 3 plugin's window: parameter changes made there while a block
+  runs reach the next block.
+- *Keep levels at 100%* missed the recording end of the cable (*CABLE Output*) when one end had been renamed
+  in the Windows sound settings, for example to *CABLE Input (Mic)*: the two ends were paired by name only.
+  They are now also paired by the cable's driver device, so the level holds there too.
+- Each group can play on a device of its own without virtual cables, for example Game and Chat on the
+  headset and Media on the speakers: *Settings → Audio → Audio routing* has a row per group while virtual
+  device mode is off. Windows sends the group's apps there through its per-app device, ChatMix still
+  balances Game and Chat on whichever device they play, and OpenChatMix clears the choice again when it
+  exits. A group whose device is not connected plays on the Windows default meanwhile; sound on those
+  other devices no longer keeps the GameDAC screensaver away.
+- Output devices follow a wireless SteelSeries headset's power: while the headset is switched off it counts
+  as disconnected, so *Switch when a device disconnects* moves the sound to the next device and *Return to a
+  device that reconnects* brings it back when the headset is switched on; the *Next output device* hotkey
+  skips it meanwhile. The base station or dongle stays in Windows as a playback device, so this goes by the
+  headset's own status, which is now asked for the moment the wireless link changes. Requested by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) and
+  [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+- The Nova 7 Gen 2 protocol equalizer is confirmed on the Arctis Nova 7 (`22A1`), reported by [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+
 ## 2.3.0 — 2026-10-21
 
 - AI noise suppression as an optional plugin: [`DeepFilterNet-OpenChatMix.dll`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/DeepFilterNet-OpenChatMix.dll) is OpenChatMix's build

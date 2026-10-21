@@ -477,6 +477,12 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Unlimited",  // DeepFilterUnlimited
     L"Post-filter",  // DeepFilterPostFilter
     L"Removes a little more of the noise left between words; the voice may sound slightly thinner.",  // DeepFilterPostFilterHint
+    L"Windows default",  // WindowsDefaultOutput
+    L"Each group can play on a device of its own without virtual cables, for example Game and Chat on the headset and Media on the speakers. Windows sends the group's apps there, and ChatMix still balances Game and Chat.",  // GroupOutputsHint
+    L"VST 2 and VST 3 effects run on this channel before its volume, top to bottom; click a plugin to open its window.",  // ChannelPluginsHint
+    L"To remove noise from the voices of others, add DeepFilterNet-OpenChatMix.dll from the OpenChatMix releases on GitHub.",  // ChatPluginsHint
+    L"Latency of the plugins",  // PluginsLatency
+    L"Lower values leave a little of the room in, which sounds more natural; Unlimited removes all the noise it can. On a channel DeepFilterNet filters the mix of both sides and adds about 30 ms.",  // DeepFilterChannelHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -948,6 +954,12 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Без обмеження",
     L"Постфільтр",
     L"Прибирає ще трохи шуму, що лишився між словами; голос може звучати трохи тонше.",
+    L"Типовий у Windows",
+    L"Кожна група може відтворюватися на окремому пристрої без віртуальних кабелів, наприклад гра й чат у гарнітурі, а медіа на колонках. Windows спрямовує туди програми групи, а ChatMix і далі врівноважує гру й чат.",
+    L"Ефекти VST 2 і VST 3 працюють на цьому каналі до його гучності, згори донизу; натисніть на плагін, щоб відкрити його вікно.",
+    L"Щоб прибрати шум із голосів співрозмовників, додайте DeepFilterNet-OpenChatMix.dll з релізів OpenChatMix на GitHub.",
+    L"Затримка плагінів",
+    L"Менші значення лишають трохи звуку кімнати, і голос звучить природніше; «Без обмеження» прибирає весь шум, який може. На каналі DeepFilterNet обробляє суміш обох боків і додає близько 30 мс.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

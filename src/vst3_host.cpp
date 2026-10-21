@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <bit>
+#include <climits>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -301,7 +302,7 @@ public:
     tresult PLUGIN_API beginEdit(ParamID) override { return kResultOk; }
     tresult PLUGIN_API performEdit(ParamID id, ParamValue value) override;
     tresult PLUGIN_API endEdit(ParamID) override { return kResultOk; }
-    tresult PLUGIN_API restartComponent(int32) override { return kResultOk; }
+    tresult PLUGIN_API restartComponent(int32 flags) override;
 
 private:
     Vst3Plugin& plugin_;
@@ -378,8 +379,9 @@ public:
         }
     }
 
-    bool Load(const std::wstring& path, double rate, int block) {
+    bool Load(const std::wstring& path, double rate, int block, int channels) {
         block_ = block;
+        channels_ = channels;
         const std::wstring binary = BinaryPath(path);
         module_ = LoadLibraryExW(binary.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
         if (!module_) {
@@ -429,8 +431,8 @@ public:
         if (!SetUpBuses() || !StartProcessing(rate, block)) {
             return false;
         }
-        Log("vst3: loaded %s (%d in, %d out)", Utf8(name_).c_str(), ChannelCount(inputArrangement_),
-            ChannelCount(outputArrangement_));
+        Log("vst3: loaded %s (%d in, %d out, latency %d, tail %d)", Utf8(name_).c_str(),
+            ChannelCount(inputArrangement_), ChannelCount(outputArrangement_), latency_.load(), tail_);
         return true;
     }
 
@@ -557,19 +559,17 @@ public:
         }
     }
 
-    void Process(float* mono, size_t frames) override {
+    void Process(float* samples, size_t frames, int channels) override {
         frames = std::min<size_t>(frames, block_);
         changes_.Clear();
-        {
-            std::lock_guard lock(editsLock_);
+        // The audio thread never waits for the editor: edits queued meanwhile reach the next block.
+        if (std::unique_lock lock(editsLock_, std::try_to_lock); lock.owns_lock()) {
             for (const auto& [id, value] : edits_) {
                 changes_.Set(id, value);
             }
             edits_.clear();
         }
-        for (int32 channel = 0; channel < inputBuffers_[0].numChannels; ++channel) {
-            std::memcpy(inputBuffers_[0].channelBuffers32[channel], mono, frames * sizeof(float));
-        }
+        SplitChannels(samples, frames, channels, inputBuffers_[0].channelBuffers32, inputBuffers_[0].numChannels);
         ProcessData data;
         data.processMode = kRealtime;
         data.symbolicSampleSize = kSample32;
@@ -582,17 +582,19 @@ public:
         if (processor_->process(data) != kResultOk) {
             return;
         }
-        // A stereo effect gets the microphone on both sides; its sides are averaged back to mono.
-        const int32 channels = std::min(outputBuffers_[0].numChannels, 2);
-        if (channels <= 0) {
-            return;
-        }
-        for (size_t frame = 0; frame < frames; ++frame) {
-            float sum = 0.0f;
-            for (int32 channel = 0; channel < channels; ++channel) {
-                sum += outputBuffers_[0].channelBuffers32[channel][frame];
+        JoinChannels(outputBuffers_[0].channelBuffers32, outputBuffers_[0].numChannels, frames, samples, channels);
+    }
+
+    int LatencySamples() const override { return latency_; }
+    int TailSamples() const override { return tail_; }
+
+    // From the plugin, usually on the plugin thread.
+    void Restart(int32 flags) {
+        if (flags & RestartFlags::kLatencyChanged) {
+            const int latency = static_cast<int>(std::min<uint32>(processor_->getLatencySamples(), INT_MAX));
+            if (latency_.exchange(latency) != latency) {
+                Log("vst3: %s now has latency %d", Utf8(name_).c_str(), latency);
             }
-            mono[frame] = sum / channels;
         }
     }
 
@@ -651,8 +653,8 @@ private:
         }
     }
 
-    // Mono in and out where the plugin takes it, otherwise stereo, otherwise its own layout. Only the
-    // main buses are active; others (side chains) get silence.
+    // The caller's layout (mono or stereo) in and out where the plugin takes it, otherwise the other one,
+    // otherwise the plugin's own layout. Only the main buses are active; others (side chains) get silence.
     bool SetUpBuses() {
         const int32 inputs = component_->getBusCount(kAudio, kInput);
         const int32 outputs = component_->getBusCount(kAudio, kOutput);
@@ -671,7 +673,9 @@ private:
             }
         };
         current();
-        for (const SpeakerArrangement wanted : {SpeakerArr::kMono, SpeakerArr::kStereo}) {
+        const SpeakerArrangement first = channels_ == 1 ? SpeakerArr::kMono : SpeakerArr::kStereo;
+        const SpeakerArrangement second = channels_ == 1 ? SpeakerArr::kStereo : SpeakerArr::kMono;
+        for (const SpeakerArrangement wanted : {first, second}) {
             in[0] = wanted;
             out[0] = wanted;
             if (processor_->setBusArrangements(in.data(), inputs, out.data(), outputs) == kResultTrue) {
@@ -728,6 +732,8 @@ private:
         }
         active_ = true;
         processor_->setProcessing(true);  // Optional for plugins; kNotImplemented is fine.
+        latency_ = static_cast<int>(std::min<uint32>(processor_->getLatencySamples(), INT_MAX));
+        tail_ = static_cast<int>(std::min<uint32>(processor_->getTailSamples(), INT_MAX));
         return true;
     }
 
@@ -767,6 +773,9 @@ private:
     EditorWindow editor_;
     std::wstring name_;
     int block_ = 480;
+    int channels_ = 1;
+    std::atomic<int> latency_{0};
+    int tail_ = 0;  // kInfiniteTail comes out as INT_MAX.
     SpeakerArrangement inputArrangement_ = 0;
     SpeakerArrangement outputArrangement_ = 0;
     std::vector<std::vector<float>> samples_;
@@ -783,15 +792,20 @@ tresult PLUGIN_API ComponentHandler::performEdit(ParamID id, ParamValue value) {
     return kResultOk;
 }
 
+tresult PLUGIN_API ComponentHandler::restartComponent(int32 flags) {
+    plugin_.Restart(flags);
+    return kResultOk;
+}
+
 tresult PLUGIN_API PlugFrame::resizeView(IPlugView* view, ViewRect* size) {
     return plugin_.ResizeView(view, size);
 }
 
 }  // namespace
 
-std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sampleRate, int blockSize) {
+std::unique_ptr<AudioPlugin> LoadVst3Plugin(const std::wstring& path, double sampleRate, int blockSize, int channels) {
     auto plugin = std::make_unique<Vst3Plugin>();
-    if (!plugin->Load(path, sampleRate, blockSize)) {
+    if (!plugin->Load(path, sampleRate, blockSize, channels)) {
         return nullptr;
     }
     return plugin;

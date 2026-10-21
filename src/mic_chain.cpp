@@ -30,7 +30,6 @@ constexpr DWORD kStartTimeoutMs = 3000;
 constexpr DWORD kStopTimeoutMs = 2000;
 // The outputs are topped up at least this often, also when the microphone's packets come late.
 constexpr DWORD kFeedMs = 5;
-constexpr DWORD kPluginSwapTimeoutMs = 500;
 constexpr ULONGLONG kUnderrunLogMs = 30000;  // Underruns are logged at most this often.
 constexpr size_t kBlock = MicProcessor::kBlock;
 // The cable (and the headphones while listening) are kept this far ahead of their reader: two blocks
@@ -118,7 +117,7 @@ bool MicChain::Start(const std::wstring& inputId, const std::wstring& outputId, 
     monitor_ = monitorId == outputId ? L"" : monitorId;
     notify_ = notifyWindow;
     error_ = BridgeError::None;
-    pluginsSeen_ = pluginsGeneration_.load();
+    plugins_.Attach();
     stopEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     readyEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     thread_ = stopEvent_ && readyEvent_ ? CreateThread(nullptr, 0, ThreadProc, this, 0, nullptr) : nullptr;
@@ -155,21 +154,13 @@ void MicChain::Stop() {
             *event = nullptr;
         }
     }
+    plugins_.Detach();
     running_ = false;
     latencyMs_ = 0;
 }
 
 void MicChain::SetSettings(MicDspSettings settings) {
     settings_.store(std::make_shared<const MicDspSettings>(std::move(settings)));
-}
-
-void MicChain::SetPlugins(MicPluginList plugins) {
-    plugins_.store(std::make_shared<const MicPluginList>(std::move(plugins)));
-    const uint64_t generation = ++pluginsGeneration_;
-    const ULONGLONG deadline = GetTickCount64() + kPluginSwapTimeoutMs;
-    while (running_ && pluginsSeen_.load() < generation && GetTickCount64() < deadline) {
-        Sleep(1);
-    }
 }
 
 void MicChain::Fail(BridgeError error) {
@@ -187,8 +178,7 @@ DWORD WINAPI MicChain::ThreadProc(void* self) {
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
     chain->Run();
-    // Plugins may not be swapped out while the thread still holds them.
-    chain->pluginsSeen_ = UINT64_MAX;
+    chain->plugins_.Detach();
     if (mmcss) {
         AvRevertMmThreadCharacteristics(mmcss);
     }
@@ -321,8 +311,8 @@ void MicChain::Run() {
         }
 
         // Whole blocks through the effects and plugins.
-        const uint64_t generation = pluginsGeneration_.load();
-        std::shared_ptr<const MicPluginList> plugins = plugins_.load();
+        uint64_t generation = 0;
+        std::shared_ptr<const PluginList> plugins = plugins_.Acquire(generation);
         int pluginDelay = 0;
         for (const AudioPlugin* plugin : *plugins) {
             pluginDelay += plugin->LatencySamples();
@@ -341,7 +331,7 @@ void MicChain::Run() {
                     continue;
                 }
                 for (AudioPlugin* plugin : *plugins) {
-                    plugin->Process(block, kBlock);
+                    plugin->Process(block, kBlock, 1);
                 }
             }
             MicProcessor::Limit(block, kBlock);
@@ -356,7 +346,7 @@ void MicChain::Run() {
         }
         pending.erase(pending.begin(), pending.begin() + used);
         plugins.reset();
-        pluginsSeen_ = generation;
+        plugins_.Release(generation);
         float previous = peak_.load();
         while (peak > previous && !peak_.compare_exchange_weak(previous, peak)) {
         }
