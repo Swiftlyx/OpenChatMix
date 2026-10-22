@@ -169,8 +169,9 @@ native settings, so GG and Sonar can stay closed:
 - **Optional extras**, each with its own switch: lower the game while someone talks in chat
   (ducking), app profiles that set the balance and the Game, Chat, Media and headset equalizers while
   an app or a game runs, popups for the ChatMix wheel and for the knob of a GameDAC or base station
-  (the balance, or the volume in volume mode) in the screen corner you choose, and a low battery popup
-  for wireless headsets (at 15% by default).
+  (the balance, or the volume in volume mode) in the screen corner you choose, a popup when noise
+  control is switched with the headset's button (on the Nova Pro Wireless also on the base station
+  screen), and a low battery popup for wireless headsets (at 15% by default).
 - **Material 3 tray panel** with an automatic, light or dark theme in soft, pastel colors: the
   Windows accent (the default), eight presets or any color for Game, and a color of its own for Chat
   that always stays easy to tell apart from Game. Standard, medium or high contrast, and an Acrylic, Mica or

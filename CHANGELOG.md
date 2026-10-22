@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.3 — 2026-10-22
+
+- Noise control switched with the headset's button (Nova Pro Wireless, Nova Elite) shows a popup with
+  the new mode: noise cancelling, transparency or off. On the Nova Pro Wireless the base station screen
+  shows it for a moment too, while SteelSeries GG is closed. Each has its own switch in
+  *Settings → Notifications*. Requested by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5).
+
 ## 2.5.2 — 2026-10-22
 
 - Arctis Nova Pro Wireless: noise control on the *Headset* tab (off, transparency or ANC, with the
