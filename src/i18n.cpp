@@ -523,6 +523,13 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Nothing found",  // MenuNoMatches
     L"Saving in",  // EqSavingIn
     L"Done",  // EqSaved
+    L"Noise cancelling on",  // NoiseCancellingOn
+    L"Transparency on",  // TransparencyOn
+    L"Noise control off",  // NoiseControlOff
+    L"For noise control",  // NoisePopup
+    L"Shows the mode when it changes with the headset's button.",  // NoisePopupHint
+    L"Noise control on the base station screen",  // NoiseScreen
+    L"Shows the new mode there for a moment when it changes with the headset's button, while SteelSeries GG is closed.",  // NoiseScreenHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1040,6 +1047,13 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Нічого не знайдено",
     L"Збереження за",
     L"Готово",
+    L"Шумозаглушення ввімкнено",
+    L"Прозорість увімкнено",
+    L"Керування шумом вимкнено",
+    L"Для керування шумом",
+    L"Показує режим, коли його змінюють кнопкою на гарнітурі.",
+    L"Керування шумом на екрані базової станції",
+    L"Ненадовго показує там новий режим, коли його змінюють кнопкою на гарнітурі, поки SteelSeries GG закрито.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

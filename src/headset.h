@@ -131,12 +131,15 @@ struct HeadsetUpdate {
     bool charging = false;
     bool headsetOff = false;
     int spare = -1;  // Battery: the spare battery's percent, where the base station has one.
+    bool fromEvent = false;  // Setting: changed on the headset or base station, not read from a status reply.
 };
 
 // Settings and battery reported by the headset, e.g. after a change on the GameDAC menu.
 // Data starts with the report ID as in ParseChatMixReport.
 std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size);
 void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const HeadsetUpdate& update);
+// The noise control command of base stations that have it (off, transparency, ANC).
+inline constexpr uint8_t kNoiseControlCommand = 0xBD;
 
 // The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve);

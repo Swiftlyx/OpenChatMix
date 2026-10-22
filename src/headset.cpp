@@ -53,7 +53,7 @@ constexpr SettingSection kNovaProWiredSections[] = {
 
 // Noise control of the Nova Pro Wireless and Nova Elite base stations: off, transparency or ANC, with the
 // transparency level (and on the Elite the ANC level).
-constexpr uint8_t kNoiseMode = 0xBD;
+constexpr uint8_t kNoiseMode = kNoiseControlCommand;
 constexpr uint8_t kNoiseTransparent = 1;
 constexpr uint8_t kNoiseCancelling = 2;
 constexpr uint8_t kTransparencyLevel = 0xB9;
@@ -384,7 +384,9 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
         return {setting(kStreamMain, data[2]), setting(kStreamAux, data[4]), setting(kStreamMic, data[5])};
     }
     if (kNovaElite.FindSetting(command)) {
-        return {setting(command, data[2])};
+        HeadsetUpdate update = setting(command, data[2]);
+        update.fromEvent = true;
+        return {update};
     }
     return {};
 }
@@ -448,7 +450,7 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
         } else if (command == eq.bandsCommand && size >= 2 + kEqBands) {
             updates.push_back({.kind = Kind::EqCurve, .curve = CurveFromBytes(data + 2, eq.baseline, eq.range)});
         } else if (features.FindSetting(command)) {
-            updates.push_back({.kind = Kind::Setting, .command = command, .value = data[2]});
+            updates.push_back({.kind = Kind::Setting, .command = command, .value = data[2], .fromEvent = true});
         }
         return updates;
     }

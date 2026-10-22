@@ -213,6 +213,8 @@ struct Settings {
     bool dialPopup = true;                             // Popup for the headset wheel on headsets without a display.
     bool volumePopup = true;                           // Popup for the volume knob of a GameDAC or base station.
     bool knobPopup = true;                             // Balance popup for the knob of a GameDAC or base station.
+    bool noisePopup = true;                            // Popup when noise control changes on the headset.
+    bool noiseScreen = true;                           // The same on the base station screen (Nova Pro Wireless).
     bool popups = true;                                // Popups at all; the low battery warning has its own switch.
     PopupCorner popupCorner = PopupCorner::TopRight;
     bool warnGg = true;                                // Notify when SteelSeries GG takes over the headset.

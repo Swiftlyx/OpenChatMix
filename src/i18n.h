@@ -520,6 +520,13 @@ enum class Text {
     MenuNoMatches,
     EqSavingIn,
     EqSaved,
+    NoiseCancellingOn,
+    TransparencyOn,
+    NoiseControlOff,
+    NoisePopup,
+    NoisePopupHint,
+    NoiseScreen,
+    NoiseScreenHint,
     Count,
 };
 

@@ -703,6 +703,8 @@ Settings LoadSettings(const std::wstring& path) {
     settings.dialPopup = ReadInt(path, L"DialPopup", 1) != 0;
     settings.volumePopup = ReadInt(path, L"VolumePopup", 1) != 0;
     settings.knobPopup = ReadInt(path, L"KnobPopup", 1) != 0;
+    settings.noisePopup = ReadInt(path, L"NoisePopup", 1) != 0;
+    settings.noiseScreen = ReadInt(path, L"NoiseScreen", 1) != 0;
     settings.popups = ReadInt(path, L"Popups", 1) != 0;
     settings.popupCorner = static_cast<PopupCorner>(std::clamp(ReadInt(path, L"PopupCorner", 0), 0, 3));
     settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
@@ -824,6 +826,8 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"DialPopup", settings.dialPopup ? L"1" : L"0");
     WriteString(path, L"VolumePopup", settings.volumePopup ? L"1" : L"0");
     WriteString(path, L"KnobPopup", settings.knobPopup ? L"1" : L"0");
+    WriteString(path, L"NoisePopup", settings.noisePopup ? L"1" : L"0");
+    WriteString(path, L"NoiseScreen", settings.noiseScreen ? L"1" : L"0");
     WriteString(path, L"Popups", settings.popups ? L"1" : L"0");
     WriteString(path, L"PopupCorner", std::to_wstring(static_cast<int>(settings.popupCorner)).c_str());
     WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());

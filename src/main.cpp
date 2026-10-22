@@ -44,6 +44,7 @@
 #include "audio_tap.h"
 #include "media_sessions.h"
 #include "visualizer.h"
+#include "addon_icons.h"
 #include "addon_screens.h"
 #include "addons.h"
 #include "gg_screen.h"
@@ -97,6 +98,8 @@ constexpr wchar_t kGlyphMedia = 0xE767;  // Volume, as the Media group.
 constexpr wchar_t kGlyphSpeakers = 0xE7F5;
 constexpr wchar_t kGlyphMicrophone = 0xE720;
 constexpr wchar_t kGlyphScreensaver = 0xE7F4;  // TVMonitor.
+constexpr wchar_t kGlyphHeadset = 0xE7F6;
+constexpr ULONGLONG kNoiseNoticeMs = 2500;  // How long the base station screen shows a new noise control mode.
 constexpr wchar_t kGlyphBattery0 = 0xEBA0;  // EBA0..EBAA: battery 0-100% in steps of 10.
 constexpr wchar_t kGlyphTrayOpen = 0xF4C3;
 constexpr wchar_t kGlyphTraySettings = 0xE713;
@@ -282,6 +285,8 @@ struct App {
     AddOnHost addOns;
     AddOnScreens addOnScreens;
     std::optional<AddOnCard> addOnCard;  // On the display now.
+    AddOnCard noticeCard;                // A notice of the app's own, shown over add-on screens until noticeUntil.
+    ULONGLONG noticeUntil = 0;
     bool idleShowing = false;
     std::optional<UpdateRelease> update;
     ui::UpdateView updateView;
@@ -2164,7 +2169,12 @@ void TestScreensaver() {
 void UpdateAddOnScreen(bool force = false) {
     const ULONGLONG now = GetTickCount64();
     ULONGLONG next = 0;
-    const std::optional<AddOnCard> card = g_app.addOnScreens.Current(now, next);
+    std::optional<AddOnCard> card = g_app.addOnScreens.Current(now, next);
+    // A notice of the app's own goes over the add-ons' screens for its moment.
+    if (g_app.noticeUntil > now) {
+        card = g_app.noticeCard;
+        next = next > now ? std::min(next, g_app.noticeUntil) : g_app.noticeUntil;
+    }
     if (force || card != g_app.addOnCard) {
         g_app.addOnCard = card;
         g_app.display.SetOverlay(card ? CreateAddOnScreen(*card) : nullptr);
@@ -2176,10 +2186,33 @@ void UpdateAddOnScreen(bool force = false) {
     }
 }
 
-// The display is open for the screensaver, for the visualizer, and for add-on screens while the add-ons run;
-// its regular check runs while it is open.
+void UpdateDisplayUse();
+
+// Noise control was switched on the headset: a popup and, on base stations with a display, the screen say which
+// mode it is now.
+void ShowNoiseControl(int mode) {
+    const Text title = mode == 2 ? Text::NoiseCancellingOn : mode == 1 ? Text::TransparencyOn : Text::NoiseControlOff;
+    if (g_app.settings.noisePopup) {
+        g_app.osd->ShowMessage(kGlyphHeadset, T(title), DeviceName());
+    }
+    if (g_app.settings.noiseScreen && g_app.features && g_app.features->oled && !g_app.ggRunning &&
+        g_app.device.Display()) {
+        const Text option = mode == 2 ? Text::OptNoiseCancelling : mode == 1 ? Text::OptTransparency : Text::OptOff;
+        g_app.noticeCard = {kIconHeadset, T(Text::NoiseControl), T(option), {}};
+        g_app.noticeUntil = GetTickCount64() + kNoiseNoticeMs;
+        if (g_app.display.IsOpen()) {
+            UpdateAddOnScreen();
+        } else {
+            UpdateDisplayUse();
+        }
+    }
+}
+
+// The display is open for the screensaver, for the visualizer, for add-on screens while the add-ons run and for
+// the app's own notices; its regular check runs while it is open.
 void UpdateDisplayUse() {
-    const bool wanted = g_app.idleAnimation || g_app.addOns.IsServing() || g_app.settings.visualizer.enabled;
+    const bool wanted = g_app.idleAnimation || g_app.addOns.IsServing() || g_app.settings.visualizer.enabled ||
+                        g_app.noticeUntil > GetTickCount64();
     if (!g_app.display.IsOpen() && wanted) {
         const std::optional<DisplayCollection> collection =
             g_app.device.IsOpen() ? g_app.device.Display() : std::nullopt;
@@ -3654,7 +3687,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                     VerifyDeviceLevels(update.value, update.chat);
                 } else {
                     const BluetoothState bluetooth = g_app.headset.bluetooth;
+                    const int noise = g_app.headset.values[kNoiseControlCommand];
                     ApplyUpdate(*g_app.features, g_app.headset, update);
+                    // Changes the app made itself are already in the state; a status reply is no news.
+                    const int changed = g_app.headset.values[kNoiseControlCommand];
+                    if (update.fromEvent && update.command == kNoiseControlCommand && noise >= 0 && changed != noise) {
+                        Log("noise control %d on the headset", changed);
+                        ShowNoiseControl(changed);
+                    }
                     if (g_app.headset.bluetooth != bluetooth) {
                         Log("Bluetooth %s (mode %d, link %d)", BluetoothName(g_app.headset.bluetooth), update.value,
                             update.chat);
@@ -3750,6 +3790,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         }
         if (wParam == kTimerAddOnScreen) {
             UpdateAddOnScreen();
+            // A display opened only for a notice goes back to the base station after it.
+            UpdateDisplayUse();
             return 0;
         }
         if (wParam == kTimerIdleScreen) {

@@ -732,6 +732,12 @@ void Panel::DrawNotifications() {
                                         [this] { Edit([](Settings& s) { s.dialPopup = !s.dialPopup; }); },
                                         T(Text::DialPopupHint)));
         }
+        // Base stations with noise control (Nova Pro Wireless, Nova Elite).
+        if (features_ && features_->FindSetting(kNoiseControlCommand)) {
+            popups.push_back(SwitchItem(kIdNoisePopup, T(Text::NoisePopup), settings_.noisePopup,
+                                        [this] { Edit([](Settings& s) { s.noisePopup = !s.noisePopup; }); },
+                                        T(Text::NoisePopupHint)));
+        }
         if (features_ && features_->volumeKnob) {
             popups.push_back(SwitchItem(kIdKnobPopup, T(Text::KnobPopup), settings_.knobPopup,
                                         [this] { Edit([](Settings& s) { s.knobPopup = !s.knobPopup; }); },
@@ -742,6 +748,14 @@ void Panel::DrawNotifications() {
         }
     }
     y = DrawCard(y, popups) + design::kGroupGap;
+
+    // The base station screen shows the new mode too, where it has a display the app can draw on.
+    if (features_ && features_->oled && features_->FindSetting(kNoiseControlCommand)) {
+        y = DrawCard(y, {SwitchItem(kIdNoiseScreen, T(Text::NoiseScreen), settings_.noiseScreen,
+                                    [this] { Edit([](Settings& s) { s.noiseScreen = !s.noiseScreen; }); },
+                                    T(Text::NoiseScreenHint))}) +
+            design::kGroupGap;
+    }
 
     // Wired headsets report no battery, so the warning is not offered for them.
     if ((features_ && features_->batteryQuery) || headset_.battery >= 0) {
