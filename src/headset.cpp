@@ -51,7 +51,21 @@ constexpr SettingSection kNovaProWiredSections[] = {
     {Display, kNovaProDisplay},
 };
 
-// Nova Pro Wireless base station.
+// Noise control of the Nova Pro Wireless and Nova Elite base stations: off, transparency or ANC, with the
+// transparency level (and on the Elite the ANC level).
+constexpr uint8_t kNoiseMode = 0xBD;
+constexpr uint8_t kNoiseTransparent = 1;
+constexpr uint8_t kNoiseCancelling = 2;
+constexpr uint8_t kTransparencyLevel = 0xB9;
+constexpr SettingOption kNoiseModes[] = {{0, OptOff}, {kNoiseTransparent, OptTransparency},
+                                         {kNoiseCancelling, OptNoiseCancelling}};
+// Bluetooth of the base stations: on together with the headset, and what a call does to the game.
+constexpr SettingSpec kStationBluetooth[] = {
+    {0xB2, BluetoothPowerOn, SettingKind::Toggle, 0, 1},
+    {0xB3, BluetoothAutoMute, SettingKind::Choice, 0, 2, kCallMute},
+};
+
+// Nova Pro Wireless base station. Noise control and Bluetooth as NovaPanel documents them for the 12E0.
 constexpr SettingSpec kNovaProWirelessMicrophone[] = {
     {0x37, MicVolume, SettingKind::Slider, 1, 10},
     {0x39, Sidetone, SettingKind::Choice, 0, 3, kFourLevels},
@@ -63,13 +77,19 @@ constexpr SettingSpec kNovaProWirelessPower[] = {
 constexpr SettingSpec kNovaProWirelessRadio[] = {
     {0xC3, WirelessMode, SettingKind::Choice, 0, 1, kWirelessMode},
 };
+constexpr SettingSpec kNovaProWirelessNoise[] = {
+    {kNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kNoiseModes},
+    {kTransparencyLevel, TransparencyLevel, SettingKind::Slider, 1, 10, {}, kNoiseMode, kNoiseTransparent},
+};
 constexpr SettingSection kNovaProWirelessSections[] = {
     {Microphone, kNovaProWirelessMicrophone},
+    {NoiseControl, kNovaProWirelessNoise},
     {Sound, kNovaProSound},
     {LineOut, kNovaProLineOut},
     {Display, kNovaProDisplay},
     {Power, kNovaProWirelessPower},
     {Wireless, kNovaProWirelessRadio},
+    {Bluetooth, kStationBluetooth},
 };
 
 // Nova 7 family.
@@ -189,11 +209,6 @@ const HeadsetFeatures kNova5X{
 constexpr uint8_t kEliteDisplayQuery = 0x80;  // Answered with the screen settings.
 constexpr uint8_t kEliteBoomSidetone = 0x38;
 constexpr uint8_t kEliteOnEarSidetone = 0x39;
-constexpr uint8_t kEliteNoiseMode = 0xBD;
-constexpr uint8_t kEliteTransparent = 1;
-constexpr uint8_t kEliteNoiseCancelling = 2;
-constexpr SettingOption kEliteNoiseModes[] = {{0, OptOff}, {kEliteTransparent, OptTransparency},
-                                              {kEliteNoiseCancelling, OptNoiseCancelling}};
 constexpr SettingOption kThreeLevels[] = {{1, OptLow}, {2, OptMedium}, {3, OptHigh}};
 constexpr SettingOption kHomeScreenViews[] = {{0, OptDetailed}, {1, OptSimple}};
 constexpr SettingSpec kEliteMicrophone[] = {
@@ -203,9 +218,9 @@ constexpr SettingSpec kEliteMicrophone[] = {
     {0xBF, MicLed, SettingKind::Slider, 0, 10},
 };
 constexpr SettingSpec kEliteNoise[] = {
-    {kEliteNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kEliteNoiseModes},
-    {0xB8, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kThreeLevels, kEliteNoiseMode, kEliteNoiseCancelling},
-    {0xB9, TransparencyLevel, SettingKind::Slider, 1, 10, {}, kEliteNoiseMode, kEliteTransparent},
+    {kNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kNoiseModes},
+    {0xB8, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kThreeLevels, kNoiseMode, kNoiseCancelling},
+    {kTransparencyLevel, TransparencyLevel, SettingKind::Slider, 1, 10, {}, kNoiseMode, kNoiseTransparent},
 };
 constexpr SettingSpec kEliteSound[] = {
     {0x27, VolumeLimiter, SettingKind::Toggle, 0, 1},
@@ -215,10 +230,6 @@ constexpr SettingSpec kEliteDisplay[] = {
     {0x83, ScreenDim, SettingKind::Choice, 0, 6, kNovaProTimeouts},
     {0x89, HomeScreen, SettingKind::Choice, 0, 1, kHomeScreenViews},
 };
-constexpr SettingSpec kEliteBluetooth[] = {
-    {0xB2, BluetoothPowerOn, SettingKind::Toggle, 0, 1},
-    {0xB3, BluetoothAutoMute, SettingKind::Choice, 0, 2, kCallMute},
-};
 constexpr SettingSection kEliteSections[] = {
     {Microphone, kEliteMicrophone},
     {NoiseControl, kEliteNoise},
@@ -226,7 +237,7 @@ constexpr SettingSection kEliteSections[] = {
     {LineOut, kNovaProLineOut},
     {Display, kEliteDisplay},
     {Power, kNovaProWirelessPower},
-    {Bluetooth, kEliteBluetooth},
+    {Bluetooth, kStationBluetooth},
 };
 const HeadsetFeatures kNovaElite{
     .sections = kEliteSections,
@@ -241,6 +252,9 @@ constexpr uint8_t kNovaProEventReportId = 0x07;
 constexpr uint8_t kNovaProCommandReportId = 0x06;
 constexpr uint8_t kNovaProState = 0x20;
 constexpr uint8_t kNovaProBattery = 0xB0;
+constexpr uint8_t kNovaProBatteryEvent = 0xB7;
+constexpr uint8_t kNovaProHeadsetOff = 0x01;  // Headset state in 06 b0 byte 15 and 07 b7 byte 4.
+constexpr uint8_t kNovaProCharging = 0x02;
 constexpr uint8_t kGainCommand = 0x27;
 constexpr uint8_t kMicVolumeCommand = 0x37;
 constexpr uint8_t kSidetoneCommand = 0x39;
@@ -344,7 +358,7 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
                 setting(0xB2, data[2]),
                 setting(0xB3, data[3]),
                 setting(0xB9, data[8]),
-                setting(kEliteNoiseMode, data[10]),
+                setting(kNoiseMode, data[10]),
                 setting(0xBF, data[11]),
                 setting(0xC1, data[12]),
                 setting(0xB8, data[16])};
@@ -422,7 +436,14 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
     if (data[0] == kNovaProEventReportId) {
         // Changes made on the GameDAC / base station menu: 07 <command> <value...>.
         const uint8_t command = data[1];
-        if (command == eq.presetCommand) {
+        if (command == kNovaProBatteryEvent && features.batteryQuery == kNovaProBattery && size >= 5) {
+            // 07 b7 [headset 0-8] [spare 0-8] [state], sent whenever either battery changes.
+            updates.push_back({.kind = Kind::Battery,
+                               .value = std::min(100, data[2] * 100 / 8),
+                               .charging = data[4] == kNovaProCharging,
+                               .headsetOff = data[4] == kNovaProHeadsetOff,
+                               .spare = std::min(100, data[3] * 100 / 8)});
+        } else if (command == eq.presetCommand) {
             updates.push_back({.kind = Kind::EqPreset, .value = data[2]});
         } else if (command == eq.bandsCommand && size >= 2 + kEqBands) {
             updates.push_back({.kind = Kind::EqCurve, .curve = CurveFromBytes(data + 2, eq.baseline, eq.range)});
@@ -454,12 +475,19 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
             updates.push_back({.kind = Kind::Setting, .command = kStreamMic, .value = data[25]});
         }
     } else if (data[1] == kNovaProBattery && features.batteryQuery == kNovaProBattery && size >= 16) {
-        // 06 b0: battery 0-8 at byte 6, headset state at byte 15 (1 off, 2 charging, 8 on).
+        // 06 b0: Bluetooth at power-on 2, during calls 3, its mode and link 4-5, battery 0-8 at 6, the spare
+        // battery 0-8 at 7, transparency level 8, noise control 10, mute LED 11, auto-off 12, wireless mode 13,
+        // headset state 15 (1 off, 2 charging, 8 on).
         updates.push_back({.kind = Kind::Battery,
                            .value = std::min(100, data[6] * 100 / 8),
-                           .charging = data[15] == 0x02,
-                           .headsetOff = data[15] == 0x01});
+                           .charging = data[15] == kNovaProCharging,
+                           .headsetOff = data[15] == kNovaProHeadsetOff,
+                           .spare = std::min(100, data[7] * 100 / 8)});
         updates.push_back({.kind = Kind::Bluetooth, .value = data[4], .chat = data[5]});
+        updates.push_back({.kind = Kind::Setting, .command = 0xB2, .value = data[2]});
+        updates.push_back({.kind = Kind::Setting, .command = 0xB3, .value = data[3]});
+        updates.push_back({.kind = Kind::Setting, .command = kTransparencyLevel, .value = data[8]});
+        updates.push_back({.kind = Kind::Setting, .command = kNoiseMode, .value = data[10]});
         updates.push_back({.kind = Kind::Setting, .command = 0xBF, .value = data[11]});
         updates.push_back({.kind = Kind::Setting, .command = 0xC1, .value = data[12]});
         updates.push_back({.kind = Kind::Setting, .command = 0xC3, .value = data[13]});

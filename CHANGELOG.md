@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.2 — 2026-10-22
+
+- Arctis Nova Pro Wireless: noise control on the *Headset* tab (off, transparency or ANC, with the
+  transparency level), the Bluetooth options (on together with the headset, lower game audio during
+  calls) and the spare battery in the base station next to the headset's, on the *Headset* tab and in the
+  tray. The tab follows changes made with the headset's button or on the base station, and the battery
+  updates as soon as the base station reports it. Commands as [NovaPanel](https://github.com/thibautgnt/NovaPanel) documents them for this base
+  station. Requested by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5).
+
 ## 2.5.1 — 2026-10-22
 
 - Presets from SteelSeries GG are read again: current GG keeps Sonar's database in a new place. Chat

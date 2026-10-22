@@ -100,8 +100,9 @@ native settings, so GG and Sonar can stay closed:
 - **Native headset settings**, shown only for the connected model: the 10-band Engine EQ with the
   SteelSeries presets (Flat, Bass Boost, Focus, Smiley) and a custom curve, microphone volume,
   sidetone, mic mute LED, gain, volume limiter, GameDAC brightness and screen dimming, the line out
-  (speakers, or a stream mix of the main sound, the aux input and the microphone), auto power-off,
-  2.4 GHz mode, Bluetooth options and battery level, depending on the headset.
+  (speakers, or a stream mix of the main sound, the aux input and the microphone), noise control (off,
+  transparency or ANC), auto power-off, 2.4 GHz mode, Bluetooth options and the battery levels, the base
+  station's spare battery included, depending on the headset.
 - **Game presets on the headset itself.** Any game preset (built-in or from Sonar) can be put on the
   headset's own Engine EQ, converted to its ten bands, so it works without virtual devices too.
 - **EQ presets as files.** Save the current curve, import presets from others, keep backups.
@@ -543,6 +544,9 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | PC → device | `06 37` `06 39` `06 27` `06 85` `06 83` | Mic volume, sidetone, gain (1 Low, 2 High), display brightness, screen dimming |
 | | PC → device | feature `06 93 x y w h …` | Draw on the 128×64 display: up to 64 columns, height in multiples of 8, pixels column by column |
 | | PC → device | `06 95` | Hand the display back to the GameDAC |
+| Nova Pro Wireless | PC → device | `06 B0` | Status: Bluetooth at power-on (byte 2) and during calls (3), its mode and link (4–5), battery 0–8 (6), spare battery 0–8 (7), transparency level (8), noise control (10: 0 off, 1 transparency, 2 ANC), mute LED (11), auto-off (12), wireless mode (13), headset state (15) |
+| | PC → device | `06 BD m` · `06 B9 n` · `06 B2` · `06 B3` | Noise control, transparency level 1–10, Bluetooth at power-on, during calls |
+| | device → PC | `07 B7 hh ss cs` · `07 BD m` · `07 B9 n` | Battery event (headset and spare 0–8, state); noise control and transparency changed on the headset |
 | Nova 7 / 7+ / 5X (interface 3) | PC → device | `00 B0` | Status request, polled every 100 ms until dial events arrive, then every 30 s for the battery |
 | | device → PC | `B0 …` | Status: battery at byte 2 (Nova 5X: 3), 0–100 or 0–4 on older models; game and chat at bytes 4 and 5 (Nova 5X: chat 5, game 6) |
 | | device → PC | `45 gg cc` | Dial event (Gen 2 firmware); polling stops once seen |
@@ -691,6 +695,8 @@ protocol details they documented:
 - [Linux-Arctis-Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos — device
   definitions and native settings (microphone, sidetone, gain, display, power, wireless, Bluetooth)
   for the Nova Pro, Nova 7, Nova 5 and Arctis 7+, and the Nova 7 Gen 2 parametric equalizer format.
+- [NovaPanel](https://github.com/thibautgnt/NovaPanel) by thibautgnt — the Nova Pro Wireless noise control, transparency and Bluetooth commands and
+  the spare battery in its status (MIT).
 - [ggoled](https://github.com/JerwuQu/ggoled) by JerwuQu — the Nova Pro OLED drawing protocol
   (`0x93` draw report, `0x95` return to the device's interface), and the Bad Apple demo that
   inspired the screensaver.

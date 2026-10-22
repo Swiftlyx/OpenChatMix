@@ -345,8 +345,9 @@ void PushStatus() {
 void PushHeadset() {
     const HeadsetFeatures* features = Features();
     g.headset.battery = BatteryShown() ? g.battery : -1;
-    // The Nova Elite's base station holds a spare battery, shown full.
-    g.headset.spareBattery = BatteryShown() && Current().family == DeviceFamily::NovaElite ? 100 : -1;
+    // The base stations of the Nova Pro Wireless and Nova Elite hold a spare battery, shown full.
+    const bool station = Current().family == DeviceFamily::NovaElite || Current().family == DeviceFamily::NovaProWireless;
+    g.headset.spareBattery = BatteryShown() && station ? 100 : -1;
     g.headset.charging = g.charging && !BluetoothBattery();
     g.headset.headsetOff = features && features->batteryQuery && g.headsetOff;
     g.headset.bluetooth = features && features->bluetooth ? g.bluetooth : BluetoothState::Unknown;
