@@ -30,6 +30,9 @@ constexpr float kMenuMinWidth = 220.0f;
 constexpr float kMenuMaxWidth = 320.0f;
 constexpr wchar_t kGlyphCheck = 0xE73E;
 
+// The flyout whose card is up, for the WinEvent callback, which has no context of its own.
+TrayFlyout* gCardFlyout = nullptr;
+
 double NowMs() {
     static const double frequency = [] {
         LARGE_INTEGER value;
@@ -193,10 +196,39 @@ bool TrayFlyout::Open(Kind kind, const RECT& icon, POINT anchor, float width, fl
     if (!reduceMotion_) {
         frames_.Start(window_, WM_APP_FRAME);
     }
+    // Windows 11 can still show an empty tooltip of its own (an explorer XAML popup) about a second into
+    // the hover, over the card: whatever the taskbar shows while the card is up goes below it.
+    DWORD taskbarProcess = 0;
+    if (HWND taskbar = kind == Kind::Card ? FindWindowW(L"Shell_TrayWnd", nullptr) : nullptr) {
+        GetWindowThreadProcessId(taskbar, &taskbarProcess);
+    }
+    if (taskbarProcess) {
+        gCardFlyout = this;
+        shellHook_ = SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_SHOW, nullptr, OnShellWindowShown, taskbarProcess,
+                                     0, WINEVENT_OUTOFCONTEXT);
+    }
     return true;
 }
 
+void CALLBACK TrayFlyout::OnShellWindowShown(HWINEVENTHOOK, DWORD, HWND window, LONG object, LONG child, DWORD,
+                                             DWORD) {
+    TrayFlyout* self = gCardFlyout;
+    if (!self || !self->CardVisible() || object != OBJID_WINDOW || child != CHILDID_SELF || !window ||
+        GetAncestor(window, GA_ROOT) != window) {
+        return;
+    }
+    // The topmost window shown last is on top; the card takes that place back.
+    SetWindowPos(self->window_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+}
+
 void TrayFlyout::Close() {
+    if (shellHook_) {
+        UnhookWinEvent(shellHook_);
+        shellHook_ = nullptr;
+    }
+    if (gCardFlyout == this) {
+        gCardFlyout = nullptr;
+    }
     if (HWND window = window_) {
         window_ = nullptr;
         frames_.Stop();

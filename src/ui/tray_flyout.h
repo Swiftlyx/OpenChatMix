@@ -12,7 +12,8 @@ namespace ui {
 
 // Material 3 surfaces at the tray icon in place of the shell's plain tooltip and Win32 menu: a hover
 // card with the device and the balance, and the right-click menu. Each is a layered window drawn
-// with Direct2D next to the taskbar, and exists only while it is shown.
+// with Direct2D next to the taskbar, and exists only while it is shown. The card stays above the
+// popups the taskbar shows meanwhile, such as the empty tooltip Windows 11 sometimes draws over it.
 class TrayFlyout {
 public:
     struct Card {
@@ -48,6 +49,8 @@ private:
     enum class Kind { None, Card, Menu };
 
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+    static void CALLBACK OnShellWindowShown(HWINEVENTHOOK hook, DWORD event, HWND window, LONG object, LONG child,
+                                            DWORD thread, DWORD time);
     LRESULT Handle(UINT message, WPARAM wParam, LPARAM lParam);
     // Creates the window for a surface of width x height DIP beside the taskbar near anchor.
     bool Open(Kind kind, const RECT& icon, POINT anchor, float width, float height);
@@ -66,6 +69,7 @@ private:
     HWND owner_;
     HWND window_ = nullptr;
     Kind kind_ = Kind::None;
+    HWINEVENTHOOK shellHook_ = nullptr;  // Windows the taskbar shows while the card is up.
     Canvas canvas_;
     HDC memoryDc_ = nullptr;
     HBITMAP bitmap_ = nullptr;
