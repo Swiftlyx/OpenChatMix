@@ -98,13 +98,15 @@ native settings, so GG and Sonar can stay closed:
 - **Manual assignment.** Open a group and add any running app, or browse for an `.exe`, even if it
   is closed.
 - **Native headset settings**, shown only for the connected model: the 10-band Engine EQ with the
-  SteelSeries presets (Flat, Bass Boost, Focus, Smiley) and a custom curve, microphone volume,
+  SteelSeries presets (Flat, Bass Boost, Focus, Smiley) and a custom curve (on the Nova Elite and
+  Nova 7 Gen 2 a parametric one: ten filters on a graph, each with its type, frequency, gain and Q), microphone volume,
   sidetone, mic mute LED, gain, volume limiter, GameDAC brightness and screen dimming, the line out
   (speakers, or a stream mix of the main sound, the aux input and the microphone), noise control (off,
   transparency or ANC), auto power-off, 2.4 GHz mode, Bluetooth options and the battery levels, the base
   station's spare battery included, depending on the headset.
 - **Game presets on the headset itself.** Any game preset (built-in or from Sonar) can be put on the
-  headset's own Engine EQ, converted to its ten bands, so it works without virtual devices too.
+  headset's own Engine EQ, converted to its ten bands (on the Nova Elite and Nova 7 Gen 2 with its own
+  filters, as GG sends them), so it works without virtual devices too.
 - **EQ presets as files.** Save the current curve, import presets from others, keep backups.
 - **Screensaver for the GameDAC display** (Nova Pro). While no sound plays, an animation, a clock
   or your own image or GIF keeps the OLED from burning in. Any sound brings the usual screen back.
@@ -556,10 +558,10 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, spare battery at 7, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
 | | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` | Dial event; battery event (headset %, spare %, charging state) |
 | | PC → device | `01 37` `01 BF` `01 BD` `01 B8` `01 B9` `01 27` `01 85` `01 83` `01 89` `01 C1` `01 B2` `01 B3` | Settings (experimental): mic volume, mute LED, noise control (0 off, 1 transparency, 2 ANC), ANC level, transparency level, volume limiter, brightness, dimming, home screen, auto-off, Bluetooth at power-on, during calls; line out and stream mix as on the Nova Pro; `01 09` saves 500 ms later |
-| | PC → device | feature `01 1B k a… n… f…` (1036 bytes) | Equalizer (experimental): kind (4 custom, 5 a GG game preset), a 6-byte alias, a 61-byte name, then ten filters of frequency (u16 LE), type (1 peak), gain (i8, 0.1 dB) and Q (u16 LE, ×1000); the rest zeros |
+| | PC → device | feature `01 1B k a… n… f…` (1036 bytes) | Equalizer (experimental): kind (4 custom, 5 a GG game preset), a 6-byte alias, a 61-byte name, then ten filters of frequency (u16 LE), type, gain (i8, 0.1 dB) and Q (u16 LE, ×1000); the rest zeros. Type 1 is a peak; 2 low pass, 3 high pass, 4 low shelf and 5 high shelf follow the vendor's order, unconfirmed. A band that is off goes as 20001 Hz without gain |
 | | PC → device | `01 38 on level` · `01 39 on level` | Sidetone of the boom and the built-in microphone |
 | | PC → device | `01 80` | Query the display: dimming (byte 2), brightness (3), home screen (5); `01 B0` also holds Bluetooth at power-on (2), during calls (3), transparency (8), noise control (10), mute LED (11), auto-off (12), ANC level (16) |
-| Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (1 = peak), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
+| Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (as on the Nova Elite), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback
 device, so there is no extra audio path and no added latency. `IAudioSessionManager2` lists the apps

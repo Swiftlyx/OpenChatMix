@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.6 — 2026-10-23
+
+- Arctis Nova Elite and Nova 7 Gen 2: the equalizer on the *Headset* tab is parametric, like the one on the
+  *Equalizer* tab: ten filters on a response graph, each with its own type, frequency, gain and Q, dragged
+  on the graph or set in the band editor below it. The SteelSeries presets and saved curves still apply.
+- On these headsets GG's game presets go on with their own filters instead of being fitted to ten bands;
+  for the presets in the USB capture from [@Lasfecas](https://github.com/Lasfecas) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) the bytes match what GG sends.
+- Saved headset presets keep these filters, along with the closest ten-band curve for other headsets.
+
 ## 2.5.5 — 2026-10-23
 
 - Arctis Nova Elite: the equalizer on the *Headset* tab (experimental), with the SteelSeries presets (Flat,
