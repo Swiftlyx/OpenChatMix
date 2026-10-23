@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.5.8 — 2026-10-24
+
+- Arctis Nova Elite: the microphone's own equalizer (experimental), the third choice of the switch above the
+  equalizer on the *Headset* tab. It works in the headset itself, without a virtual cable or added latency:
+  GG's Balanced, Broadcast High Pitch, Clarity High Pitch and Deep Voice presets, Flat and ten band sliders.
+  From [@Lasfecas](https://github.com/Lasfecas)'s USB capture in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); the presets match what GG sends.
+- The Elite's Bluetooth equalizer works, as [@Lasfecas](https://github.com/Lasfecas) reports in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6).
+
 ## 2.5.7 — 2026-10-23
 
 - Arctis Nova Elite: the equalizer of the sound over Bluetooth (experimental), with the SteelSeries presets and
