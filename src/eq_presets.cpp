@@ -166,7 +166,7 @@ std::optional<UserPreset> ReadPresetFile(const std::wstring& path) {
             open = text.find(L'"', close + 1);
         }
         if (count == kEqBands) {
-            preset.filters = PresetFilters(eq);
+            preset.filters = PresetFilters(eq, true);
         }
     }
     return preset;

@@ -609,10 +609,27 @@ public:
         CountDownSave();
     }
     void OnEqualizerFilters(const EqFilters& filters) override {
-        g.headset.eqFilters = filters;
-        g.headset.eqFiltersKnown = true;
         if (const HeadsetFeatures* features = Features()) {
+            // As the app does: within the headset's limits.
+            ParametricEq eq;
+            eq.bands = filters;
+            g.headset.eqFilters = PresetFilters(eq, features->equalizer.notch);
+            g.headset.eqFiltersKnown = true;
             g.headset.eqPreset = features->equalizer.CustomIndex();
+        }
+        PushHeadset();
+        CountDownSave();
+    }
+    void OnBluetoothEqualizerPreset(int index) override {
+        g.headset.btEqPreset = index;
+        PushHeadset();
+        CountDownSave();
+    }
+    void OnBluetoothEqualizerCurve(const EqCurve& curve) override {
+        g.headset.btEqCurve = curve;
+        g.headset.btEqCurveKnown = true;
+        if (const HeadsetFeatures* features = Features()) {
+            g.headset.btEqPreset = features->bluetoothEqualizer.CustomIndex();
         }
         PushHeadset();
         CountDownSave();

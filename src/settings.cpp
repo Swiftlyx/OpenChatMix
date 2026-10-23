@@ -997,12 +997,33 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
             start = end + 1;
         }
         if (count == kEqBands) {
-            state.eqFilters = PresetFilters(read);
+            state.eqFilters = PresetFilters(read, features.equalizer.notch);
             state.eqFiltersKnown = true;
         } else if (state.eqCurveKnown) {
             state.eqFilters = CurveFilters(state.eqCurve, features.equalizer.range);
             state.eqFiltersKnown = true;
         }
+    }
+
+    // The Bluetooth equalizer, as the main one.
+    if (const EqualizerSpec& bluetooth = features.bluetoothEqualizer; bluetooth.bandsCommand) {
+        const int btPreset = static_cast<int>(GetPrivateProfileIntW(section.c_str(), L"BtEqPreset", -1, path.c_str()));
+        if (btPreset >= 0 && btPreset <= bluetooth.CustomIndex()) {
+            state.btEqPreset = btPreset;
+        }
+        const std::wstring btCurve = ReadString(path, section.c_str(), L"BtEqCurve", L"");
+        int btBand = 0;
+        for (size_t start = 0; btBand < kEqBands && start < btCurve.size(); ++btBand) {
+            size_t end = btCurve.find(L',', start);
+            if (end == std::wstring::npos) {
+                end = btCurve.size();
+            }
+            state.btEqCurve[btBand] = static_cast<int8_t>(std::clamp(_wtoi(btCurve.substr(start, end - start).c_str()),
+                                                                     -static_cast<int>(bluetooth.range),
+                                                                     static_cast<int>(bluetooth.range)));
+            start = end + 1;
+        }
+        state.btEqCurveKnown = btBand == kEqBands;
     }
 }
 
@@ -1038,6 +1059,20 @@ void SaveHeadsetState(const std::wstring& path, uint16_t productId, const Headse
             filters += FormatBand(band);
         }
         WritePrivateProfileStringW(section.c_str(), L"EqFilters", filters.c_str(), path.c_str());
+    }
+    if (state.btEqPreset >= 0) {
+        WritePrivateProfileStringW(section.c_str(), L"BtEqPreset", std::to_wstring(state.btEqPreset).c_str(),
+                                   path.c_str());
+    }
+    if (state.btEqCurveKnown) {
+        std::wstring curve;
+        for (const int8_t band : state.btEqCurve) {
+            if (!curve.empty()) {
+                curve += L',';
+            }
+            curve += std::to_wstring(band);
+        }
+        WritePrivateProfileStringW(section.c_str(), L"BtEqCurve", curve.c_str(), path.c_str());
     }
 }
 

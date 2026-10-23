@@ -225,8 +225,9 @@ enum : uint32_t {
 };
 
 // The headset's filter editor uses the equalizer's widget IDs plus this, above the fixed ones and below parts and
-// hashed IDs.
+// hashed IDs; the Bluetooth equalizer and the switch between the two use them plus the second base.
 inline constexpr uint32_t kIdHeadsetEqBase = 0x10000;
+inline constexpr uint32_t kIdBluetoothEqBase = 0x20000;
 
 enum : uint32_t {
     kKindGroup = 1,

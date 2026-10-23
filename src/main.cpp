@@ -170,6 +170,8 @@ public:
     void OnEqualizerPreset(int index) override;
     void OnEqualizerCurve(const EqCurve& curve) override;
     void OnEqualizerFilters(const EqFilters& filters) override;
+    void OnBluetoothEqualizerPreset(int index) override;
+    void OnBluetoothEqualizerCurve(const EqCurve& curve) override;
     void OnRoutingEnabled(bool enabled) override;
     void OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) override;
     void OnRoutingManage(bool enabled) override;
@@ -299,6 +301,7 @@ struct App {
     ULONGLONG levelsSentTick = 0;
     ULONGLONG equalizerSentTick = 0;
     std::optional<EqFilters> equalizerPending;  // Filters held back by kEqualizerSendGapMs.
+    int equalizerPendingPreset = -1;            // The built-in preset they are, -1 for custom filters.
     bool levelsUnverified = false;  // The last balance sent is not confirmed by a state reply yet.
     bool commitPending = false;     // Settings were sent and the headset's save is still to come.
     AppRouting appRouting;
@@ -860,16 +863,18 @@ void SendEqualizerCurve(const EqCurve& curve) {
     g_app.equalizerSentTick = GetTickCount64();
     const EqualizerSpec& eq = g_app.features->equalizer;
     for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve)) {
-        SendHeadsetCommand(command, eq.format == EqFormat::Feature);
+        SendHeadsetCommand(command, eq.SentAsFeature());
     }
 }
 
-// Sends the filters at most every kEqualizerSendGapMs; the latest ones always go out.
-void SendEqualizerFilters(const EqFilters& filters) {
+// Sends the filters at most every kEqualizerSendGapMs; the latest ones always go out. preset: the built-in preset
+// they are, which the Nova Elite takes by name; -1 for custom filters.
+void SendEqualizerFilters(const EqFilters& filters, int preset = -1) {
     const ULONGLONG now = GetTickCount64();
     const ULONGLONG since = now - g_app.equalizerSentTick;
     if (since < kEqualizerSendGapMs) {
         g_app.equalizerPending = filters;
+        g_app.equalizerPendingPreset = preset;
         SetTimer(g_app.window, kTimerSendEqualizer, static_cast<UINT>(kEqualizerSendGapMs - since), nullptr);
         return;
     }
@@ -877,8 +882,16 @@ void SendEqualizerFilters(const EqFilters& filters) {
     g_app.equalizerPending.reset();
     g_app.equalizerSentTick = now;
     const EqualizerSpec& eq = g_app.features->equalizer;
-    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, filters)) {
-        SendHeadsetCommand(command, eq.format == EqFormat::Feature);
+    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, filters, preset)) {
+        SendHeadsetCommand(command, eq.SentAsFeature());
+    }
+}
+
+// The equalizer of the sound over Bluetooth (Nova Elite): a built-in preset by its index, or the custom curve (-1).
+void SendBluetoothEqualizer(const EqCurve& curve, int preset) {
+    const EqualizerSpec& eq = g_app.features->bluetoothEqualizer;
+    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve, preset)) {
+        SendHeadsetCommand(command, eq.SentAsFeature());
     }
 }
 
@@ -2811,6 +2824,9 @@ void Host::OnEqualizerPreset(int index) {
     if (eq.presetCommand) {
         const uint8_t payload[] = {eq.presetCommand, static_cast<uint8_t>(index)};
         SendHeadsetCommand(payload);
+    } else if (index < custom && eq.Parametric()) {
+        // GG's own form of the preset, and on the Nova Elite its name.
+        SendEqualizerFilters(BuiltinPresetFilters(eq, index), index);
     } else if (index < custom) {
         SendEqualizerCurve(eq.presets[index].curve);
     } else if (eq.Parametric() && g_app.headset.eqFiltersKnown) {
@@ -2852,10 +2868,45 @@ void Host::OnEqualizerFilters(const EqFilters& filters) {
     if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->equalizer.Parametric()) {
         return;
     }
-    SendEqualizerFilters(filters);
-    g_app.headset.eqFilters = filters;
+    // Within the headset's limits; a notch it has no type for becomes a peak cut.
+    ParametricEq eq;
+    eq.bands = filters;
+    const EqFilters fitted = PresetFilters(eq, g_app.features->equalizer.notch);
+    SendEqualizerFilters(fitted);
+    g_app.headset.eqFilters = fitted;
     g_app.headset.eqFiltersKnown = true;
     g_app.headset.eqPreset = g_app.features->equalizer.CustomIndex();
+    PushHeadset();
+    ScheduleHeadsetSave();
+}
+
+void Host::OnBluetoothEqualizerPreset(int index) {
+    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->bluetoothEqualizer.bandsCommand) {
+        return;
+    }
+    const EqualizerSpec& eq = g_app.features->bluetoothEqualizer;
+    const int custom = eq.CustomIndex();
+    if (index < 0 || index > custom) {
+        return;
+    }
+    if (index < custom) {
+        SendBluetoothEqualizer(eq.presets[index].curve, index);
+    } else if (g_app.headset.btEqCurveKnown) {
+        SendBluetoothEqualizer(g_app.headset.btEqCurve, -1);
+    }
+    g_app.headset.btEqPreset = index;
+    PushHeadset();
+    ScheduleHeadsetSave();
+}
+
+void Host::OnBluetoothEqualizerCurve(const EqCurve& curve) {
+    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->bluetoothEqualizer.bandsCommand) {
+        return;
+    }
+    SendBluetoothEqualizer(curve, -1);
+    g_app.headset.btEqCurve = curve;
+    g_app.headset.btEqCurveKnown = true;
+    g_app.headset.btEqPreset = g_app.features->bluetoothEqualizer.CustomIndex();
     PushHeadset();
     ScheduleHeadsetSave();
 }
@@ -3902,7 +3953,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             SendDeviceLevels();
         } else if (wParam == kTimerSendEqualizer) {
             if (g_app.equalizerPending && g_app.features && g_app.device.IsOpen()) {
-                SendEqualizerFilters(*g_app.equalizerPending);
+                SendEqualizerFilters(*g_app.equalizerPending, g_app.equalizerPendingPreset);
             }
         } else if (wParam == kTimerUpdateCheck) {
             SetTimer(window, kTimerUpdateCheck, kUpdateTimerMs, nullptr);

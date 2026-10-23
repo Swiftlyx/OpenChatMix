@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
-#include <string_view>
 
 namespace {
 
@@ -141,12 +140,13 @@ constexpr SettingSection kNova5XSections[] = {
     {Power, kMinutePower},
 };
 
-// SteelSeries Engine EQ presets. The Nova Pro stores them on the device (indices 0-3).
+// SteelSeries Engine EQ presets, as GG keeps them in Engine's database and sends them to the Nova Elite (both of
+// its equalizers, issue #6), with GG's short names. The Nova Pro stores them on the device (indices 0-3).
 constexpr EqPreset kNova7Presets[] = {
-    {L"Flat", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
-    {L"Bass Boost", {7, 11, 8, 2, -3, -3, -2, -2, -2, -2}},
-    {L"Focus", {-10, -7, -2, -7, -5, 8, 12, -7, 0, 0}},
-    {L"Smiley", {6, 7, 3, -3, -8, -8, -5, 3, 6, 8}},
+    {L"Flat", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "FLAT"},
+    {L"Bass Boost", {7, 11, 8, 2, -3, -3, -2, -2, -2, -2}, "BASS"},
+    {L"Focus", {-10, -7, -2, -7, -5, 8, 12, 7, -7, 0}, "FOCUS"},
+    {L"Smiley", {6, 7, 3, -3, -8, -8, -5, 3, 6, 8}, "SMILEY"},
 };
 constexpr EqPreset kArctis7PlusPresets[] = {
     {L"Flat", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
@@ -241,16 +241,23 @@ constexpr SettingSection kEliteSections[] = {
     {Power, kNovaProWirelessPower},
     {Bluetooth, kStationBluetooth},
 };
-// The Elite's equalizer: 01 1b as a 1036-byte feature report, as GG sends it (capture in issue #6, see
-// EqualizerCommands).
+// The Elite's equalizers: 01 1b for the main one and 01 1f for the sound over Bluetooth, each a 1036-byte feature
+// report, as GG sends them (captures in issue #6, see EqualizerCommands).
 constexpr uint8_t kEliteEqCommand = 0x1B;
+constexpr uint8_t kEliteBluetoothEqCommand = 0x1F;
 const HeadsetFeatures kNovaElite{
     .sections = kEliteSections,
     .equalizer = {.bandsCommand = kEliteEqCommand,
                   .range = 20,
                   .presets = kNova7Presets,
                   .format = EqFormat::Feature,
-                  .experimental = true},
+                  .experimental = true,
+                  .notch = true},
+    .bluetoothEqualizer = {.bandsCommand = kEliteBluetoothEqCommand,
+                           .range = 20,
+                           .presets = kNova7Presets,
+                           .format = EqFormat::FeatureGains,
+                           .experimental = true},
     .save = kSaveState,
     .stateQuery = kEliteDisplayQuery,
     .batteryQuery = kStatusRequest,
@@ -280,21 +287,24 @@ constexpr char kGen2PresetName[] = "OpenChatMix";
 constexpr float kOctaveFrequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
 constexpr float kOctaveQ = 1.414f;
 
-// Nova Elite equalizer, as GG sets it (capture in issue #6): 1b [kind] [alias, 6 bytes] [name, 61 bytes], then ten
-// filters of six bytes each (see AppendFilter, frequency little-endian); the rest of the report stays zero. Kind 4
-// with the alias "CUSTOM" is GG's custom curve, 5 one of its game presets.
+// Nova Elite equalizers, as GG sets them (captures in issue #6): 1b or 1f [kind] [alias, 6 bytes] [name, 61 bytes],
+// then for 1b ten filters of six bytes each (see AppendFilter, frequency little-endian), for 1f (Bluetooth) ten
+// gains of fixed bands (signed, in 0.1 dB); the rest of the report stays zero. Kind is the index of a built-in
+// preset (0 Flat, 1 Bass Boost, 2 Focus, 3 Smiley, with their names), 4 with the alias "CUSTOM" the custom
+// setting, 5 one of GG's game presets.
 constexpr uint8_t kEliteEqCustom = 0x04;
 constexpr char kEliteEqAlias[] = "CUSTOM";
 constexpr size_t kEliteEqAliasLength = 6;
 constexpr size_t kEliteEqNameLength = 61;
 
-// Filter types on the wire, in the order the vendor's protocol description lists them (as Linux-Arctis-Manager
-// quotes it): peak, low pass, high pass, low shelf, high shelf. Only the peak is confirmed by a capture (issue #6).
+// Filter types on the wire, as GG sends its presets (captures in issue #6): peak, low pass, high pass, low shelf,
+// high shelf and, on the Nova Elite, notch.
 constexpr uint8_t kWirePeak = 1;
 constexpr uint8_t kWireLowPass = 2;
 constexpr uint8_t kWireHighPass = 3;
 constexpr uint8_t kWireLowShelf = 4;
 constexpr uint8_t kWireHighShelf = 5;
+constexpr uint8_t kWireNotch = 6;
 // A band that is off, as GG sends it: a peak at this frequency without gain.
 constexpr uint16_t kWireBandOff = 20001;
 
@@ -304,16 +314,20 @@ uint8_t WireType(::FilterType type) {
     case ::FilterType::HighPass: return kWireHighPass;
     case ::FilterType::LowShelf: return kWireLowShelf;
     case ::FilterType::HighShelf: return kWireHighShelf;
-    case ::FilterType::Peaking:
-    case ::FilterType::Notch: break;
+    case ::FilterType::Notch: return kWireNotch;
+    case ::FilterType::Peaking: break;
     }
     return kWirePeak;
 }
 
 // One filter in six bytes: frequency (u16), type, gain (signed, in 0.1 dB) and Q (x1000, u16 little-endian).
-void AppendFilter(std::vector<uint8_t>& out, const EqBand& band, bool bigEndianFrequency) {
-    // Like PresetFilters: no notch type on these headsets, so the deepest peak cut stands in for it.
+// notchType: the headset has a notch type, which GG sends at the deepest cut; without one, like PresetFilters, the
+// deepest peak cut stands in for it.
+void AppendFilter(std::vector<uint8_t>& out, EqBand band, bool bigEndianFrequency, bool notchType) {
     const bool notch = band.type == ::FilterType::Notch;
+    if (notch && !notchType) {
+        band.type = ::FilterType::Peaking;
+    }
     const float gain = notch ? -kHeadsetFilterMaxGain : UsesGain(band.type) ? band.gain : 0.0f;
     const uint16_t frequency =
         band.enabled ? static_cast<uint16_t>(std::lround(std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency)))
@@ -448,6 +462,29 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
         return {update};
     }
     return {};
+}
+
+// The Nova Elite's report up to its bands: the command, then the built-in preset's index, short name and name, or
+// those of the custom setting.
+std::vector<uint8_t> EliteReportHead(const EqualizerSpec& spec, int preset) {
+    const bool builtin = preset >= 0 && preset < spec.CustomIndex();
+    std::vector<uint8_t> report{spec.bandsCommand, static_cast<uint8_t>(builtin ? preset : kEliteEqCustom)};
+    // Fixed-size text fields, padded with zeros; the preset names are ASCII.
+    auto text = [&report](auto value, size_t length) {
+        size_t index = 0;
+        for (; index < length && value[index]; ++index) {
+            report.push_back(static_cast<uint8_t>(value[index] & 0x7F));
+        }
+        report.insert(report.end(), length - index, 0x00);
+    };
+    if (builtin && spec.presets[preset].alias) {
+        text(spec.presets[preset].alias, kEliteEqAliasLength);
+        text(spec.presets[preset].name, kEliteEqNameLength);
+    } else {
+        text(kEliteEqAlias, kEliteEqAliasLength);
+        text(kGen2PresetName, kEliteEqNameLength);
+    }
+    return report;
 }
 
 }  // namespace
@@ -612,7 +649,7 @@ std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const Heads
     return {kStreamMain, level(kStreamMain), 0x00, level(kStreamAux), level(kStreamMic)};
 }
 
-std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve) {
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve, int preset) {
     if (spec.format == EqFormat::Graphic) {
         std::vector<uint8_t> command{spec.bandsCommand};
         for (const int8_t band : curve) {
@@ -623,12 +660,20 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         }
         return {command};
     }
-    return EqualizerCommands(spec, CurveFilters(curve, spec.range));
+    if (spec.format == EqFormat::FeatureGains) {
+        std::vector<uint8_t> report = EliteReportHead(spec, preset);
+        for (const int8_t band : curve) {
+            report.push_back(static_cast<uint8_t>(static_cast<int8_t>(std::clamp<int>(band, -spec.range, spec.range) * 5)));
+        }
+        return {report};
+    }
+    const bool builtin = preset >= 0 && preset < spec.CustomIndex();
+    return EqualizerCommands(spec, builtin ? BuiltinPresetFilters(spec, preset) : CurveFilters(curve, spec.range), preset);
 }
 
-std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters) {
-    if (spec.format == EqFormat::Graphic) {
-        // Not used by the app: graphic headsets take curves. The closest curve stands in.
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters, int preset) {
+    if (!spec.Parametric()) {
+        // Not used by the app: these equalizers take curves. The closest curve stands in.
         ParametricEq eq;
         eq.bands = filters;
         const auto gains = GraphicEqGains(eq, spec.range / 2.0f);
@@ -639,17 +684,9 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         return EqualizerCommands(spec, curve);
     }
     if (spec.format == EqFormat::Feature) {
-        std::vector<uint8_t> report{spec.bandsCommand, kEliteEqCustom};
-        // Fixed-size text fields, padded with zeros.
-        auto text = [&report](std::string_view value, size_t length) {
-            for (size_t index = 0; index < length; ++index) {
-                report.push_back(index < value.size() ? static_cast<uint8_t>(value[index]) : 0x00);
-            }
-        };
-        text(kEliteEqAlias, kEliteEqAliasLength);
-        text(kGen2PresetName, kEliteEqNameLength);
+        std::vector<uint8_t> report = EliteReportHead(spec, preset);
         for (const EqBand& band : filters) {
-            AppendFilter(report, band, false);
+            AppendFilter(report, band, false, spec.notch);
         }
         return {report};
     }
@@ -657,12 +694,12 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
     name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);
     std::vector<uint8_t> bands{spec.bandsCommand, kGen2Radio};
     for (const EqBand& band : filters) {
-        AppendFilter(bands, band, true);
+        AppendFilter(bands, band, true, spec.notch);
     }
     return {name, bands, {kGen2EqCommit}};
 }
 
-EqFilters CurveFilters(const EqCurve& curve, int8_t range) {
+EqFilters CurveFilters(const EqCurve& curve, int8_t range, bool shelves) {
     EqFilters filters{};
     for (int band = 0; band < kEqBands; ++band) {
         filters[band] = {.type = ::FilterType::Peaking,
@@ -670,16 +707,26 @@ EqFilters CurveFilters(const EqCurve& curve, int8_t range) {
                          .gain = std::clamp<int>(curve[band], -range, range) / 2.0f,
                          .q = kOctaveQ};
     }
+    if (shelves) {
+        filters.front().type = ::FilterType::LowShelf;
+        filters.back().type = ::FilterType::HighShelf;
+    }
     return filters;
 }
 
-EqFilters PresetFilters(const ParametricEq& eq) {
+EqFilters BuiltinPresetFilters(const EqualizerSpec& spec, int index) {
+    const EqCurve& curve = spec.presets[index].curve;
+    const bool flat = std::all_of(curve.begin(), curve.end(), [](int8_t band) { return band == 0; });
+    return CurveFilters(curve, spec.range, !flat);
+}
+
+EqFilters PresetFilters(const ParametricEq& eq, bool notch) {
     EqFilters filters = eq.bands;
     for (EqBand& band : filters) {
         band.frequency = std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency);
         band.gain = std::clamp(band.gain, -kHeadsetFilterMaxGain, kHeadsetFilterMaxGain);
         band.q = std::clamp(band.q, kEqMinQ, kEqMaxQ);
-        if (band.type == ::FilterType::Notch) {
+        if (band.type == ::FilterType::Notch && !notch) {
             band.type = ::FilterType::Peaking;
             band.gain = -kHeadsetFilterMaxGain;
         }
@@ -689,7 +736,7 @@ EqFilters PresetFilters(const ParametricEq& eq) {
 
 EqFilters ActiveFilters(const EqualizerSpec& spec, const HeadsetState& state) {
     if (state.eqPreset >= 0 && state.eqPreset < spec.CustomIndex()) {
-        return CurveFilters(spec.presets[state.eqPreset].curve, spec.range);
+        return BuiltinPresetFilters(spec, state.eqPreset);
     }
     if (state.eqFiltersKnown) {
         return state.eqFilters;

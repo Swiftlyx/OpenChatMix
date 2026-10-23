@@ -146,6 +146,9 @@ public:
     virtual void OnEqualizerCurve(const EqCurve& curve) = 0;
     // The custom filters of a parametric headset equalizer (Nova 7 Gen 2, Nova Elite).
     virtual void OnEqualizerFilters(const EqFilters& filters) = 0;
+    // The equalizer of the sound over Bluetooth (Nova Elite): a built-in preset, or the custom curve.
+    virtual void OnBluetoothEqualizerPreset(int index) = 0;
+    virtual void OnBluetoothEqualizerCurve(const EqCurve& curve) = 0;
     virtual void OnRoutingEnabled(bool enabled) = 0;
     virtual void OnRoutingDevice(RoutingSlot slot, const std::wstring& id) = 0;
     virtual void OnRoutingManage(bool enabled) = 0;
@@ -478,7 +481,8 @@ private:
         D2D1_COLOR_F onAccent{};
         bool enabled = true;
         bool hardware = false;
-        uint32_t idBase = 0;  // Added to the widget IDs, so both editors keep their own.
+        int typeCount = kFilterTypeCount;  // Filter types offered, in FilterType order.
+        uint32_t idBase = 0;               // Added to the widget IDs, so both editors keep their own.
     };
     EqEditor ChannelEqEditor();
     EqEditor HeadsetEqEditor();
@@ -506,8 +510,15 @@ private:
     // Headset and devices (panel_pages.cpp).
     void DrawHeadset();
     float DrawEqualizer(float top);
+    // The equalizer's title with its reset; with a Bluetooth equalizer too, the switch between the two below it.
+    float DrawEqualizerTitle(float top, std::function<void()> reset);
+    // Ten band sliders from top; change gets the edited curve. Returns the bottom of the band labels.
+    float DrawBandSliders(float top, const EqCurve& curve, int8_t range, bool editable, uint32_t idBase,
+                          std::function<void(const EqCurve&)> change);
     // The graph and band editor of a parametric headset equalizer, in place of the ten band sliders.
     float DrawHeadsetFilters(float top);
+    // The Nova Elite's equalizer of the sound over Bluetooth: presets and ten band sliders.
+    float DrawBluetoothEqualizer(float top);
     // Below the bands: preset file actions, the game presets menu and the saved presets.
     float HeadsetPresetToolsHeight();
     void DrawHeadsetPresetTools(float top);
@@ -525,6 +536,8 @@ private:
     EqCurve ActiveCurve() const;
     // The filters a parametric headset currently plays.
     EqFilters ActiveHeadsetFilters() const;
+    // The curve of the Bluetooth equalizer: its preset's, or the custom one.
+    EqCurve ActiveBluetoothCurve() const;
 
     // Settings (panel_settings.cpp).
     void DrawSettings();
@@ -651,6 +664,7 @@ private:
     EqChannel eqChannel_ = EqChannel::Game;
     int eqBand_ = 0;                        // Band selected in the equalizer graph.
     int headsetBand_ = 0;                   // Band selected in the headset's filter graph.
+    bool headsetEqBluetooth_ = false;       // The Headset tab shows the Bluetooth equalizer.
     std::vector<NamedEq> eqLibrary_[3];     // Built-in, Sonar and own presets of eqLibraryChannel_.
     EqChannel eqLibraryChannel_ = EqChannel::Game;
     struct MenuState {

@@ -527,6 +527,7 @@ enum class Text {
     NoisePopupHint,
     NoiseScreen,
     NoiseScreenHint,
+    BluetoothEqHint,
     Count,
 };
 

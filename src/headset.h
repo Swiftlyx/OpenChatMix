@@ -65,6 +65,7 @@ struct SettingSection {
 struct EqPreset {
     const wchar_t* name;  // SteelSeries preset names are product names and stay untranslated.
     EqCurve curve;
+    const char* alias = nullptr;  // GG's short name for the preset, which the Nova Elite takes along with it.
 };
 
 // How the equalizer curve reaches the headset.
@@ -72,6 +73,7 @@ enum class EqFormat : uint8_t {
     Graphic,     // [bandsCommand] [10 levels]: baseline plus half-decibel steps.
     Parametric,  // Nova 7 Gen 2 protocol: a preset name, ten filters, then a commit (see EqualizerCommands).
     Feature,     // Nova Elite: one feature report with the preset's names and ten filters.
+    FeatureGains,  // Nova Elite Bluetooth: the same report with ten gains of fixed bands instead of filters.
 };
 
 struct EqualizerSpec {
@@ -83,10 +85,13 @@ struct EqualizerSpec {
     std::span<const EqPreset> presets = {};
     EqFormat format = EqFormat::Graphic;
     bool experimental = false;  // Written from protocol descriptions only, not yet confirmed on the headset.
+    bool notch = false;         // Parametric: the headset has a notch filter type of its own.
     // The custom curve is preset index presets.size() (4 on every supported device).
     int CustomIndex() const { return static_cast<int>(presets.size()); }
     // Filters of any frequency, type and Q instead of ten fixed bands; the custom setting is EqFilters.
-    bool Parametric() const { return format != EqFormat::Graphic; }
+    bool Parametric() const { return format == EqFormat::Parametric || format == EqFormat::Feature; }
+    // Sent as a feature report rather than output reports.
+    bool SentAsFeature() const { return format == EqFormat::Feature || format == EqFormat::FeatureGains; }
 };
 
 struct SaveCommand {
@@ -97,6 +102,7 @@ struct SaveCommand {
 struct HeadsetFeatures {
     std::span<const SettingSection> sections;
     EqualizerSpec equalizer;
+    EqualizerSpec bluetoothEqualizer;    // Of the sound over Bluetooth, apart from the main one (Nova Elite).
     std::span<const SaveCommand> save;  // Sent after changes so the headset keeps them.
     unsigned saveDelayMs = 0;            // Quiet time after the last change before the save; 0 for the default.
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
@@ -122,6 +128,9 @@ struct HeadsetState {
     bool eqCurveKnown = false;
     EqFilters eqFilters{};            // The custom filters of a parametric equalizer.
     bool eqFiltersKnown = false;
+    int btEqPreset = -1;              // The Bluetooth equalizer, as eqPreset and eqCurve.
+    EqCurve btEqCurve{};
+    bool btEqCurveKnown = false;
     int battery = -1;                 // Percent; -1 unknown.
     int spareBattery = -1;            // Percent of the spare battery in the base station; -1 unknown or none.
     bool charging = false;
@@ -153,15 +162,20 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
 inline constexpr uint8_t kNoiseControlCommand = 0xBD;
 
 // The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one, one feature
-// report (without its report ID) for EqFormat::Feature.
-std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve);
+// report (without its report ID) for the Nova Elite. preset: the index of the built-in preset the curve is, which
+// the Nova Elite takes along by name; -1 for the custom curve.
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve, int preset = -1);
 // The same for the filters of a parametric equalizer.
-std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters);
-// A curve as filters: peaks at the usual octave centres with a Q of one octave.
-EqFilters CurveFilters(const EqCurve& curve, int8_t range);
-// The bands of a preset as the headset's filters, within its limits. A notch, which these headsets have no type
-// for, becomes the deepest peak cut.
-EqFilters PresetFilters(const ParametricEq& eq);
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters,
+                                                    int preset = -1);
+// A curve as filters: peaks at the usual octave centres with a Q of one octave; with shelves, the lowest and
+// highest band are shelves instead.
+EqFilters CurveFilters(const EqCurve& curve, int8_t range, bool shelves = false);
+// A built-in preset as GG sets it on a parametric headset: shelves at both ends and peaks between, Flat all peaks.
+EqFilters BuiltinPresetFilters(const EqualizerSpec& spec, int index);
+// The bands of a preset as the headset's filters, within its limits. Without a notch type of its own, a notch
+// becomes the deepest peak cut.
+EqFilters PresetFilters(const ParametricEq& eq, bool notch = false);
 // The filters the headset plays now: a preset's curve as filters, or the custom ones.
 EqFilters ActiveFilters(const EqualizerSpec& spec, const HeadsetState& state);
 // The bytes after the report ID that set one setting: [command, value], or the whole stream mix.

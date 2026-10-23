@@ -159,12 +159,14 @@ Panel::EqEditor Panel::HeadsetEqEditor() {
         ParametricEq eq;
         eq.bands = ActiveHeadsetFilters();
         edit(eq);
-        host_.OnEqualizerFilters(PresetFilters(eq));
+        host_.OnEqualizerFilters(PresetFilters(eq, features_->equalizer.notch));
     };
     editor.band = &headsetBand_;
     editor.accent = p.primary;
     editor.onAccent = p.onPrimary;
     editor.hardware = true;
+    // Notch is the last type; only headsets with a notch type of their own offer it.
+    editor.typeCount = features_->equalizer.notch ? kFilterTypeCount : kFilterTypeCount - 1;
     editor.idBase = kIdHeadsetEqBase;
     return editor;
 }
@@ -372,14 +374,7 @@ void Panel::DrawEqualizerPage() {
 float Panel::DrawHeadsetFilters(float y) {
     const Palette& p = P();
     const EqualizerSpec& eq = features_->equalizer;
-
-    canvas_.Text(T(Text::Equalizer), {kInset, y, 240.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
-    TextButton(kIdEqReset, {kWidth - kGutter - 104.0f, y - 6.0f, kWidth - kGutter, y + 26.0f}, kGlyphReset,
-               T(Text::EqReset), false, [this] { host_.OnEqualizerCurve(EqCurve{}); });
-    if (features_->saveDelayMs) {
-        DrawSaveState(kWidth - kGutter - 112.0f, y + 10.0f);
-    }
-    y += design::kSectionTitleHeight + 2.0f;
+    y = DrawEqualizerTitle(y, [this] { host_.OnEqualizerCurve(EqCurve{}); });
 
     const wchar_t* hint = eq.experimental ? T(Text::EqExperimental) : nullptr;
     const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
@@ -631,8 +626,7 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq, const EqEditor& edi
                                 }});
                     }});
 
-    // Headsets have no notch type; it is the last one, so the others keep their indices.
-    const int typeCount = editor.hardware ? kFilterTypeCount - 1 : kFilterTypeCount;
+    const int typeCount = editor.typeCount;
     rows.push_back(DropdownItem(
         kIdEqType + ids, T(Text::FilterType), std::min(static_cast<int>(settings.type), typeCount - 1), typeCount,
         [](int i) { return std::wstring(T(kFilterLabels[i])); },
