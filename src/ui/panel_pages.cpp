@@ -190,13 +190,14 @@ EqFilters Panel::ActiveHeadsetFilters() const {
     return features_ ? ActiveFilters(features_->equalizer, headset_) : EqFilters{};
 }
 
-EqCurve Panel::ActiveBluetoothCurve() const {
+EqCurve Panel::ActiveExtraCurve(ExtraEqualizer which) const {
     if (!features_) {
         return {};
     }
-    const EqualizerSpec& eq = features_->bluetoothEqualizer;
-    const bool preset = headset_.btEqPreset >= 0 && headset_.btEqPreset < eq.CustomIndex();
-    return preset ? eq.presets[headset_.btEqPreset].curve : headset_.btEqCurve;
+    const EqualizerSpec& eq = features_->Extra(which);
+    const HeadsetState::ExtraEq& state = headset_.extraEq[static_cast<int>(which)];
+    const bool preset = state.preset >= 0 && state.preset < eq.CustomIndex();
+    return preset ? eq.presets[state.preset].curve : state.curve;
 }
 
 void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
@@ -301,8 +302,11 @@ void Panel::DrawSaveState(float right, float centerY) {
 }
 
 float Panel::DrawEqualizer(float y) {
-    if (features_->bluetoothEqualizer.bandsCommand && headsetEqBluetooth_) {
-        return DrawBluetoothEqualizer(y);
+    if (headsetEqView_ > 0 && headsetEqView_ <= kExtraEqualizers) {
+        const auto which = static_cast<ExtraEqualizer>(headsetEqView_ - 1);
+        if (features_->Extra(which).bandsCommand) {
+            return DrawExtraEqualizer(y, which);
+        }
     }
     if (features_->equalizer.Parametric()) {
         return DrawHeadsetFilters(y);
@@ -350,14 +354,24 @@ float Panel::DrawEqualizerTitle(float y, std::function<void()> reset) {
         DrawSaveState(kWidth - kGutter - 112.0f, y + 10.0f);
     }
     y += design::kSectionTitleHeight + 2.0f;
-    if (!features_->bluetoothEqualizer.bandsCommand) {
+    // The headset's equalizers: the sound from the base station (2.4 GHz), and those it has besides.
+    std::vector<const wchar_t*> labels{T(Text::Link24Ghz)};
+    std::vector<int> views{0};
+    constexpr Text kExtraLabels[kExtraEqualizers] = {Text::Bluetooth, Text::Microphone};
+    for (int index = 0; index < kExtraEqualizers; ++index) {
+        if (features_->Extra(static_cast<ExtraEqualizer>(index)).bandsCommand) {
+            labels.push_back(T(kExtraLabels[index]));
+            views.push_back(index + 1);
+        }
+    }
+    if (views.size() == 1) {
         return y;
     }
-    // The headset's two equalizers: the sound from the base station (2.4 GHz) and the sound over Bluetooth.
-    const wchar_t* const labels[] = {T(Text::Link24Ghz), T(Text::Bluetooth)};
+    const auto shown = std::find(views.begin(), views.end(), headsetEqView_);
     DrawSegmented({kGutter, y, kWidth - kGutter, y + 36.0f}, kIdBluetoothEqBase + kIdEqChannel, labels,
-                  headsetEqBluetooth_ ? 1 : 0, p.secondaryContainer, p.onSecondaryContainer, [this](int index) {
-                      headsetEqBluetooth_ = index == 1;
+                  shown == views.end() ? 0 : static_cast<int>(shown - views.begin()), p.secondaryContainer,
+                  p.onSecondaryContainer, [this, views](int index) {
+                      headsetEqView_ = views[index];
                       Invalidate();
                   });
     return y + 36.0f + design::kSpace2;
@@ -419,28 +433,58 @@ float Panel::DrawBandSliders(float inner, const EqCurve& curve, int8_t range, bo
     return trackBottom + 24.0f;
 }
 
-float Panel::DrawBluetoothEqualizer(float y) {
+float Panel::DrawExtraEqualizer(float y, ExtraEqualizer which) {
     const Palette& p = P();
-    const EqualizerSpec& eq = features_->bluetoothEqualizer;
-    y = DrawEqualizerTitle(y, [this] { host_.OnBluetoothEqualizerCurve(EqCurve{}); });
+    const EqualizerSpec& eq = features_->Extra(which);
+    const HeadsetState::ExtraEq& state = headset_.extraEq[static_cast<int>(which)];
+    const bool bluetooth = which == ExtraEqualizer::Bluetooth;
+    const uint32_t ids = bluetooth ? kIdBluetoothEqBase : kIdMicrophoneEqBase;
+    y = DrawEqualizerTitle(y, [this, which] { host_.OnExtraEqualizerCurve(which, EqCurve{}); });
 
-    const wchar_t* hint = T(Text::BluetoothEqHint);
+    const wchar_t* hint = T(bluetooth ? Text::BluetoothEqHint : Text::MicEqHint);
     const float hintHeight = HintHeight(hint, kWidth - 64.0f) + 4.0f;
     const float bandsHeight = 20.0f + kEqTrackHeight + 24.0f;
     const D2D1_RECT_F card = Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + 16.0f);
-    std::vector<const wchar_t*> labels;
-    for (const auto& preset : eq.presets) {
-        labels.push_back(preset.name);
+    const int custom = eq.CustomIndex();
+    if (custom <= 4) {
+        // A few short names: all in view as a button group.
+        std::vector<const wchar_t*> labels;
+        for (const auto& preset : eq.presets) {
+            labels.push_back(preset.name);
+        }
+        labels.push_back(T(Text::EqCustom));
+        DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, ids + kIdEqPreset, labels, state.preset,
+                      p.primary, p.onPrimary, [this, which](int index) { host_.OnExtraEqualizerPreset(which, index); });
+    } else {
+        // Longer names (the microphone's): the chosen one as a dropdown.
+        const D2D1_RECT_F button{24.0f, y + 12.0f, kWidth - 24.0f, y + 52.0f};
+        const uint32_t buttonId = ids + kIdEqPresetButton;
+        const float middle = (button.top + button.bottom) / 2.0f;
+        StateLayer(buttonId, button, design::kRadiusMedium, p.onSurface);
+        canvas_.Glyph(kGlyphEqualizer, {button.left + 20.0f, middle}, 16.0f, p.primary);
+        const std::wstring name = state.preset >= 0 && state.preset < custom ? std::wstring(eq.presets[state.preset].name)
+                                  : state.preset == custom                     ? std::wstring(T(Text::EqCustom))
+                                                                               : std::wstring(L"—");
+        const float nameWidth = std::min(canvas_.Measure(name, TextStyle::TitleSmall), button.right - button.left - 72.0f);
+        canvas_.Text(name, {button.left + 40.0f, button.top, button.left + 41.0f + nameWidth, button.bottom},
+                     TextStyle::TitleSmall, p.onSurface);
+        canvas_.Glyph(kGlyphChevronDown, {button.left + 52.0f + nameWidth, middle}, 10.0f, p.onSurfaceVariant);
+        AddHit({button, buttonId, [this, which, button] {
+                    const EqualizerSpec& spec = features_->Extra(which);
+                    std::vector<MenuItem> items;
+                    for (const auto& preset : spec.presets) {
+                        items.push_back({preset.name});
+                    }
+                    items.push_back({T(Text::EqCustom)});
+                    OpenMenu(button, std::move(items), headset_.extraEq[static_cast<int>(which)].preset,
+                             [this, which](int index) { host_.OnExtraEqualizerPreset(which, index); });
+                }});
     }
-    labels.push_back(T(Text::EqCustom));
-    DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdBluetoothEqBase + kIdEqPreset, labels,
-                  headset_.btEqPreset, p.primary, p.onPrimary,
-                  [this](int index) { host_.OnBluetoothEqualizerPreset(index); });
     const float inner = y + 60.0f;
     canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
                  TextAlign::Leading, true);
-    DrawBandSliders(inner + hintHeight, ActiveBluetoothCurve(), eq.range, true, kIdBluetoothEqBase,
-                    [this](const EqCurve& next) { host_.OnBluetoothEqualizerCurve(next); });
+    DrawBandSliders(inner + hintHeight, ActiveExtraCurve(which), eq.range, true, ids,
+                    [this, which](const EqCurve& next) { host_.OnExtraEqualizerCurve(which, next); });
     return card.bottom + design::kSectionGap;
 }
 

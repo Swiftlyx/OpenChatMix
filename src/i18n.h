@@ -528,6 +528,7 @@ enum class Text {
     NoiseScreen,
     NoiseScreenHint,
     BluetoothEqHint,
+    MicEqHint,
     Count,
 };
 

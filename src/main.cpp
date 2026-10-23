@@ -170,8 +170,8 @@ public:
     void OnEqualizerPreset(int index) override;
     void OnEqualizerCurve(const EqCurve& curve) override;
     void OnEqualizerFilters(const EqFilters& filters) override;
-    void OnBluetoothEqualizerPreset(int index) override;
-    void OnBluetoothEqualizerCurve(const EqCurve& curve) override;
+    void OnExtraEqualizerPreset(ExtraEqualizer which, int index) override;
+    void OnExtraEqualizerCurve(ExtraEqualizer which, const EqCurve& curve) override;
     void OnRoutingEnabled(bool enabled) override;
     void OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) override;
     void OnRoutingManage(bool enabled) override;
@@ -887,9 +887,9 @@ void SendEqualizerFilters(const EqFilters& filters, int preset = -1) {
     }
 }
 
-// The equalizer of the sound over Bluetooth (Nova Elite): a built-in preset by its index, or the custom curve (-1).
-void SendBluetoothEqualizer(const EqCurve& curve, int preset) {
-    const EqualizerSpec& eq = g_app.features->bluetoothEqualizer;
+// An extra equalizer (Nova Elite): a built-in preset by its index, or the custom curve (-1).
+void SendExtraEqualizer(ExtraEqualizer which, const EqCurve& curve, int preset) {
+    const EqualizerSpec& eq = g_app.features->Extra(which);
     for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve, preset)) {
         SendHeadsetCommand(command, eq.SentAsFeature());
     }
@@ -2880,33 +2880,35 @@ void Host::OnEqualizerFilters(const EqFilters& filters) {
     ScheduleHeadsetSave();
 }
 
-void Host::OnBluetoothEqualizerPreset(int index) {
-    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->bluetoothEqualizer.bandsCommand) {
+void Host::OnExtraEqualizerPreset(ExtraEqualizer which, int index) {
+    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->Extra(which).bandsCommand) {
         return;
     }
-    const EqualizerSpec& eq = g_app.features->bluetoothEqualizer;
+    const EqualizerSpec& eq = g_app.features->Extra(which);
+    HeadsetState::ExtraEq& state = g_app.headset.extraEq[static_cast<int>(which)];
     const int custom = eq.CustomIndex();
     if (index < 0 || index > custom) {
         return;
     }
     if (index < custom) {
-        SendBluetoothEqualizer(eq.presets[index].curve, index);
-    } else if (g_app.headset.btEqCurveKnown) {
-        SendBluetoothEqualizer(g_app.headset.btEqCurve, -1);
+        SendExtraEqualizer(which, eq.presets[index].curve, index);
+    } else if (state.curveKnown) {
+        SendExtraEqualizer(which, state.curve, -1);
     }
-    g_app.headset.btEqPreset = index;
+    state.preset = index;
     PushHeadset();
     ScheduleHeadsetSave();
 }
 
-void Host::OnBluetoothEqualizerCurve(const EqCurve& curve) {
-    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->bluetoothEqualizer.bandsCommand) {
+void Host::OnExtraEqualizerCurve(ExtraEqualizer which, const EqCurve& curve) {
+    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->Extra(which).bandsCommand) {
         return;
     }
-    SendBluetoothEqualizer(curve, -1);
-    g_app.headset.btEqCurve = curve;
-    g_app.headset.btEqCurveKnown = true;
-    g_app.headset.btEqPreset = g_app.features->bluetoothEqualizer.CustomIndex();
+    SendExtraEqualizer(which, curve, -1);
+    HeadsetState::ExtraEq& state = g_app.headset.extraEq[static_cast<int>(which)];
+    state.curve = curve;
+    state.curveKnown = true;
+    state.preset = g_app.features->Extra(which).CustomIndex();
     PushHeadset();
     ScheduleHeadsetSave();
 }

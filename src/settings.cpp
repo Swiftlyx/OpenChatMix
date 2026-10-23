@@ -948,6 +948,13 @@ std::wstring HeadsetSection(uint16_t productId) {
 
 }  // namespace
 
+// Ini keys of the extra equalizers, by ExtraEqualizer.
+struct ExtraEqKeys {
+    const wchar_t* preset;
+    const wchar_t* curve;
+};
+constexpr ExtraEqKeys kExtraEqKeys[kExtraEqualizers] = {{L"BtEqPreset", L"BtEqCurve"}, {L"MicEqPreset", L"MicEqCurve"}};
+
 void LoadHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features,
                       HeadsetState& state) {
     const std::wstring section = HeadsetSection(productId);
@@ -1005,25 +1012,31 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
         }
     }
 
-    // The Bluetooth equalizer, as the main one.
-    if (const EqualizerSpec& bluetooth = features.bluetoothEqualizer; bluetooth.bandsCommand) {
-        const int btPreset = static_cast<int>(GetPrivateProfileIntW(section.c_str(), L"BtEqPreset", -1, path.c_str()));
-        if (btPreset >= 0 && btPreset <= bluetooth.CustomIndex()) {
-            state.btEqPreset = btPreset;
+    // The extra equalizers, as the main one.
+    for (int index = 0; index < kExtraEqualizers; ++index) {
+        const EqualizerSpec& extra = features.Extra(static_cast<ExtraEqualizer>(index));
+        if (!extra.bandsCommand) {
+            continue;
         }
-        const std::wstring btCurve = ReadString(path, section.c_str(), L"BtEqCurve", L"");
-        int btBand = 0;
-        for (size_t start = 0; btBand < kEqBands && start < btCurve.size(); ++btBand) {
-            size_t end = btCurve.find(L',', start);
+        HeadsetState::ExtraEq& target = state.extraEq[index];
+        const int extraPreset = static_cast<int>(
+            GetPrivateProfileIntW(section.c_str(), kExtraEqKeys[index].preset, -1, path.c_str()));
+        if (extraPreset >= 0 && extraPreset <= extra.CustomIndex()) {
+            target.preset = extraPreset;
+        }
+        const std::wstring extraCurve = ReadString(path, section.c_str(), kExtraEqKeys[index].curve, L"");
+        int extraBand = 0;
+        for (size_t start = 0; extraBand < kEqBands && start < extraCurve.size(); ++extraBand) {
+            size_t end = extraCurve.find(L',', start);
             if (end == std::wstring::npos) {
-                end = btCurve.size();
+                end = extraCurve.size();
             }
-            state.btEqCurve[btBand] = static_cast<int8_t>(std::clamp(_wtoi(btCurve.substr(start, end - start).c_str()),
-                                                                     -static_cast<int>(bluetooth.range),
-                                                                     static_cast<int>(bluetooth.range)));
+            target.curve[extraBand] = static_cast<int8_t>(std::clamp(
+                _wtoi(extraCurve.substr(start, end - start).c_str()), -static_cast<int>(extra.range),
+                static_cast<int>(extra.range)));
             start = end + 1;
         }
-        state.btEqCurveKnown = btBand == kEqBands;
+        target.curveKnown = extraBand == kEqBands;
     }
 }
 
@@ -1060,19 +1073,22 @@ void SaveHeadsetState(const std::wstring& path, uint16_t productId, const Headse
         }
         WritePrivateProfileStringW(section.c_str(), L"EqFilters", filters.c_str(), path.c_str());
     }
-    if (state.btEqPreset >= 0) {
-        WritePrivateProfileStringW(section.c_str(), L"BtEqPreset", std::to_wstring(state.btEqPreset).c_str(),
-                                   path.c_str());
-    }
-    if (state.btEqCurveKnown) {
-        std::wstring curve;
-        for (const int8_t band : state.btEqCurve) {
-            if (!curve.empty()) {
-                curve += L',';
-            }
-            curve += std::to_wstring(band);
+    for (int index = 0; index < kExtraEqualizers; ++index) {
+        const HeadsetState::ExtraEq& extra = state.extraEq[index];
+        if (extra.preset >= 0) {
+            WritePrivateProfileStringW(section.c_str(), kExtraEqKeys[index].preset, std::to_wstring(extra.preset).c_str(),
+                                       path.c_str());
         }
-        WritePrivateProfileStringW(section.c_str(), L"BtEqCurve", curve.c_str(), path.c_str());
+        if (extra.curveKnown) {
+            std::wstring curve;
+            for (const int8_t band : extra.curve) {
+                if (!curve.empty()) {
+                    curve += L',';
+                }
+                curve += std::to_wstring(band);
+            }
+            WritePrivateProfileStringW(section.c_str(), kExtraEqKeys[index].curve, curve.c_str(), path.c_str());
+        }
     }
 }
 

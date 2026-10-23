@@ -228,6 +228,7 @@ enum : uint32_t {
 // hashed IDs; the Bluetooth equalizer and the switch between the two use them plus the second base.
 inline constexpr uint32_t kIdHeadsetEqBase = 0x10000;
 inline constexpr uint32_t kIdBluetoothEqBase = 0x20000;
+inline constexpr uint32_t kIdMicrophoneEqBase = 0x30000;
 
 enum : uint32_t {
     kKindGroup = 1,

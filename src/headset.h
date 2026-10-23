@@ -66,7 +66,12 @@ struct EqPreset {
     const wchar_t* name;  // SteelSeries preset names are product names and stay untranslated.
     EqCurve curve;
     const char* alias = nullptr;  // GG's short name for the preset, which the Nova Elite takes along with it.
+    int8_t slot = -1;             // The Nova Elite's onboard slot GG writes the preset to; -1: its index.
 };
+
+// The Nova Elite's equalizers besides the main one, each with ten fixed bands.
+enum class ExtraEqualizer : uint8_t { Bluetooth, Microphone };
+inline constexpr int kExtraEqualizers = 2;
 
 // How the equalizer curve reaches the headset.
 enum class EqFormat : uint8_t {
@@ -103,6 +108,7 @@ struct HeadsetFeatures {
     std::span<const SettingSection> sections;
     EqualizerSpec equalizer;
     EqualizerSpec bluetoothEqualizer;    // Of the sound over Bluetooth, apart from the main one (Nova Elite).
+    EqualizerSpec microphoneEqualizer;   // Of the microphone, in the headset itself (Nova Elite).
     std::span<const SaveCommand> save;  // Sent after changes so the headset keeps them.
     unsigned saveDelayMs = 0;            // Quiet time after the last change before the save; 0 for the default.
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
@@ -113,6 +119,9 @@ struct HeadsetFeatures {
     bool volumeKnob = false;             // A knob that sets the volume itself and reports it (07 25).
 
     bool HasSettings() const { return !sections.empty() || equalizer.bandsCommand != 0; }
+    const EqualizerSpec& Extra(ExtraEqualizer which) const {
+        return which == ExtraEqualizer::Bluetooth ? bluetoothEqualizer : microphoneEqualizer;
+    }
     const SettingSpec* FindSetting(uint8_t command) const;
 };
 
@@ -128,9 +137,13 @@ struct HeadsetState {
     bool eqCurveKnown = false;
     EqFilters eqFilters{};            // The custom filters of a parametric equalizer.
     bool eqFiltersKnown = false;
-    int btEqPreset = -1;              // The Bluetooth equalizer, as eqPreset and eqCurve.
-    EqCurve btEqCurve{};
-    bool btEqCurveKnown = false;
+    // The extra equalizers, by ExtraEqualizer, as eqPreset, eqCurve and eqCurveKnown.
+    struct ExtraEq {
+        int preset = -1;
+        EqCurve curve{};
+        bool curveKnown = false;
+    };
+    std::array<ExtraEq, kExtraEqualizers> extraEq{};
     int battery = -1;                 // Percent; -1 unknown.
     int spareBattery = -1;            // Percent of the spare battery in the base station; -1 unknown or none.
     bool charging = false;

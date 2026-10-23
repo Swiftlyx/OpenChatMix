@@ -620,16 +620,17 @@ public:
         PushHeadset();
         CountDownSave();
     }
-    void OnBluetoothEqualizerPreset(int index) override {
-        g.headset.btEqPreset = index;
+    void OnExtraEqualizerPreset(ExtraEqualizer which, int index) override {
+        g.headset.extraEq[static_cast<int>(which)].preset = index;
         PushHeadset();
         CountDownSave();
     }
-    void OnBluetoothEqualizerCurve(const EqCurve& curve) override {
-        g.headset.btEqCurve = curve;
-        g.headset.btEqCurveKnown = true;
+    void OnExtraEqualizerCurve(ExtraEqualizer which, const EqCurve& curve) override {
+        HeadsetState::ExtraEq& state = g.headset.extraEq[static_cast<int>(which)];
+        state.curve = curve;
+        state.curveKnown = true;
         if (const HeadsetFeatures* features = Features()) {
-            g.headset.btEqPreset = features->bluetoothEqualizer.CustomIndex();
+            state.preset = features->Extra(which).CustomIndex();
         }
         PushHeadset();
         CountDownSave();
