@@ -140,6 +140,35 @@ EqChannelSettings& Panel::EqChannelState() {
     return EqStateOf(settings_, eqChannel_);
 }
 
+Panel::EqEditor Panel::ChannelEqEditor() {
+    const ChannelColors colors = ColorsOf(P(), eqChannel_);
+    EqEditor editor;
+    editor.edit = [this](const std::function<void(ParametricEq&)>& edit) { EditEq(edit); };
+    editor.band = &eqBand_;
+    editor.accent = colors.accent;
+    editor.onAccent = colors.onAccent;
+    editor.enabled = EqChannelState().enabled;
+    return editor;
+}
+
+Panel::EqEditor Panel::HeadsetEqEditor() {
+    const Palette& p = P();
+    EqEditor editor;
+    // Each edit starts from what the headset plays now, so editing a preset turns it into the custom filters.
+    editor.edit = [this](const std::function<void(ParametricEq&)>& edit) {
+        ParametricEq eq;
+        eq.bands = ActiveHeadsetFilters();
+        edit(eq);
+        host_.OnEqualizerFilters(PresetFilters(eq));
+    };
+    editor.band = &headsetBand_;
+    editor.accent = p.primary;
+    editor.onAccent = p.onPrimary;
+    editor.hardware = true;
+    editor.idBase = kIdHeadsetEqBase;
+    return editor;
+}
+
 void Panel::EditEq(const std::function<void(ParametricEq&)>& edit) {
     const EqChannel channel = eqChannel_;
     Edit([channel, edit](Settings& s) {
@@ -324,17 +353,61 @@ void Panel::DrawEqualizerPage() {
                 });
             }});
 
-    DrawEqGraph({card.left, card.top + kGraphHeaderHeight, card.right, card.bottom}, state.eq);
+    const EqEditor editor = ChannelEqEditor();
+    DrawEqGraph({card.left, card.top + kGraphHeaderHeight, card.right, card.bottom}, state.eq, editor);
 
     const float scrollTop = card.bottom + design::kSpace1;
     float y = BeginScroll(Page::Equalizer, scrollTop);
-    y = DrawBandEditor(y + design::kSpace2, state.eq);
+    y = DrawBandEditor(y + design::kSpace2, state.eq, editor);
     y = DrawEqEffects(y, state.eq);
     // The microphone's plugins have their place in its chain, on the Microphone page.
     if (eqChannel_ != EqChannel::Mic) {
         y = DrawPlugins(y + design::kSectionGap - design::kGroupGap, eqChannel_) + design::kGroupGap;
     }
     EndScroll(Page::Equalizer, scrollTop, y - design::kGroupGap);
+}
+
+// A parametric headset's equalizer: its presets, the response graph of its filters and the editor of the selected
+// one, as on the virtual devices' equalizer; then the preset tools.
+float Panel::DrawHeadsetFilters(float y) {
+    const Palette& p = P();
+    const EqualizerSpec& eq = features_->equalizer;
+
+    canvas_.Text(T(Text::Equalizer), {kInset, y, 240.0f, y + 20.0f}, TextStyle::TitleSmall, p.primary);
+    TextButton(kIdEqReset, {kWidth - kGutter - 104.0f, y - 6.0f, kWidth - kGutter, y + 26.0f}, kGlyphReset,
+               T(Text::EqReset), false, [this] { host_.OnEqualizerCurve(EqCurve{}); });
+    if (features_->saveDelayMs) {
+        DrawSaveState(kWidth - kGutter - 112.0f, y + 10.0f);
+    }
+    y += design::kSectionTitleHeight + 2.0f;
+
+    const wchar_t* hint = eq.experimental ? T(Text::EqExperimental) : nullptr;
+    const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
+    const D2D1_RECT_F card = Card(y, 16.0f + 44.0f + hintHeight + kGraphHeight);
+    std::vector<const wchar_t*> labels;
+    for (const auto& preset : eq.presets) {
+        labels.push_back(preset.name);
+    }
+    labels.push_back(T(Text::EqCustom));
+    DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdEqPreset, labels, headset_.eqPreset, p.primary,
+                  p.onPrimary, [this](int index) { host_.OnEqualizerPreset(index); });
+    float inner = y + 60.0f;
+    if (hint) {
+        canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
+                     TextAlign::Leading, true);
+        inner += hintHeight;
+    }
+
+    ParametricEq shown;
+    shown.bands = ActiveHeadsetFilters();
+    const EqEditor editor = HeadsetEqEditor();
+    DrawEqGraph({card.left, inner - 8.0f, card.right, card.bottom}, shown, editor);
+    // The band editor belongs to the graph, so it follows at the gap of a group.
+    y = DrawBandEditor(card.bottom + design::kGroupGap, shown, editor) - design::kSectionGap + design::kGroupGap;
+
+    const D2D1_RECT_F tools = Card(y, 16.0f + HeadsetPresetToolsHeight());
+    DrawHeadsetPresetTools(y + 16.0f);
+    return tools.bottom + design::kSectionGap;
 }
 
 float Panel::DrawEqEffects(float y, const ParametricEq& eq) {
@@ -382,12 +455,12 @@ float Panel::DrawEqEffects(float y, const ParametricEq& eq) {
     return DrawCard(y, rows) + design::kGroupGap;
 }
 
-void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
+void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq, const EqEditor& editor) {
     const Palette& p = P();
-    const ChannelColors colors = ColorsOf(p, eqChannel_);
-    const D2D1_COLOR_F accent = colors.accent;
-    const D2D1_COLOR_F onAccent = colors.onAccent;
-    const bool enabled = EqChannelState().enabled;
+    const D2D1_COLOR_F accent = editor.accent;
+    const D2D1_COLOR_F onAccent = editor.onAccent;
+    const bool enabled = editor.enabled;
+    const int selectedBand = *editor.band;
 
     const D2D1_RECT_F plot{rect.left + 40.0f, rect.top + 16.0f, rect.right - 16.0f, rect.bottom - 28.0f};
     const float width = plot.right - plot.left;
@@ -445,13 +518,13 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
     for (int i = 0; i < kParametricBands; ++i) {
         order[i] = i;
     }
-    std::stable_partition(order.begin(), order.end(), [this](int band) { return band != eqBand_; });
+    std::stable_partition(order.begin(), order.end(), [selectedBand](int band) { return band != selectedBand; });
     for (const int band : order) {
         const EqBand& settings = eq.bands[band];
         const float x = xOf(settings.frequency);
         const float y = UsesGain(settings.type) ? yOf(settings.gain) : yOf(0);
-        const bool selected = band == eqBand_;
-        const uint32_t id = PartId(kIdEqGraph, static_cast<uint32_t>(band) + 1);
+        const bool selected = band == selectedBand;
+        const uint32_t id = PartId(kIdEqGraph + editor.idBase, static_cast<uint32_t>(band) + 1);
         const float grow =
             Animate(AnimKey(id, 0), selected ? 1.0f : (hotId_ == id ? 0.5f : 0.0f), design::kSpringFastEffects);
         const float radius = kNodeRadius + 2.0f * grow;
@@ -470,20 +543,20 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
         Hit hit;
         hit.rect = {x - 14.0f, y - 14.0f, x + 14.0f, y + 14.0f};
         hit.id = id;
-        hit.drag = [this, band, id, x, y, hzOf, dbOf](float pointerX, float pointerY) {
+        hit.drag = [this, editor, band, id, x, y, hzOf, dbOf](float pointerX, float pointerY) {
             // The handle keeps its offset from the pointer, so grabbing it does not make it jump.
             if (dragId_ != id) {
                 dragId_ = id;
                 dragOffsetX_ = x - pointerX;
                 dragOffsetY_ = y - pointerY;
-                eqBand_ = band;
+                *editor.band = band;
                 Invalidate();
                 return;
             }
             const float frequency = RoundFrequency(hzOf(pointerX + dragOffsetX_));
             const float gain =
                 std::clamp(std::round(dbOf(pointerY + dragOffsetY_) * 2.0f) / 2.0f, -kEqMaxGain, kEqMaxGain);
-            EditEq([band, frequency, gain](ParametricEq& target) {
+            editor.edit([band, frequency, gain](ParametricEq& target) {
                 EqBand& edited = target.bands[band];
                 edited.frequency = frequency;
                 if (UsesGain(edited.type)) {
@@ -491,27 +564,28 @@ void Panel::DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq) {
                 }
             });
         };
-        hit.wheel = [this, band](int notches) {
-            eqBand_ = band;
-            EditEq([band, notches](ParametricEq& target) {
+        hit.wheel = [editor, band](int notches) {
+            *editor.band = band;
+            editor.edit([band, notches](ParametricEq& target) {
                 EqBand& edited = target.bands[band];
                 edited.q =
                     std::clamp(std::round(edited.q * std::pow(kQStep, static_cast<float>(notches)) * 100.0f) / 100.0f,
                                kEqMinQ, kEqMaxQ);
             });
         };
-        hit.doubleClick = [this, band] {
-            eqBand_ = band;
-            EditEq([band](ParametricEq& target) { target.bands[band].gain = 0.0f; });
+        hit.doubleClick = [editor, band] {
+            *editor.band = band;
+            editor.edit([band](ParametricEq& target) { target.bands[band].gain = 0.0f; });
         };
         AddHit(std::move(hit));
     }
 }
 
-float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
+float Panel::DrawBandEditor(float y, const ParametricEq& eq, const EqEditor& editor) {
     const Palette& p = P();
-    const int band = eqBand_;
+    const int band = *editor.band;
     const EqBand& settings = eq.bands[band];
+    const uint32_t ids = editor.idBase;
     // A typed value, clamped to its range, applied by apply.
     auto typedValue = [](float low, float high, std::function<void(float)> apply) {
         return [low, high, apply = std::move(apply)](const std::wstring& text) {
@@ -523,49 +597,51 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
             return true;
         };
     };
-    auto editBand = [this, band](std::function<void(EqBand&)> change) {
-        EditEq([band, change](ParametricEq& target) { change(target.bands[band]); });
+    auto editBand = [edit = editor.edit, band](std::function<void(EqBand&)> change) {
+        edit([band, change](ParametricEq& target) { change(target.bands[band]); });
     };
     std::vector<CardRow> rows;
 
     // Band selector with its on/off switch.
     rows.push_back({kRowHeight,
-                    [this, &p, band, enabled = settings.enabled](float top) {
+                    [this, &p, editor, ids, band, enabled = settings.enabled](float top) {
                         const std::wstring title = std::wstring(T(Text::Band)) + L" " + std::to_wstring(band + 1);
                         canvas_.Text(title, {kInset, top, 180.0f, top + kRowHeight}, TextStyle::BodyLarge, p.onSurface);
                         const float switchLeft = kWidth - kInset - design::kSwitchWidth;
                         const float middle = top + kRowHeight / 2.0f;
-                        IconButton(PartId(kIdEqBandSelect, 1), {switchLeft - 72.0f, middle}, kGlyphChevronLeft,
-                                   p.onSurface, [this] {
-                                       eqBand_ = (eqBand_ + kParametricBands - 1) % kParametricBands;
+                        IconButton(PartId(kIdEqBandSelect + ids, 1), {switchLeft - 72.0f, middle}, kGlyphChevronLeft,
+                                   p.onSurface, [this, selected = editor.band] {
+                                       *selected = (*selected + kParametricBands - 1) % kParametricBands;
                                        Invalidate();
                                    });
-                        Tooltip(PartId(kIdEqBandSelect, 1), T(Text::TipPreviousBand));
-                        IconButton(PartId(kIdEqBandSelect, 2), {switchLeft - 32.0f, middle}, kGlyphChevronRight,
-                                   p.onSurface, [this] {
-                                       eqBand_ = (eqBand_ + 1) % kParametricBands;
+                        Tooltip(PartId(kIdEqBandSelect + ids, 1), T(Text::TipPreviousBand));
+                        IconButton(PartId(kIdEqBandSelect + ids, 2), {switchLeft - 32.0f, middle}, kGlyphChevronRight,
+                                   p.onSurface, [this, selected = editor.band] {
+                                       *selected = (*selected + 1) % kParametricBands;
                                        Invalidate();
                                    });
-                        Tooltip(PartId(kIdEqBandSelect, 2), T(Text::TipNextBand));
+                        Tooltip(PartId(kIdEqBandSelect + ids, 2), T(Text::TipNextBand));
                         const D2D1_RECT_F track{switchLeft, middle - design::kSwitchHeight / 2.0f, kWidth - kInset,
                                                 middle + design::kSwitchHeight / 2.0f};
-                        DrawSwitch(track, enabled, kIdEqBandToggle);
-                        AddHit({Inset(track, -6.0f, -6.0f), kIdEqBandToggle, [this, band] {
-                                    EditEq([band](ParametricEq& target) {
+                        DrawSwitch(track, enabled, kIdEqBandToggle + ids);
+                        AddHit({Inset(track, -6.0f, -6.0f), kIdEqBandToggle + ids, [edit = editor.edit, band] {
+                                    edit([band](ParametricEq& target) {
                                         target.bands[band].enabled = !target.bands[band].enabled;
                                     });
                                 }});
                     }});
 
+    // Headsets have no notch type; it is the last one, so the others keep their indices.
+    const int typeCount = editor.hardware ? kFilterTypeCount - 1 : kFilterTypeCount;
     rows.push_back(DropdownItem(
-        kIdEqType, T(Text::FilterType), static_cast<int>(settings.type), kFilterTypeCount,
+        kIdEqType + ids, T(Text::FilterType), std::min(static_cast<int>(settings.type), typeCount - 1), typeCount,
         [](int i) { return std::wstring(T(kFilterLabels[i])); },
         [editBand](int index) {
             editBand([index](EqBand& target) { target.type = static_cast<FilterType>(index); });
         }));
 
     rows.push_back(NumberItem(
-        kIdEqFrequency, T(Text::Frequency), FormatFrequency(settings.frequency), settings.frequency > kEqMinFrequency,
+        kIdEqFrequency + ids, T(Text::Frequency), FormatFrequency(settings.frequency), settings.frequency > kEqMinFrequency,
         settings.frequency < kEqMaxFrequency,
         [editBand] {
             editBand([](EqBand& target) { target.frequency = RoundFrequency(target.frequency / kFrequencyStep); });
@@ -579,7 +655,7 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
 
     const bool gainUsed = UsesGain(settings.type);
     rows.push_back(NumberItem(
-        kIdEqGain, T(Text::Level), gainUsed ? FormatDecibels(settings.gain) : L"—",
+        kIdEqGain + ids, T(Text::Level), gainUsed ? FormatDecibels(settings.gain) : L"—",
         gainUsed && settings.gain > -kEqMaxGain, gainUsed && settings.gain < kEqMaxGain,
         [editBand] { editBand([](EqBand& target) { target.gain = std::max(-kEqMaxGain, target.gain - 0.5f); }); },
         [editBand] { editBand([](EqBand& target) { target.gain = std::min(kEqMaxGain, target.gain + 0.5f); }); },
@@ -588,7 +664,7 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
                  : std::function<bool(const std::wstring&)>()));
 
     rows.push_back(NumberItem(
-        kIdEqQ, L"Q", FormatQ(settings.q), settings.q > kEqMinQ, settings.q < kEqMaxQ,
+        kIdEqQ + ids, L"Q", FormatQ(settings.q), settings.q > kEqMinQ, settings.q < kEqMaxQ,
         [editBand] {
             editBand(
                 [](EqBand& target) { target.q = std::max(kEqMinQ, std::round(target.q / kQStep * 100.0f) / 100.0f); });
@@ -600,6 +676,10 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq) {
         typedValue(
             kEqMinQ, kEqMaxQ, [editBand](float value) { editBand([value](EqBand& target) { target.q = value; }); })));
 
+    // The headset's filters have no preamp, and their reset and preset files sit on the Headset tab.
+    if (editor.hardware) {
+        return DrawCard(y, rows) + design::kSectionGap;
+    }
     rows.push_back(NumberItem(
         kIdEqPreamp, T(Text::Preamp), FormatDecibels(eq.preamp), eq.preamp > -kEqMaxGain, eq.preamp < kEqMaxGain,
         [this] { EditEq([](ParametricEq& target) { target.preamp = std::max(-kEqMaxGain, target.preamp - 0.5f); }); },

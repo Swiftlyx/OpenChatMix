@@ -1,6 +1,7 @@
 #include "headset.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <string_view>
 
@@ -269,26 +270,66 @@ constexpr uint8_t kMicVolumeCommand = 0x37;
 constexpr uint8_t kSidetoneCommand = 0x39;
 
 // Nova 7 Gen 2 parametric equalizer, as Linux-Arctis-Manager describes the protocol: A7 [link] [kind] [name],
-// then 33 [link] and ten filters of six bytes each, then 27 to apply them. Each filter is its frequency (u16
-// big-endian), type, gain (signed, in 0.1 dB) and Q (x1000, u16 little-endian). The curve's ten bands become peak
-// filters at the usual octave centres with a Q of one octave.
+// then 33 [link] and ten filters of six bytes each (see AppendFilter, frequency big-endian), then 27 to apply them.
 constexpr uint8_t kGen2EqName = 0xA7;
 constexpr uint8_t kGen2EqCommit = 0x27;
 constexpr uint8_t kGen2Radio = 0x00;         // The 2.4 GHz link; 1 is Bluetooth, 2 the microphone.
 constexpr uint8_t kGen2CustomPreset = 0x01;  // 0 is a SteelSeries preset.
 constexpr char kGen2PresetName[] = "OpenChatMix";
-constexpr uint8_t kGen2PeakFilter = 0x01;
-constexpr uint16_t kGen2OctaveQ = 1414;
-constexpr uint16_t kGen2Frequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+// A curve's ten bands as filters: peaks at the usual octave centres with a Q of one octave.
+constexpr float kOctaveFrequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+constexpr float kOctaveQ = 1.414f;
 
 // Nova Elite equalizer, as GG sets it (capture in issue #6): 1b [kind] [alias, 6 bytes] [name, 61 bytes], then ten
-// filters of six bytes each: frequency (u16 little-endian), type, gain (signed, in 0.1 dB) and Q (x1000, u16
-// little-endian); the rest of the report stays zero. Kind 4 with the alias "CUSTOM" is GG's custom curve, 5 one of
-// its game presets. The curve becomes the same peak filters as on the Gen 2.
+// filters of six bytes each (see AppendFilter, frequency little-endian); the rest of the report stays zero. Kind 4
+// with the alias "CUSTOM" is GG's custom curve, 5 one of its game presets.
 constexpr uint8_t kEliteEqCustom = 0x04;
 constexpr char kEliteEqAlias[] = "CUSTOM";
 constexpr size_t kEliteEqAliasLength = 6;
 constexpr size_t kEliteEqNameLength = 61;
+
+// Filter types on the wire, in the order the vendor's protocol description lists them (as Linux-Arctis-Manager
+// quotes it): peak, low pass, high pass, low shelf, high shelf. Only the peak is confirmed by a capture (issue #6).
+constexpr uint8_t kWirePeak = 1;
+constexpr uint8_t kWireLowPass = 2;
+constexpr uint8_t kWireHighPass = 3;
+constexpr uint8_t kWireLowShelf = 4;
+constexpr uint8_t kWireHighShelf = 5;
+// A band that is off, as GG sends it: a peak at this frequency without gain.
+constexpr uint16_t kWireBandOff = 20001;
+
+uint8_t WireType(::FilterType type) {
+    switch (type) {
+    case ::FilterType::LowPass: return kWireLowPass;
+    case ::FilterType::HighPass: return kWireHighPass;
+    case ::FilterType::LowShelf: return kWireLowShelf;
+    case ::FilterType::HighShelf: return kWireHighShelf;
+    case ::FilterType::Peaking:
+    case ::FilterType::Notch: break;
+    }
+    return kWirePeak;
+}
+
+// One filter in six bytes: frequency (u16), type, gain (signed, in 0.1 dB) and Q (x1000, u16 little-endian).
+void AppendFilter(std::vector<uint8_t>& out, const EqBand& band, bool bigEndianFrequency) {
+    // Like PresetFilters: no notch type on these headsets, so the deepest peak cut stands in for it.
+    const bool notch = band.type == ::FilterType::Notch;
+    const float gain = notch ? -kHeadsetFilterMaxGain : UsesGain(band.type) ? band.gain : 0.0f;
+    const uint16_t frequency =
+        band.enabled ? static_cast<uint16_t>(std::lround(std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency)))
+                     : kWireBandOff;
+    const int tenths =
+        band.enabled ? std::lround(std::clamp(gain, -kHeadsetFilterMaxGain, kHeadsetFilterMaxGain) * 10.0f) : 0;
+    const uint16_t q = static_cast<uint16_t>(std::lround(std::clamp(band.q, kEqMinQ, kEqMaxQ) * 1000.0f));
+    const uint8_t frequencyHigh = static_cast<uint8_t>(frequency >> 8);
+    const uint8_t frequencyLow = static_cast<uint8_t>(frequency & 0xFF);
+    out.push_back(bigEndianFrequency ? frequencyHigh : frequencyLow);
+    out.push_back(bigEndianFrequency ? frequencyLow : frequencyHigh);
+    out.push_back(band.enabled ? WireType(band.type) : kWirePeak);
+    out.push_back(static_cast<uint8_t>(static_cast<int8_t>(tenths)));
+    out.push_back(static_cast<uint8_t>(q & 0xFF));
+    out.push_back(static_cast<uint8_t>(q >> 8));
+}
 
 EqCurve CurveFromBytes(const uint8_t* bytes, uint8_t baseline, int8_t range) {
     EqCurve curve{};
@@ -582,6 +623,21 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         }
         return {command};
     }
+    return EqualizerCommands(spec, CurveFilters(curve, spec.range));
+}
+
+std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters) {
+    if (spec.format == EqFormat::Graphic) {
+        // Not used by the app: graphic headsets take curves. The closest curve stands in.
+        ParametricEq eq;
+        eq.bands = filters;
+        const auto gains = GraphicEqGains(eq, spec.range / 2.0f);
+        EqCurve curve{};
+        for (int band = 0; band < kEqBands; ++band) {
+            curve[band] = static_cast<int8_t>(std::lround(gains[band] * 2.0f));
+        }
+        return EqualizerCommands(spec, curve);
+    }
     if (spec.format == EqFormat::Feature) {
         std::vector<uint8_t> report{spec.bandsCommand, kEliteEqCustom};
         // Fixed-size text fields, padded with zeros.
@@ -592,26 +648,53 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         };
         text(kEliteEqAlias, kEliteEqAliasLength);
         text(kGen2PresetName, kEliteEqNameLength);
-        for (int band = 0; band < kEqBands; ++band) {
-            const uint16_t frequency = kGen2Frequencies[band];
-            const int tenths = std::clamp<int>(curve[band], -spec.range, spec.range) * 5;
-            report.insert(report.end(), {static_cast<uint8_t>(frequency & 0xFF), static_cast<uint8_t>(frequency >> 8),
-                                         kGen2PeakFilter, static_cast<uint8_t>(static_cast<int8_t>(tenths)),
-                                         static_cast<uint8_t>(kGen2OctaveQ & 0xFF), static_cast<uint8_t>(kGen2OctaveQ >> 8)});
+        for (const EqBand& band : filters) {
+            AppendFilter(report, band, false);
         }
         return {report};
     }
     std::vector<uint8_t> name{kGen2EqName, kGen2Radio, kGen2CustomPreset};
     name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);
-    std::vector<uint8_t> filters{spec.bandsCommand, kGen2Radio};
-    for (int band = 0; band < kEqBands; ++band) {
-        const uint16_t frequency = kGen2Frequencies[band];
-        const int tenths = std::clamp<int>(curve[band], -spec.range, spec.range) * 5;
-        filters.insert(filters.end(), {static_cast<uint8_t>(frequency >> 8), static_cast<uint8_t>(frequency & 0xFF),
-                                       kGen2PeakFilter, static_cast<uint8_t>(static_cast<int8_t>(tenths)),
-                                       static_cast<uint8_t>(kGen2OctaveQ & 0xFF), static_cast<uint8_t>(kGen2OctaveQ >> 8)});
+    std::vector<uint8_t> bands{spec.bandsCommand, kGen2Radio};
+    for (const EqBand& band : filters) {
+        AppendFilter(bands, band, true);
     }
-    return {name, filters, {kGen2EqCommit}};
+    return {name, bands, {kGen2EqCommit}};
+}
+
+EqFilters CurveFilters(const EqCurve& curve, int8_t range) {
+    EqFilters filters{};
+    for (int band = 0; band < kEqBands; ++band) {
+        filters[band] = {.type = ::FilterType::Peaking,
+                         .frequency = kOctaveFrequencies[band],
+                         .gain = std::clamp<int>(curve[band], -range, range) / 2.0f,
+                         .q = kOctaveQ};
+    }
+    return filters;
+}
+
+EqFilters PresetFilters(const ParametricEq& eq) {
+    EqFilters filters = eq.bands;
+    for (EqBand& band : filters) {
+        band.frequency = std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency);
+        band.gain = std::clamp(band.gain, -kHeadsetFilterMaxGain, kHeadsetFilterMaxGain);
+        band.q = std::clamp(band.q, kEqMinQ, kEqMaxQ);
+        if (band.type == ::FilterType::Notch) {
+            band.type = ::FilterType::Peaking;
+            band.gain = -kHeadsetFilterMaxGain;
+        }
+    }
+    return filters;
+}
+
+EqFilters ActiveFilters(const EqualizerSpec& spec, const HeadsetState& state) {
+    if (state.eqPreset >= 0 && state.eqPreset < spec.CustomIndex()) {
+        return CurveFilters(spec.presets[state.eqPreset].curve, spec.range);
+    }
+    if (state.eqFiltersKnown) {
+        return state.eqFilters;
+    }
+    return CurveFilters(state.eqCurveKnown ? state.eqCurve : EqCurve{}, spec.range);
 }
 
 std::vector<uint8_t> SettingValues(const SettingSpec& spec) {

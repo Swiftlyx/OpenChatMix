@@ -978,6 +978,32 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
         start = end + 1;
     }
     state.eqCurveKnown = band == kEqBands;
+
+    // A parametric equalizer keeps its filters; one saved before it had them starts from its curve.
+    if (features.equalizer.Parametric()) {
+        const std::wstring filters = ReadString(path, section.c_str(), L"EqFilters", L"");
+        ParametricEq read;
+        int count = 0;
+        for (size_t start = 0; count < kEqBands && start < filters.size(); ++count) {
+            size_t end = filters.find(L';', start);
+            if (end == std::wstring::npos) {
+                end = filters.size();
+            }
+            const std::optional<EqBand> parsed = ParseBand(filters.substr(start, end - start));
+            if (!parsed) {
+                break;
+            }
+            read.bands[count] = *parsed;
+            start = end + 1;
+        }
+        if (count == kEqBands) {
+            state.eqFilters = PresetFilters(read);
+            state.eqFiltersKnown = true;
+        } else if (state.eqCurveKnown) {
+            state.eqFilters = CurveFilters(state.eqCurve, features.equalizer.range);
+            state.eqFiltersKnown = true;
+        }
+    }
 }
 
 void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetState& state) {
@@ -1002,6 +1028,16 @@ void SaveHeadsetState(const std::wstring& path, uint16_t productId, const Headse
             curve += std::to_wstring(band);
         }
         WritePrivateProfileStringW(section.c_str(), L"EqCurve", curve.c_str(), path.c_str());
+    }
+    if (state.eqFiltersKnown) {
+        std::wstring filters;
+        for (const EqBand& band : state.eqFilters) {
+            if (!filters.empty()) {
+                filters += L';';
+            }
+            filters += FormatBand(band);
+        }
+        WritePrivateProfileStringW(section.c_str(), L"EqFilters", filters.c_str(), path.c_str());
     }
 }
 

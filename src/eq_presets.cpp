@@ -147,6 +147,28 @@ std::optional<UserPreset> ReadPresetFile(const std::wstring& path) {
             return std::nullopt;
         }
     }
+    // The filters of a parametric headset, as quoted band strings; a preset without all ten keeps its curve only.
+    if (at = FindValue(text, L"filters"); at != std::wstring::npos && text[at] == L'[') {
+        const size_t end = text.find(L']', at);
+        ParametricEq eq;
+        int count = 0;
+        size_t open = text.find(L'"', at);
+        while (count < kEqBands && open != std::wstring::npos && open < end) {
+            const size_t close = text.find(L'"', open + 1);
+            if (close == std::wstring::npos) {
+                break;
+            }
+            const std::optional<EqBand> band = ParseBand(text.substr(open + 1, close - open - 1));
+            if (!band) {
+                break;
+            }
+            eq.bands[count++] = *band;
+            open = text.find(L'"', close + 1);
+        }
+        if (count == kEqBands) {
+            preset.filters = PresetFilters(eq);
+        }
+    }
     return preset;
 }
 
@@ -180,15 +202,25 @@ bool WritePresetFile(const std::wstring& path, const std::wstring& name, const E
     return WritePresetGains(path, name, gains);
 }
 
-bool WritePresetGains(const std::wstring& path, const std::wstring& name, const std::array<float, kEqBands>& gainsDb) {
+bool WritePresetGains(const std::wstring& path, const std::wstring& name, const std::array<float, kEqBands>& gainsDb,
+                      const EqFilters* filters) {
     std::wstring gains;
     for (int band = 0; band < kEqBands; ++band) {
         wchar_t value[16];
         swprintf_s(value, L"%s%.1f", band ? L", " : L"", gainsDb[band]);
         gains += value;
     }
+    std::wstring bands;
+    if (filters) {
+        bands = L",\n  \"filters\": [";
+        for (int band = 0; band < kEqBands; ++band) {
+            bands += std::wstring(band ? L"," : L"") + L"\n    \"" + FormatBand((*filters)[band]) + L"\"";
+        }
+        bands += L"\n  ]";
+    }
     const std::wstring json = L"{\n  \"app\": \"OpenChatMix\",\n  \"type\": \"equalizer\",\n  \"name\": \"" + Escape(name) +
-                              L"\",\n  \"bandsHz\": " + kBandFrequencies + L",\n  \"gainsDb\": [" + gains + L"]\n}\n";
+                              L"\",\n  \"bandsHz\": " + kBandFrequencies + L",\n  \"gainsDb\": [" + gains + L"]" + bands +
+                              L"\n}\n";
     const std::string utf8 = Utf8(json);
     HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) {
@@ -200,10 +232,17 @@ bool WritePresetGains(const std::wstring& path, const std::wstring& name, const 
     return ok && written == utf8.size();
 }
 
+bool WritePresetFilters(const std::wstring& path, const std::wstring& name, const EqFilters& filters) {
+    // The closest ten-band curve goes along, for headsets with fixed bands.
+    ParametricEq eq;
+    eq.bands = filters;
+    return WritePresetGains(path, name, GraphicEqGains(eq, kEqMaxGain), &filters);
+}
+
 bool RenamePreset(const UserPreset& preset, const std::wstring& name) {
     // The file follows the name, so the folder stays readable; the old file goes once the new one is written.
     const std::wstring path = FreePathFor(name, preset.path);
-    if (!WritePresetGains(path, name, preset.gainsDb)) {
+    if (!WritePresetGains(path, name, preset.gainsDb, preset.filters ? &*preset.filters : nullptr)) {
         return false;
     }
     if (_wcsicmp(path.c_str(), preset.path.c_str()) != 0) {
@@ -213,7 +252,7 @@ bool RenamePreset(const UserPreset& preset, const std::wstring& name) {
 }
 
 bool CopyPreset(const UserPreset& preset, const std::wstring& name) {
-    return WritePresetGains(FreePathFor(name), name, preset.gainsDb);
+    return WritePresetGains(FreePathFor(name), name, preset.gainsDb, preset.filters ? &*preset.filters : nullptr);
 }
 
 bool DeletePreset(const UserPreset& preset) {
@@ -255,4 +294,8 @@ EqCurve PresetCurve(const UserPreset& preset, int8_t range) {
         curve[band] = static_cast<int8_t>(std::clamp<long>(halfSteps, -range, range));
     }
     return curve;
+}
+
+EqFilters PresetFilters(const UserPreset& preset, int8_t range) {
+    return preset.filters ? *preset.filters : CurveFilters(PresetCurve(preset, range), range);
 }

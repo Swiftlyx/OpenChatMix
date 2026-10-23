@@ -598,6 +598,20 @@ public:
         g.headset.eqCurve = curve;
         g.headset.eqCurveKnown = true;
         if (const HeadsetFeatures* features = Features()) {
+            // As the app does: a parametric headset takes the curve as filters.
+            if (features->equalizer.Parametric()) {
+                OnEqualizerFilters(CurveFilters(curve, features->equalizer.range));
+                return;
+            }
+            g.headset.eqPreset = features->equalizer.CustomIndex();
+        }
+        PushHeadset();
+        CountDownSave();
+    }
+    void OnEqualizerFilters(const EqFilters& filters) override {
+        g.headset.eqFilters = filters;
+        g.headset.eqFiltersKnown = true;
+        if (const HeadsetFeatures* features = Features()) {
             g.headset.eqPreset = features->equalizer.CustomIndex();
         }
         PushHeadset();

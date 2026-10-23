@@ -224,6 +224,10 @@ enum : uint32_t {
     kIdRoutingRow = 120,  // + slot
 };
 
+// The headset's filter editor uses the equalizer's widget IDs plus this, above the fixed ones and below parts and
+// hashed IDs.
+inline constexpr uint32_t kIdHeadsetEqBase = 0x10000;
+
 enum : uint32_t {
     kKindGroup = 1,
     kKindRunning = 2,

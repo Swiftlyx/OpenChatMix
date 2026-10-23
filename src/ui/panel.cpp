@@ -2090,7 +2090,12 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
     case FileDialog::SavePreset: {
         std::wstring name = FileNameOf(*owned);
         name = name.substr(0, name.find_last_of(L'.'));
-        WritePresetFile(*owned, name, ActiveCurve());
+        // A parametric headset saves its filters, with the closest curve for headsets with fixed bands.
+        if (features_ && features_->equalizer.Parametric()) {
+            WritePresetFilters(*owned, name, ActiveHeadsetFilters());
+        } else {
+            WritePresetFile(*owned, name, ActiveCurve());
+        }
         userPresets_ = LoadUserPresets();
         Invalidate();
         break;
@@ -2098,7 +2103,9 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
     case FileDialog::ImportPreset:
         if (const auto preset = ImportPresetFile(*owned)) {
             userPresets_ = LoadUserPresets();
-            if (features_) {
+            if (features_ && features_->equalizer.Parametric()) {
+                host_.OnEqualizerFilters(PresetFilters(*preset, features_->equalizer.range));
+            } else if (features_) {
                 host_.OnEqualizerCurve(PresetCurve(*preset, features_->equalizer.range));
             }
         }

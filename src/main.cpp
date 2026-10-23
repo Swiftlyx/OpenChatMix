@@ -80,6 +80,7 @@ constexpr UINT_PTR kTimerTrayMotion = 15;
 constexpr UINT_PTR kTimerTrayCard = 16;
 constexpr UINT_PTR kTimerAddOnScreen = 17;
 constexpr UINT_PTR kTimerOutputBattery = 18;
+constexpr UINT_PTR kTimerSendEqualizer = 19;
 constexpr UINT kTrayFrameMs = 15;  // About one frame of a 60 Hz display; the tray needs no more.
 constexpr UINT kMicRetryMs = 3000;
 constexpr UINT kSavePluginsMs = 60 * 1000;  // Plugin settings are kept safe while their windows are used.
@@ -133,6 +134,8 @@ constexpr UINT kVerifyAfterDialMs = 1500;
 constexpr UINT kVerifyAfterBalanceMs = 600;
 // The GameDAC can miss balance commands that follow each other closely, e.g. while the slider is dragged.
 constexpr ULONGLONG kLevelsSendGapMs = 40;
+// A dragged band of a parametric headset equalizer goes out at most this often; each update is a whole report.
+constexpr ULONGLONG kEqualizerSendGapMs = 60;
 constexpr DWORD kLegacyExitTimeoutMs = 3000;
 
 // SteelSeries GG takes over the headset while any of these run.
@@ -166,6 +169,7 @@ public:
     void OnHeadsetSetting(uint8_t command, int value) override;
     void OnEqualizerPreset(int index) override;
     void OnEqualizerCurve(const EqCurve& curve) override;
+    void OnEqualizerFilters(const EqFilters& filters) override;
     void OnRoutingEnabled(bool enabled) override;
     void OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) override;
     void OnRoutingManage(bool enabled) override;
@@ -293,6 +297,8 @@ struct App {
     bool updateNotified = false;  // The tray already announced the available version.
     bool updateBalloon = false;   // The shown balloon is about the update.
     ULONGLONG levelsSentTick = 0;
+    ULONGLONG equalizerSentTick = 0;
+    std::optional<EqFilters> equalizerPending;  // Filters held back by kEqualizerSendGapMs.
     bool levelsUnverified = false;  // The last balance sent is not confirmed by a state reply yet.
     bool commitPending = false;     // Settings were sent and the headset's save is still to come.
     AppRouting appRouting;
@@ -848,8 +854,30 @@ void ApplyPopupSettings() {
 }
 
 void SendEqualizerCurve(const EqCurve& curve) {
+    // Filters still held back from a drag would undo it.
+    KillTimer(g_app.window, kTimerSendEqualizer);
+    g_app.equalizerPending.reset();
+    g_app.equalizerSentTick = GetTickCount64();
     const EqualizerSpec& eq = g_app.features->equalizer;
     for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve)) {
+        SendHeadsetCommand(command, eq.format == EqFormat::Feature);
+    }
+}
+
+// Sends the filters at most every kEqualizerSendGapMs; the latest ones always go out.
+void SendEqualizerFilters(const EqFilters& filters) {
+    const ULONGLONG now = GetTickCount64();
+    const ULONGLONG since = now - g_app.equalizerSentTick;
+    if (since < kEqualizerSendGapMs) {
+        g_app.equalizerPending = filters;
+        SetTimer(g_app.window, kTimerSendEqualizer, static_cast<UINT>(kEqualizerSendGapMs - since), nullptr);
+        return;
+    }
+    KillTimer(g_app.window, kTimerSendEqualizer);
+    g_app.equalizerPending.reset();
+    g_app.equalizerSentTick = now;
+    const EqualizerSpec& eq = g_app.features->equalizer;
+    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, filters)) {
         SendHeadsetCommand(command, eq.format == EqFormat::Feature);
     }
 }
@@ -2785,6 +2813,8 @@ void Host::OnEqualizerPreset(int index) {
         SendHeadsetCommand(payload);
     } else if (index < custom) {
         SendEqualizerCurve(eq.presets[index].curve);
+    } else if (eq.Parametric() && g_app.headset.eqFiltersKnown) {
+        SendEqualizerFilters(g_app.headset.eqFilters);
     } else if (g_app.headset.eqCurveKnown) {
         SendEqualizerCurve(g_app.headset.eqCurve);
     }
@@ -2798,6 +2828,13 @@ void Host::OnEqualizerCurve(const EqCurve& curve) {
         return;
     }
     const EqualizerSpec& eq = g_app.features->equalizer;
+    if (eq.Parametric()) {
+        // A curve (reset, a saved curve) is a set of filters on these headsets.
+        g_app.headset.eqCurve = curve;
+        g_app.headset.eqCurveKnown = true;
+        OnEqualizerFilters(CurveFilters(curve, eq.range));
+        return;
+    }
     const int custom = eq.CustomIndex();
     if (eq.presetCommand && g_app.headset.eqPreset != custom) {
         const uint8_t payload[] = {eq.presetCommand, static_cast<uint8_t>(custom)};
@@ -2807,6 +2844,18 @@ void Host::OnEqualizerCurve(const EqCurve& curve) {
     g_app.headset.eqCurve = curve;
     g_app.headset.eqCurveKnown = true;
     g_app.headset.eqPreset = custom;
+    PushHeadset();
+    ScheduleHeadsetSave();
+}
+
+void Host::OnEqualizerFilters(const EqFilters& filters) {
+    if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->equalizer.Parametric()) {
+        return;
+    }
+    SendEqualizerFilters(filters);
+    g_app.headset.eqFilters = filters;
+    g_app.headset.eqFiltersKnown = true;
+    g_app.headset.eqPreset = g_app.features->equalizer.CustomIndex();
     PushHeadset();
     ScheduleHeadsetSave();
 }
@@ -3851,6 +3900,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             Save();
         } else if (wParam == kTimerSendLevels) {
             SendDeviceLevels();
+        } else if (wParam == kTimerSendEqualizer) {
+            if (g_app.equalizerPending && g_app.features && g_app.device.IsOpen()) {
+                SendEqualizerFilters(*g_app.equalizerPending);
+            }
         } else if (wParam == kTimerUpdateCheck) {
             SetTimer(window, kTimerUpdateCheck, kUpdateTimerMs, nullptr);
             MaybeCheckForUpdate();

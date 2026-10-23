@@ -144,6 +144,8 @@ public:
     virtual void OnHeadsetSetting(uint8_t command, int value) = 0;
     virtual void OnEqualizerPreset(int index) = 0;
     virtual void OnEqualizerCurve(const EqCurve& curve) = 0;
+    // The custom filters of a parametric headset equalizer (Nova 7 Gen 2, Nova Elite).
+    virtual void OnEqualizerFilters(const EqFilters& filters) = 0;
     virtual void OnRoutingEnabled(bool enabled) = 0;
     virtual void OnRoutingDevice(RoutingSlot slot, const std::wstring& id) = 0;
     virtual void OnRoutingManage(bool enabled) = 0;
@@ -467,8 +469,21 @@ private:
 
     // Equalizer of the virtual devices (panel_eq.cpp).
     void DrawEqualizerPage();
-    void DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq);
-    float DrawBandEditor(float top, const ParametricEq& eq);
+    // What the response graph and the band editor work on: a channel's equalizer, or a parametric headset's
+    // filters (hardware), which have no preamp, preset files of their own or notch type.
+    struct EqEditor {
+        std::function<void(const std::function<void(ParametricEq&)>&)> edit;
+        int* band = nullptr;  // The selected band.
+        D2D1_COLOR_F accent{};
+        D2D1_COLOR_F onAccent{};
+        bool enabled = true;
+        bool hardware = false;
+        uint32_t idBase = 0;  // Added to the widget IDs, so both editors keep their own.
+    };
+    EqEditor ChannelEqEditor();
+    EqEditor HeadsetEqEditor();
+    void DrawEqGraph(const D2D1_RECT_F& rect, const ParametricEq& eq, const EqEditor& editor);
+    float DrawBandEditor(float top, const ParametricEq& eq, const EqEditor& editor);
     void DrawEqPresets();
     EqChannelSettings& EqChannelState();
     // Channels the equalizer page offers: Game and Chat in virtual device mode, the microphone while
@@ -491,8 +506,13 @@ private:
     // Headset and devices (panel_pages.cpp).
     void DrawHeadset();
     float DrawEqualizer(float top);
+    // The graph and band editor of a parametric headset equalizer, in place of the ten band sliders.
+    float DrawHeadsetFilters(float top);
+    // Below the bands: preset file actions, the game presets menu and the saved presets.
+    float HeadsetPresetToolsHeight();
+    void DrawHeadsetPresetTools(float top);
     // A saved headset preset inside the equalizer card: applied by a click; rename, copy and delete.
-    void DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool active, const EqCurve& presetCurve);
+    void DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool active, std::function<void()> apply);
     float DrawSettingRow(const SettingSpec& spec, float top);
     float DrawVisualizer(float top);
     float DrawIdleScreen(float top);
@@ -503,6 +523,8 @@ private:
     void ApplyHeadsetGamePreset(const NamedEq& preset);
     // The curve the headset currently plays (or the custom curve for on-device presets).
     EqCurve ActiveCurve() const;
+    // The filters a parametric headset currently plays.
+    EqFilters ActiveHeadsetFilters() const;
 
     // Settings (panel_settings.cpp).
     void DrawSettings();
@@ -628,6 +650,7 @@ private:
 
     EqChannel eqChannel_ = EqChannel::Game;
     int eqBand_ = 0;                        // Band selected in the equalizer graph.
+    int headsetBand_ = 0;                   // Band selected in the headset's filter graph.
     std::vector<NamedEq> eqLibrary_[3];     // Built-in, Sonar and own presets of eqLibraryChannel_.
     EqChannel eqLibraryChannel_ = EqChannel::Game;
     struct MenuState {

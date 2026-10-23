@@ -186,11 +186,44 @@ EqCurve Panel::ActiveCurve() const {
     return preset ? eq.presets[headset_.eqPreset].curve : headset_.eqCurve;
 }
 
+EqFilters Panel::ActiveHeadsetFilters() const {
+    return features_ ? ActiveFilters(features_->equalizer, headset_) : EqFilters{};
+}
+
 void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
     if (!features_) {
         return;
     }
     const EqualizerSpec& spec = features_->equalizer;
+    // The replaced custom setting is kept as a saved preset first, named with the time.
+    auto backup = [this](const std::function<bool(const std::wstring& path, const std::wstring& name)>& write) {
+        SYSTEMTIME now{};
+        GetLocalTime(&now);
+        wchar_t stamp[32];
+        swprintf_s(stamp, L"%04u-%02u-%02u %02u.%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute);
+        const std::wstring name = std::wstring(T(Text::CurveBackup)) + L" " + stamp;
+        if (write(PresetDirectory() + L"\\" + name + L".json", name)) {
+            userPresets_ = LoadUserPresets();
+        }
+    };
+    if (spec.Parametric()) {
+        // A parametric headset plays the preset's own filters.
+        const EqFilters filters = PresetFilters(preset.eq);
+        const EqFilters& current = headset_.eqFilters;
+        const bool flat = std::all_of(current.begin(), current.end(), [](const EqBand& band) {
+            return !band.enabled || (UsesGain(band.type) && std::fabs(band.gain) < 0.05f);
+        });
+        const bool saved = std::any_of(userPresets_.begin(), userPresets_.end(), [&](const UserPreset& user) {
+            return PresetFilters(user, spec.range) == current;
+        });
+        if (headset_.eqFiltersKnown && !flat && !saved && current != filters) {
+            backup([&current](const std::wstring& path, const std::wstring& name) {
+                return WritePresetFilters(path, name, current);
+            });
+        }
+        host_.OnEqualizerFilters(filters);
+        return;
+    }
     const auto gains = GraphicEqGains(preset.eq, spec.range / 2.0f);
     EqCurve curve{};
     for (int band = 0; band < kEqBands; ++band) {
@@ -204,14 +237,9 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
         return PresetCurve(user, spec.range) == current;
     });
     if (headset_.eqCurveKnown && !flat && !saved && current != curve) {
-        SYSTEMTIME now{};
-        GetLocalTime(&now);
-        wchar_t stamp[32];
-        swprintf_s(stamp, L"%04u-%02u-%02u %02u.%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute);
-        const std::wstring name = std::wstring(T(Text::CurveBackup)) + L" " + stamp;
-        if (WritePresetFile(PresetDirectory() + L"\\" + name + L".json", name, current)) {
-            userPresets_ = LoadUserPresets();
-        }
+        backup([&current](const std::wstring& path, const std::wstring& name) {
+            return WritePresetFile(path, name, current);
+        });
     }
     host_.OnEqualizerCurve(curve);
 }
@@ -264,6 +292,9 @@ void Panel::DrawSaveState(float right, float centerY) {
 }
 
 float Panel::DrawEqualizer(float y) {
+    if (features_->equalizer.Parametric()) {
+        return DrawHeadsetFilters(y);
+    }
     const Palette& p = P();
     const EqualizerSpec& eq = features_->equalizer;
     const int custom = eq.CustomIndex();
@@ -282,14 +313,7 @@ float Panel::DrawEqualizer(float y) {
     const wchar_t* hint = devicePreset ? T(Text::EqPresetActive) : eq.experimental ? T(Text::EqExperimental) : nullptr;
     const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
     const float bandsHeight = 20.0f + kEqTrackHeight + 30.0f;
-    const float gameHint = HintHeight(T(Text::GamePresetsHint), kWidth - 64.0f);
-    const float gameHeight = 44.0f + gameHint;
-    // Saved presets: one row each, applied by a click, renamed, copied and deleted in place.
-    const size_t saved = userPresets_.size();
-    const float presetsHeight =
-        saved == 0 ? 0.0f : 24.0f + saved * kPresetRowHeight + (saved - 1) * design::kSegmentGap + 8.0f;
-    const D2D1_RECT_F card =
-        Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + 44.0f + gameHeight + presetsHeight + 12.0f);
+    const D2D1_RECT_F card = Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + HeadsetPresetToolsHeight());
 
     std::vector<const wchar_t*> labels;
     for (const auto& preset : eq.presets) {
@@ -357,8 +381,29 @@ float Panel::DrawEqualizer(float y) {
         AddHit(std::move(hit));
     }
 
+    DrawHeadsetPresetTools(trackBottom + 30.0f);
+    return card.bottom + design::kSectionGap;
+}
+
+float Panel::HeadsetPresetToolsHeight() {
+    const float gameHint = HintHeight(T(Text::GamePresetsHint), kWidth - 64.0f);
+    const float gameHeight = 44.0f + gameHint;
+    // Saved presets: one row each, applied by a click, renamed, copied and deleted in place.
+    const size_t saved = userPresets_.size();
+    const float presetsHeight =
+        saved == 0 ? 0.0f : 24.0f + saved * kPresetRowHeight + (saved - 1) * design::kSegmentGap + 8.0f;
+    return 44.0f + gameHeight + presetsHeight + 12.0f;
+}
+
+void Panel::DrawHeadsetPresetTools(float actions) {
+    const Palette& p = P();
+    const EqualizerSpec& eq = features_->equalizer;
+    const int custom = eq.CustomIndex();
+    const float gameHint = HintHeight(T(Text::GamePresetsHint), kWidth - 64.0f);
+    const float gameHeight = 44.0f + gameHint;
+    const size_t saved = userPresets_.size();
+
     // Preset file actions.
-    float actions = trackBottom + 30.0f;
     const float actionWidth = (kWidth - 64.0f) / 3.0f;
     TextButton(kIdEqSave, {32.0f, actions, 32.0f + actionWidth, actions + 32.0f}, kGlyphSave, T(Text::EqSave), false,
                [this] { RunFileDialog(FileDialog::SavePreset); });
@@ -393,17 +438,26 @@ float Panel::DrawEqualizer(float y) {
                      p.onSurfaceVariant);
         float rowTop = labelTop + 24.0f;
         const std::vector<UserPreset> presets = userPresets_;  // Actions below reload the list.
+        const bool parametric = eq.Parametric();
+        const EqCurve curve = ActiveCurve();
+        const EqFilters filters = ActiveHeadsetFilters();
         for (const UserPreset& preset : presets) {
-            const EqCurve presetCurve = PresetCurve(preset, eq.range);
-            const bool active = presetCurve == curve && (eq.presetCommand == 0 || headset_.eqPreset == custom);
-            DrawPresetRow(preset, {24.0f, rowTop, kWidth - 24.0f, rowTop + kPresetRowHeight}, active, presetCurve);
+            const D2D1_RECT_F row{24.0f, rowTop, kWidth - 24.0f, rowTop + kPresetRowHeight};
+            if (parametric) {
+                const EqFilters presetFilters = PresetFilters(preset, eq.range);
+                DrawPresetRow(preset, row, presetFilters == filters,
+                              [this, presetFilters] { host_.OnEqualizerFilters(presetFilters); });
+            } else {
+                const EqCurve presetCurve = PresetCurve(preset, eq.range);
+                const bool active = presetCurve == curve && (eq.presetCommand == 0 || headset_.eqPreset == custom);
+                DrawPresetRow(preset, row, active, [this, presetCurve] { host_.OnEqualizerCurve(presetCurve); });
+            }
             rowTop += kPresetRowHeight + design::kSegmentGap;
         }
     }
-    return card.bottom + design::kSectionGap;
 }
 
-void Panel::DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool active, const EqCurve& presetCurve) {
+void Panel::DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool active, std::function<void()> apply) {
     const Palette& p = P();
     const uint32_t id = HashId(kKindPreset, preset.path);
     const uint32_t fieldId = PartId(id, 4);
@@ -422,7 +476,7 @@ void Panel::DrawPresetRow(const UserPreset& preset, const D2D1_RECT_F& row, bool
         canvas_.FillRound(row, design::kRadiusMedium, p.secondaryContainer);
     }
     StateLayer(id, row, design::kRadiusMedium, p.onSurface);
-    AddHit({row, id, [this, presetCurve] { host_.OnEqualizerCurve(presetCurve); }});
+    AddHit({row, id, std::move(apply)});
 
     // The name renames in place: Enter keeps it, Esc leaves it as it was.
     auto rename = [preset, reload](const std::wstring& text) {
