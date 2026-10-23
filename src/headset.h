@@ -65,6 +65,7 @@ struct EqPreset {
 enum class EqFormat : uint8_t {
     Graphic,     // [bandsCommand] [10 levels]: baseline plus half-decibel steps.
     Parametric,  // Nova 7 Gen 2 protocol: a preset name, ten filters, then a commit (see EqualizerCommands).
+    Feature,     // Nova Elite: one feature report with the preset's names and ten filters.
 };
 
 struct EqualizerSpec {
@@ -141,7 +142,8 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
 // The noise control command of base stations that have it (off, transparency, ANC).
 inline constexpr uint8_t kNoiseControlCommand = 0xBD;
 
-// The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one.
+// The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one, one feature
+// report (without its report ID) for EqFormat::Feature.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve);
 // The bytes after the report ID that set one setting: [command, value], or the whole stream mix.
 std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const HeadsetState& state, uint8_t command,

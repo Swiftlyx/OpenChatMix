@@ -774,11 +774,15 @@ void ScheduleHeadsetVerify(UINT delayMs) {
     }
 }
 
-// Sends a native setting and asks the headset to keep it.
-void SendHeadsetCommand(std::span<const uint8_t> command) {
+// Sends a native setting and asks the headset to keep it; feature: as a feature report (Nova Elite equalizer).
+void SendHeadsetCommand(std::span<const uint8_t> command, bool feature = false) {
     // The screensaver gives the display back first, so the change shows on it.
     NoteActivity();
-    g_app.device.SendCommand(command);
+    if (feature) {
+        g_app.device.SendFeature(command);
+    } else {
+        g_app.device.SendCommand(command);
+    }
     if (g_app.features && !g_app.features->save.empty()) {
         const unsigned delay = g_app.features->saveDelayMs ? g_app.features->saveDelayMs : kCommitHeadsetDelayMs;
         SetTimer(g_app.window, kTimerCommitHeadset, delay, nullptr);
@@ -844,8 +848,9 @@ void ApplyPopupSettings() {
 }
 
 void SendEqualizerCurve(const EqCurve& curve) {
-    for (const std::vector<uint8_t>& command : EqualizerCommands(g_app.features->equalizer, curve)) {
-        SendHeadsetCommand(command);
+    const EqualizerSpec& eq = g_app.features->equalizer;
+    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve)) {
+        SendHeadsetCommand(command, eq.format == EqFormat::Feature);
     }
 }
 

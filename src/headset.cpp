@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <string_view>
 
 namespace {
 
@@ -239,8 +240,16 @@ constexpr SettingSection kEliteSections[] = {
     {Power, kNovaProWirelessPower},
     {Bluetooth, kStationBluetooth},
 };
+// The Elite's equalizer: 01 1b as a 1036-byte feature report, as GG sends it (capture in issue #6, see
+// EqualizerCommands).
+constexpr uint8_t kEliteEqCommand = 0x1B;
 const HeadsetFeatures kNovaElite{
     .sections = kEliteSections,
+    .equalizer = {.bandsCommand = kEliteEqCommand,
+                  .range = 20,
+                  .presets = kNova7Presets,
+                  .format = EqFormat::Feature,
+                  .experimental = true},
     .save = kSaveState,
     .stateQuery = kEliteDisplayQuery,
     .batteryQuery = kStatusRequest,
@@ -271,6 +280,15 @@ constexpr char kGen2PresetName[] = "OpenChatMix";
 constexpr uint8_t kGen2PeakFilter = 0x01;
 constexpr uint16_t kGen2OctaveQ = 1414;
 constexpr uint16_t kGen2Frequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
+
+// Nova Elite equalizer, as GG sets it (capture in issue #6): 1b [kind] [alias, 6 bytes] [name, 61 bytes], then ten
+// filters of six bytes each: frequency (u16 little-endian), type, gain (signed, in 0.1 dB) and Q (x1000, u16
+// little-endian); the rest of the report stays zero. Kind 4 with the alias "CUSTOM" is GG's custom curve, 5 one of
+// its game presets. The curve becomes the same peak filters as on the Gen 2.
+constexpr uint8_t kEliteEqCustom = 0x04;
+constexpr char kEliteEqAlias[] = "CUSTOM";
+constexpr size_t kEliteEqAliasLength = 6;
+constexpr size_t kEliteEqNameLength = 61;
 
 EqCurve CurveFromBytes(const uint8_t* bytes, uint8_t baseline, int8_t range) {
     EqCurve curve{};
@@ -563,6 +581,25 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
             command.push_back(0x00);
         }
         return {command};
+    }
+    if (spec.format == EqFormat::Feature) {
+        std::vector<uint8_t> report{spec.bandsCommand, kEliteEqCustom};
+        // Fixed-size text fields, padded with zeros.
+        auto text = [&report](std::string_view value, size_t length) {
+            for (size_t index = 0; index < length; ++index) {
+                report.push_back(index < value.size() ? static_cast<uint8_t>(value[index]) : 0x00);
+            }
+        };
+        text(kEliteEqAlias, kEliteEqAliasLength);
+        text(kGen2PresetName, kEliteEqNameLength);
+        for (int band = 0; band < kEqBands; ++band) {
+            const uint16_t frequency = kGen2Frequencies[band];
+            const int tenths = std::clamp<int>(curve[band], -spec.range, spec.range) * 5;
+            report.insert(report.end(), {static_cast<uint8_t>(frequency & 0xFF), static_cast<uint8_t>(frequency >> 8),
+                                         kGen2PeakFilter, static_cast<uint8_t>(static_cast<int8_t>(tenths)),
+                                         static_cast<uint8_t>(kGen2OctaveQ & 0xFF), static_cast<uint8_t>(kGen2OctaveQ >> 8)});
+        }
+        return {report};
     }
     std::vector<uint8_t> name{kGen2EqName, kGen2Radio, kGen2CustomPreset};
     name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);

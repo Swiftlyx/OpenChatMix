@@ -61,6 +61,8 @@ public:
 
     // Sends a native setting, e.g. {0x37, 7}; the report ID is added here.
     bool SendCommand(std::span<const uint8_t> payload);
+    // Sends a feature report on the command collection, padded with zeros to its full length (Nova Elite equalizer).
+    bool SendFeature(std::span<const uint8_t> payload);
     // Settings and battery reported by the headset since the last call (WM_APP_HEADSET).
     std::vector<HeadsetUpdate> TakeHeadsetUpdates();
     // Asks for the current settings where the headset can report them; answered as headset updates.

@@ -1,5 +1,7 @@
 #include "chatmix_device.h"
 
+#include <hidsdi.h>
+
 #include <algorithm>
 #include <string>
 
@@ -226,6 +228,22 @@ void ChatMixDevice::Start(Levels levels) {
 
 bool ChatMixDevice::SendCommand(std::span<const uint8_t> payload) {
     return model_ && Send(payload);
+}
+
+bool ChatMixDevice::SendFeature(std::span<const uint8_t> payload) {
+    if (!model_ || command_ == INVALID_HANDLE_VALUE || featureLength_ <= payload.size()) {
+        return false;
+    }
+    std::vector<uint8_t> report(featureLength_, 0);
+    report[0] = reportId_;
+    std::copy(payload.begin(), payload.end(), report.begin() + 1);
+    // Only the bytes that carry data are logged; the zeros after them fill the report.
+    if (!HidD_SetFeature(command_, report.data(), featureLength_)) {
+        Log("tx feature %s failed, error %lu", HexBytes(report.data(), payload.size() + 1).c_str(), GetLastError());
+        return false;
+    }
+    Log("tx feature %s", HexBytes(report.data(), payload.size() + 1).c_str());
+    return true;
 }
 
 void ChatMixDevice::QueryState() {
