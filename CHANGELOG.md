@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.4 — 2026-10-23
+
+- The hover card over the tray icon no longer gets a small empty box on top of it: Windows 11 sometimes
+  showed an empty tooltip of its own there, for example after the app started with Windows. The card
+  now stays above anything the taskbar shows while it is up.
+
 ## 2.5.3 — 2026-10-22
 
 - Noise control switched with the headset's button (Nova Pro Wireless, Nova Elite) shows a popup with
