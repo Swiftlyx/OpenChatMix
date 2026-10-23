@@ -251,7 +251,6 @@ const HeadsetFeatures kNovaElite{
                   .range = 20,
                   .presets = kNova7Presets,
                   .format = EqFormat::Feature,
-                  .experimental = true,
                   .notch = true},
     .bluetoothEqualizer = {.bandsCommand = kEliteBluetoothEqCommand,
                            .range = 20,

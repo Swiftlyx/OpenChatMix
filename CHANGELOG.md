@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.5.7 — 2026-10-23
+
+- Arctis Nova Elite: the equalizer of the sound over Bluetooth (experimental), with the SteelSeries presets and
+  ten band sliders. A switch above the equalizer on the *Headset* tab chooses between it and the main one
+  (*2.4 GHz*).
+- Nova Elite and Nova 7 Gen 2: Bass Boost, Focus and Smiley go to the headset the way GG sends them, with
+  shelves on the lowest and highest band; on the Elite with their names too. The Elite now gets notch filters
+  as notches (in GG's DOOM: The Dark Ages, for one).
+- The Focus preset had its 4 kHz, 8 kHz and 16 kHz bands wrong; it now matches GG's. On headsets that store
+  their presets themselves (Nova Pro) this only changes how its curve is drawn.
+- All of this comes from [@Lasfecas](https://github.com/Lasfecas)'s second USB capture in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6), which also confirms the shelf and pass
+  filter types.
+
 ## 2.5.6 — 2026-10-23
 
 - Arctis Nova Elite and Nova 7 Gen 2: the equalizer on the *Headset* tab is parametric, like the one on the
