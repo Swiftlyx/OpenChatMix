@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.5 — 2026-10-23
+
+- Arctis Nova Elite: the equalizer on the *Headset* tab (experimental), with the SteelSeries presets (Flat,
+  Bass Boost, Focus, Smiley), the custom 10-band curve, game presets and saved presets. It goes to the base
+  station the way SteelSeries GG sends it, as [@Lasfecas](https://github.com/Lasfecas)'s USB capture with GG in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) shows.
+
 ## 2.5.4 — 2026-10-23
 
 - The hover card over the tray icon no longer gets a small empty box on top of it: Windows 11 sometimes
