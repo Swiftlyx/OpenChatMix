@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.6.1 — 2026-10-24
+
+- *Equalizer* tab: when the page title does not fit beside the channel switch (in Ukrainian with three or four
+  channels), the switch takes the whole row instead of covering the title.
+
 ## 2.6.0 — 2026-10-24
 
 - Media group: a volume slider and a level meter on the *Mixer* tab, like Game and Chat.
