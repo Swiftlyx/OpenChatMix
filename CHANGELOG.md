@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.6.0 — 2026-10-24
+
+- Media group: a volume slider and a level meter on the *Mixer* tab, like Game and Chat.
+- Undo for the equalizers: `Ctrl + Z` undoes a change on the *Equalizer* and *Headset* tabs, `Ctrl + Y` or
+  `Ctrl + Shift + Z` redoes it, up to 100 steps. In a number field it undoes the typing first.
+- Any app can leave its group, from Game too. The trash icon in *Game* leaves an app out of ChatMix: it keeps
+  its own volume, belongs to no group and, in virtual device mode, plays past the virtual devices. *Add* in
+  any group lists it as "out of ChatMix" and brings it back.
+- The trash icon shows next to an app added by hand right away, not only after the panel opens again.
+- Without virtual devices the Game, Chat and Media meters show only what their own apps play. Apps that
+  record the headset's sound, such as OBS capturing desktop audio or Discord in a call, showed everything
+  that played in their group's meter. The same mistake made ducking lower Game for any sound while Discord
+  was in a call and kept GG's Discord screen up for music.
+- `Ctrl + A` in a text field keeps the text selected, so typing replaces it.
+
 ## 2.5.8 — 2026-10-24
 
 - Arctis Nova Elite: the microphone's own equalizer (experimental), the third choice of the switch above the

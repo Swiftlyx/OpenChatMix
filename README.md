@@ -89,8 +89,8 @@ native settings, so GG and Sonar can stay closed:
   example in OBS) keep the full level.
 - **Game / Chat / Media groups.** Unknown apps follow the Game side, Discord and the Xbox party chat
   start in Chat (they appear in the group once installed), and Media apps (music, videos) are never
-  touched by ChatMix — like Sonar's Media channel. The Media group is off until you turn it on in
-  *Settings → Audio*.
+  touched by ChatMix — like Sonar's Media channel — but have a volume slider of their own. The Media
+  group is off until you turn it on in *Settings → Audio*.
 - **A device per group, no virtual cables needed.** *Settings → Audio → Audio routing* lets each group
   play on its own device, for example Game and Chat on the headset and Media on the speakers. Windows
   sends the group's apps there (its per-app device, which OpenChatMix clears again when it exits), and
@@ -270,9 +270,10 @@ positives to your antivirus vendor; for Microsoft Defender use the
 - **Tell it which apps are chat.** *Mixer → Groups → Chat → Add*, then pick Discord, Telegram or any
   other app. Everything else follows Game. Music and videos that should never change go into *Media* (turn
   the group on in *Settings → Audio*).
-  The trash icon next to an app takes it out of its group again.
-- **Set each side's volume.** The sliders under *Game* and *Chat* on the *Mixer* tab. Windows volumes
-  stay at 100%.
+  The trash icon next to an app takes it out of its group again; in Game it leaves the app out of
+  ChatMix until you add it again.
+- **Set each side's volume.** The sliders under *Game* and *Chat* on the *Mixer* tab, and under *Media*
+  once that group is on. Windows volumes stay at 100%.
 - **Headset settings (Arctis).** The *Headset* tab: equalizer presets and your own curve, microphone,
   sidetone, gain, display and screensaver. They are stored in the headset itself.
 - **Mix like Sonar, with an equalizer (optional).** Install two virtual cables and turn on *Settings →
@@ -290,12 +291,13 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | | *Mixer* tab: drag the slider, scroll over it, or use ← / →. Double-click centers it. |
 | | Hotkeys: `Ctrl + Alt + ←` more game, `Ctrl + Alt + →` more chat, `Ctrl + Alt + ↓` balanced. |
 | | Mouse wheel with the key combination held, once turned on in *Settings* → *Hotkeys* → *Mouse wheel*. |
-| Volume of Game or Chat | *Mixer* → the slider under *Game* or *Chat*. Its darker fill shows what plays; Windows volumes stay at 100%. |
+| Volume of Game, Chat or Media | *Mixer* → the slider under *Game*, *Chat* or *Media*. Its darker fill shows what plays; Windows volumes stay at 100%. |
 | Move an app between groups | *Mixer* → *Groups* → open a group → *Game / Chat / Media* next to the app. |
 | Add an app manually | Open a group → *Add* → pick a running app or *Browse .exe*. |
-| Remove an app from a group | Open the group → the trash icon next to the app. It follows Game again; a closed app leaves the list. |
+| Remove an app from a group | Open the group → the trash icon next to the app. From Chat or Media it follows Game again; from Game it is left out of ChatMix (its own volume, no group) until *Add* brings it back. A closed app leaves the list. |
 | Theme, contrast, Game and Chat colors, battery color, background, tray icon | *Settings* → *Appearance*. |
 | Use the panel from the keyboard | `Tab` / `Shift + Tab` move between controls, `Enter` (or `Space`) presses, the arrows change sliders and values, `Esc` goes back. |
+| Undo an equalizer change | *Equalizer* or *Headset* tab: `Ctrl + Z`; `Ctrl + Y` or `Ctrl + Shift + Z` redoes it. Up to 100 steps; in a number field the typing comes first. |
 | Hotkeys, popups and their corner, battery warning | *Settings* → *Hotkeys* / *Notifications*. |
 | Write a log for a bug report | *Settings* → *General* → *Diagnostics* → *Write a log*; *Open the log folder* shows `OpenChatMix.log`. |
 | Language, startup, the tour | *Settings* → *General*. |
@@ -573,7 +575,10 @@ multiplies with the app's slider in the volume mixer. Windows keeps that volume 
 start, so OpenChatMix resets it as soon as the app exits. In virtual device mode loopback capture
 takes the sound before the Windows volume of the Game and Chat devices, so the bridges read it
 (`IAudioEndpointVolume`) and apply it themselves. The screensaver watches the device's peak meter
-(`IAudioMeterInformation`). Virtual device mode switches devices and defaults through the
+(`IAudioMeterInformation`). Without virtual devices the group meters also listen to each playing app
+through a process loopback capture while they show, since a session's own meter counts what the app
+records too (OBS capturing desktop audio, for example); the capture hears the app's child processes as
+well, so the lower of the two is the app's own sound. Virtual device mode switches devices and defaults through the
 `IPolicyConfig` interface that the Windows sound settings use, and sends apps to the Game or Chat
 device through `IAudioPolicyConfigFactory`, the interface behind the per-app device choice in the
 Windows volume mixer; neither needs administrator rights. The equalizer is a chain of biquad filters
