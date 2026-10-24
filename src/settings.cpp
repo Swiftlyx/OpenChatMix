@@ -709,6 +709,7 @@ Settings LoadSettings(const std::wstring& path) {
     settings.popupCorner = static_cast<PopupCorner>(std::clamp(ReadInt(path, L"PopupCorner", 0), 0, 3));
     settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
     settings.chatVolume = std::clamp(ReadInt(path, L"ChatVolume", 100), 0, 100);
+    settings.mediaVolume = std::clamp(ReadInt(path, L"MediaVolume", 100), 0, 100);
     settings.warnGg = ReadInt(path, L"WarnGg", 1) != 0;
     // Media and the equalizer start turned off; settings files from earlier versions keep their choice.
     settings.mediaGroup = ReadInt(path, L"MediaGroup", 0) != 0;
@@ -768,6 +769,9 @@ Settings LoadSettings(const std::wstring& path) {
     settings.routing.savedCommunications = ReadString(path, kRoutingSection, L"SavedCommunications", L"");
     settings.routing.autoRoute = GetPrivateProfileIntW(kRoutingSection, L"AutoRoute", 1, path.c_str()) != 0;
     settings.routing.routedApps = SplitList(ReadString(path, kRoutingSection, L"RoutedApps", L""));
+    for (const std::wstring& exe : SplitList(ReadString(path, kMainSection, L"IgnoredApps", L""))) {
+        settings.ignoredApps.insert(exe);
+    }
     settings.outputs.order = SplitList(ReadString(path, kOutputsSection, L"Order", L""));
     settings.outputs.excluded = SplitList(ReadString(path, kOutputsSection, L"Excluded", L""));
     settings.outputs.switchOnLoss = ReadSectionInt(path, kOutputsSection, L"SwitchOnLoss", 0) != 0;
@@ -832,6 +836,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"PopupCorner", std::to_wstring(static_cast<int>(settings.popupCorner)).c_str());
     WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());
     WriteString(path, L"ChatVolume", std::to_wstring(settings.chatVolume).c_str());
+    WriteString(path, L"MediaVolume", std::to_wstring(settings.mediaVolume).c_str());
     WriteString(path, L"WarnGg", settings.warnGg ? L"1" : L"0");
     WriteString(path, L"MediaGroup", settings.mediaGroup ? L"1" : L"0");
     WriteString(path, L"Equalizer", settings.equalizer ? L"1" : L"0");
@@ -889,6 +894,11 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
         routed += (routed.empty() ? L"" : std::wstring(1, kPathSeparator)) + exe;
     }
     WritePrivateProfileStringW(kRoutingSection, L"RoutedApps", routed.c_str(), path.c_str());
+    std::wstring ignored;
+    for (const auto& exe : settings.ignoredApps) {
+        ignored += (ignored.empty() ? L"" : std::wstring(1, kPathSeparator)) + exe;
+    }
+    WriteString(path, L"IgnoredApps", ignored.c_str());
     std::wstring order;
     for (const auto& id : settings.outputs.order) {
         order += (order.empty() ? L"" : std::wstring(1, kPathSeparator)) + id;

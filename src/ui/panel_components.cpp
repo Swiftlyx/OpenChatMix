@@ -395,6 +395,7 @@ bool Panel::FieldKey(UINT key) {
         if (!shift) {
             field_.anchor = caret;
         }
+        field_.typing = false;
     };
     const bool selected = field_.anchor != field_.caret;
     const size_t low = std::min(field_.anchor, field_.caret);
@@ -421,6 +422,9 @@ bool Panel::FieldKey(UINT key) {
         moveTo(size);
         break;
     case VK_DELETE:
+        if (selected || field_.caret < size) {
+            KeepFieldText(false);
+        }
         if (selected) {
             field_.text.erase(low, high - low);
             field_.caret = field_.anchor = low;
@@ -434,6 +438,7 @@ bool Panel::FieldKey(UINT key) {
         }
         field_.anchor = 0;
         field_.caret = size;
+        field_.typing = false;
         break;
     case 'C':
     case 'X':
@@ -443,6 +448,7 @@ bool Panel::FieldKey(UINT key) {
         if (selected) {
             SetClipboardText(window_, field_.text.substr(low, high - low));
             if (key == 'X') {
+                KeepFieldText(false);
                 field_.text.erase(low, high - low);
                 field_.caret = field_.anchor = low;
             }
@@ -453,11 +459,35 @@ bool Panel::FieldKey(UINT key) {
             return true;
         }
         const std::wstring pasted = ClipboardText(window_);
+        KeepFieldText(false);
         field_.text.erase(low, high - low);
         const size_t limit = field_.numeric ? 16u : 64u;
         const size_t room = field_.text.size() < limit ? limit - field_.text.size() : 0;
         field_.text.insert(low, pasted.substr(0, room));
         field_.caret = field_.anchor = low + std::min(pasted.size(), room);
+        break;
+    }
+    case 'Z':
+    case 'Y': {
+        if (!control) {
+            return true;
+        }
+        // Ctrl+Z undoes the typing, Ctrl+Y or Ctrl+Shift+Z redoes it. With nothing left in the field, it closes
+        // as it was and the equalizer's step is undone or redone instead.
+        const bool redo = key == 'Y' || shift;
+        std::vector<FieldState::Snapshot>& from = redo ? field_.redo : field_.undo;
+        std::vector<FieldState::Snapshot>& to = redo ? field_.undo : field_.redo;
+        if (from.empty()) {
+            CancelField();
+            UndoEqualizer(redo);
+            return true;
+        }
+        to.push_back({field_.text, field_.caret, field_.anchor});
+        field_.text = from.back().text;
+        field_.caret = from.back().caret;
+        field_.anchor = from.back().anchor;
+        from.pop_back();
+        field_.typing = false;
         break;
     }
     default:
@@ -467,10 +497,27 @@ bool Panel::FieldKey(UINT key) {
     return true;
 }
 
+void Panel::KeepFieldText(bool typed) {
+    // A run of typed characters is one step, as in Windows text boxes.
+    if (!typed || !field_.typing) {
+        field_.undo.push_back({field_.text, field_.caret, field_.anchor});
+    }
+    field_.typing = typed;
+    field_.redo.clear();
+}
+
 void Panel::FieldChar(wchar_t ch) {
+    // Ctrl with a letter also sends its control character (Ctrl+A 0x01, Ctrl+Z 0x1A); FieldKey has handled the
+    // key, and the character must not drop the selection it made.
+    if (ch < L' ' && ch != L'\b') {
+        return;
+    }
     const size_t low = std::min(field_.anchor, field_.caret);
     const size_t high = std::max(field_.anchor, field_.caret);
     if (ch == L'\b' || ch == 0x7F) {
+        if (low != high || field_.caret > 0) {
+            KeepFieldText(false);
+        }
         if (low != high) {
             field_.text.erase(low, high - low);
             field_.caret = low;
@@ -489,6 +536,7 @@ void Panel::FieldChar(wchar_t ch) {
             field_.text.erase(--field_.caret, 1);
         }
     } else if (ch >= L' ' && ch != 0x7F) {
+        KeepFieldText(true);
         field_.text.erase(low, high - low);
         field_.caret = low;
         if (field_.text.size() < (field_.numeric ? 16u : 64u)) {

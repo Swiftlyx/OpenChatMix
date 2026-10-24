@@ -156,6 +156,7 @@ bool SessionMixer::Init(HWND notifyWindow) {
 }
 
 void SessionMixer::Shutdown() {
+    meters_.Close();
     for (auto& [id, changed] : changed_) {
         if (changed.events) {
             changed.control->UnregisterAudioSessionNotification(changed.events.Get());
@@ -314,6 +315,10 @@ void SessionMixer::Apply(Levels levels, const Settings& settings, float media) {
     const float game = levels.game / 100.0f;
     const float chat = levels.chat / 100.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
+        // Left out of ChatMix: RestoreApp gave it its volume back when it was left out.
+        if (settings.IsIgnored(session.exe)) {
+            return;
+        }
         switch (settings.EffectiveGroupOf(session.exe)) {
         case AppGroup::Game:
             SetLevel(session, game);
@@ -414,11 +419,8 @@ float SessionMixer::PeakLevel() const {
 float SessionMixer::AppPeak(bool (*match)(const std::wstring& exe)) const {
     float peak = 0.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
-        ComPtr<IAudioMeterInformation> meter;
-        float value = 0.0f;
-        if (match(session.exe) && SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) &&
-            SUCCEEDED(meter->GetPeakValue(&value))) {
-            peak = std::max(peak, value);
+        if (match(session.exe)) {
+            peak = std::max(peak, SessionPeak(session, false));
         }
     });
     return peak;
@@ -427,32 +429,44 @@ float SessionMixer::AppPeak(bool (*match)(const std::wstring& exe)) const {
 float SessionMixer::GroupPeak(const Settings& settings, AppGroup group, bool heard) const {
     float peak = 0.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
-        if (settings.EffectiveGroupOf(session.exe) != group) {
-            return;
+        if (!settings.IsIgnored(session.exe) && settings.EffectiveGroupOf(session.exe) == group) {
+            peak = std::max(peak, SessionPeak(session, heard));
         }
-        ComPtr<IAudioMeterInformation> meter;
-        float value = 0.0f;
-        if (FAILED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) || FAILED(meter->GetPeakValue(&value))) {
-            return;
-        }
-        // The session meter reads the app's sound before both its volume and its channel volume.
-        if (heard) {
-            ComPtr<ISimpleAudioVolume> volume;
-            float master = 1.0f;
-            if (SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&volume)))) {
-                volume->GetMasterVolume(&master);
-            }
-            UINT32 count = 0;
-            float channel = 1.0f;
-            if (SUCCEEDED(session.channels->GetChannelCount(&count)) && count > 0) {
-                std::vector<float> values(count);
-                if (SUCCEEDED(session.channels->GetAllVolumes(count, values.data()))) {
-                    channel = *std::max_element(values.begin(), values.end());
-                }
-            }
-            value *= master * channel;
-        }
-        peak = std::max(peak, value);
     });
     return peak;
+}
+
+float SessionMixer::SessionPeak(const Session& session, bool heard) const {
+    ComPtr<IAudioMeterInformation> meter;
+    float value = 0.0f;
+    if (FAILED(session.control->QueryInterface(IID_PPV_ARGS(&meter))) || FAILED(meter->GetPeakValue(&value)) ||
+        value <= 0.0f) {
+        return 0.0f;
+    }
+    // The session meter reads the app's sound before both its volume and its channel volume.
+    ComPtr<ISimpleAudioVolume> volume;
+    float master = 1.0f;
+    if (SUCCEEDED(session.control->QueryInterface(IID_PPV_ARGS(&volume)))) {
+        volume->GetMasterVolume(&master);
+    }
+    UINT32 count = 0;
+    float channel = 1.0f;
+    if (SUCCEEDED(session.channels->GetChannelCount(&count)) && count > 0) {
+        std::vector<float> values(count);
+        if (SUCCEEDED(session.channels->GetAllVolumes(count, values.data()))) {
+            channel = *std::max_element(values.begin(), values.end());
+        }
+    }
+    const float gain = master * channel;
+    // The session meter also shows what the app captures from the device, e.g. OBS recording desktop audio or
+    // Discord's echo cancellation; the process capture hears what the app plays after its volume, but its child
+    // processes too (Explorer, launchers). Either one only ever reads too high, so the lower one is the app's own.
+    const std::optional<float> played = meters_.Peak(session.pid);
+    if (!played) {
+        return heard ? value * gain : value;
+    }
+    if (heard) {
+        return std::min(value * gain, *played);
+    }
+    return gain > 0.001f ? std::min(value, *played / gain) : 0.0f;
 }

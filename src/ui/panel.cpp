@@ -1623,6 +1623,7 @@ void Panel::OnMouseMove(float x, float y) {
 }
 
 void Panel::OnMouseDown(float x, float y, bool doubleClick) {
+    ++gesture_;
     const Hit* hit = HitAt(x, y, false);
     ArmTooltip(nullptr);
     // A press anywhere but on the field being edited applies its text.
@@ -1675,7 +1676,9 @@ void Panel::OnMouseUp(float x, float y) {
         release();
     }
     if (click) {
+        clicking_ = true;
         click();
+        clicking_ = false;
     }
 }
 
@@ -1748,6 +1751,11 @@ bool Panel::OnKey(UINT key, bool down) {
             }
         }
         Invalidate();
+        return true;
+    }
+    // Ctrl+Z undoes the last equalizer change of the page in view; Ctrl+Y or Ctrl+Shift+Z redoes it.
+    if (!menu_.open && (GetKeyState(VK_CONTROL) & 0x8000) && (key == 'Z' || key == 'Y') &&
+        UndoEqualizer(key == 'Y' || (GetKeyState(VK_SHIFT) & 0x8000))) {
         return true;
     }
     if (key == VK_ESCAPE && menu_.open) {
@@ -2104,9 +2112,9 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
         if (const auto preset = ImportPresetFile(*owned)) {
             userPresets_ = LoadUserPresets();
             if (features_ && features_->equalizer.Parametric()) {
-                host_.OnEqualizerFilters(PresetFilters(*preset, features_->equalizer.range));
+                SetHeadsetFilters(PresetFilters(*preset, features_->equalizer.range));
             } else if (features_) {
-                host_.OnEqualizerCurve(PresetCurve(*preset, features_->equalizer.range));
+                SetHeadsetCurve(PresetCurve(*preset, features_->equalizer.range));
             }
         }
         Invalidate();

@@ -113,9 +113,10 @@ public:
     UINT32 Rate(EqChannel channel) const;
     // Largest Chat output sample since the last call.
     float TakeChatPeak() { return chat_.TakePeak(); }
-    // Largest Game and Chat output samples since the last call, for the level meters.
+    // Largest Game, Chat and Media output samples since the last call, for the level meters.
     float TakeGameMeter() { return game_.TakeMeterPeak(); }
     float TakeChatMeter() { return chat_.TakeMeterPeak(); }
+    float TakeMediaMeter() { return mediaRouted_ ? media_.TakeMeterPeak() : 0.0f; }
     int LatencyMs() const;
 
 private:

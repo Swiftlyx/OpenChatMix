@@ -39,7 +39,7 @@ void Panel::TickMeters() {
     const bool groups = page_ == Page::Mixer || page_ == Page::Group;
     const bool mic = page_ == Page::Microphone && settings_.mic.enabled && settings_.mic.monitor;
     if (!groups && !mic) {
-        if (meters_.game > 0.0f || meters_.chat > 0.0f || meters_.mic > 0.0f) {
+        if (meters_.game > 0.0f || meters_.chat > 0.0f || meters_.mic > 0.0f || meters_.media > 0.0f) {
             meters_ = {};
             micHold_ = 0.0f;
         }
@@ -51,7 +51,8 @@ void Panel::TickMeters() {
         const float fallen = shown * kMeterFall;
         return std::max(std::clamp(peak, 0.0f, 1.0f), fallen < 0.001f ? 0.0f : fallen);
     };
-    const Meters next{follow(meters_.game, peaks.game), follow(meters_.chat, peaks.chat), follow(meters_.mic, peaks.mic)};
+    const Meters next{follow(meters_.game, peaks.game), follow(meters_.chat, peaks.chat), follow(meters_.mic, peaks.mic),
+                      follow(meters_.media, peaks.media)};
     const ULONGLONG now = GetTickCount64();
     float hold = micHold_;
     if (next.mic >= hold) {
@@ -64,6 +65,7 @@ void Panel::TickMeters() {
     // the floor is still a visible move, so a falling meter never stalls between redraws.
     auto onScale = [](float sample) { return ScaleOf(ToDb(sample)); };
     const bool changed = std::fabs(next.game - meters_.game) > 0.002f || std::fabs(next.chat - meters_.chat) > 0.002f ||
+                         std::fabs(next.media - meters_.media) > 0.002f ||
                          std::fabs(onScale(next.mic) - onScale(meters_.mic)) > 0.002f ||
                          std::fabs(onScale(hold) - onScale(micHold_)) > 0.002f;
     meters_ = next;

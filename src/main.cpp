@@ -1610,18 +1610,22 @@ void RouteApps() {
         return;
     }
     const std::vector<AudioEndpoint> connected = direct ? ListRenderEndpoints() : std::vector<AudioEndpoint>{};
+    // Apps left out of ChatMix play where the mix goes, past the virtual devices; without them, on the default.
+    const std::wstring outside = direct ? L"" : CurrentRoutingPlan().gameOutput;
     bool changed = false;
     for (const auto& app : g_app.mixer.ActiveApps()) {
         if (app.pid == 0) {
             continue;
         }
+        const bool ignored = g_app.settings.IsIgnored(app.exe);
         const AppGroup group = g_app.settings.EffectiveGroupOf(app.exe);
-        const bool chat = group == AppGroup::Chat;
-        const bool media = group == AppGroup::Media && (direct || MediaRouted());
-        const std::wstring target = direct  ? DirectTarget(group, connected)
-                                    : chat  ? routing.chat
-                                    : media ? routing.media
-                                            : (routing.manageDevices ? L"" : routing.game);
+        const bool chat = !ignored && group == AppGroup::Chat;
+        const bool media = !ignored && group == AppGroup::Media && (direct || MediaRouted());
+        const std::wstring target = ignored ? outside
+                                    : direct ? DirectTarget(group, connected)
+                                    : chat   ? routing.chat
+                                    : media  ? routing.media
+                                             : (routing.manageDevices ? L"" : routing.game);
         const auto now = g_app.routedNow.find(app.exe);
         const bool listed = std::any_of(routing.routedApps.begin(), routing.routedApps.end(), [&](const std::wstring& exe) {
             return _wcsicmp(exe.c_str(), app.exe.c_str()) == 0;
@@ -1634,7 +1638,7 @@ void RouteApps() {
             RememberRouted(app.exe, !target.empty());
             changed = true;
             Log("routed %s to %s", Utf8(app.exe).c_str(),
-                target.empty() ? "the default device" : chat ? "Chat" : media ? "Media" : "Game");
+                target.empty() ? "the default device" : ignored ? "the output" : chat ? "Chat" : media ? "Media" : "Game");
         }
     }
     if (changed) {
@@ -1679,6 +1683,9 @@ void RefreshApps() {
     std::vector<ui::AppItem> items;
     bool pathsChanged = false;
     for (const auto& app : g_app.mixer.ActiveApps()) {
+        if (g_app.settings.IsIgnored(app.exe)) {
+            continue;
+        }
         items.push_back({app.exe, app.path, DisplayName(app.path, app.exe), g_app.settings.GroupOf(app.exe), true});
         // Remember where configured apps live so their icons show while they are closed.
         const auto rule = g_app.settings.apps.find(app.exe);
@@ -1758,7 +1765,7 @@ Levels EffectiveLevels() {
 void ApplyLevels() {
     const Levels levels = EffectiveLevels();
     // Virtual device mode mixes the streams itself; until it runs, app volumes keep ChatMix working.
-    const float media = g_app.mediaMuted ? 0.0f : 1.0f;
+    const float media = g_app.mediaMuted ? 0.0f : g_app.settings.mediaVolume / 100.0f;
     if (g_app.settings.routing.enabled && g_app.router.IsRunning()) {
         g_app.router.SetLevels(levels);
         g_app.router.SetMediaLevel(media);
@@ -2722,21 +2729,28 @@ void Host::OnBalanceChanged(int balance) {
 }
 
 void Host::OnGroupChanged(const ui::AppItem& app, AppGroup group) {
+    g_app.settings.ignoredApps.erase(app.exe);
     g_app.settings.SetGroup(app.exe, group, app.path);
     if (group == AppGroup::Media) {
         g_app.mixer.RestoreApp(app.exe);
     }
     Save();
+    PushSettings();
     ApplyLevels();
     RefreshApps();
     RouteApps();
 }
 
 void Host::OnAppRemoved(const ui::AppItem& app) {
+    if (g_app.settings.GroupOf(app.exe) == AppGroup::Game) {
+        g_app.settings.ignoredApps.insert(app.exe);
+        Log("%s left out of ChatMix", Utf8(app.exe).c_str());
+    }
     g_app.settings.apps.erase(app.exe);
     // Its ChatMix level is recomputed for the Game side; in virtual device mode it moves to the Game device.
     g_app.mixer.RestoreApp(app.exe);
     Save();
+    PushSettings();
     ApplyLevels();
     RefreshApps();
     RouteApps();
@@ -2755,7 +2769,7 @@ std::vector<ui::AppItem> Host::RunningApps() {
     std::vector<ui::AppItem> items;
     for (const auto& process : processes) {
         items.push_back({process.exe, process.path, DisplayName(process.path, process.exe),
-                         g_app.settings.GroupOf(process.exe), true});
+                         g_app.settings.GroupOf(process.exe), true, g_app.settings.IsIgnored(process.exe)});
     }
     std::sort(items.begin(), items.end(), [](const ui::AppItem& a, const ui::AppItem& b) {
         return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
@@ -3171,7 +3185,8 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
         }
         ApplyLevels();
         RefreshApps();
-    } else if (before.gameVolume != after.gameVolume || before.chatVolume != after.chatVolume) {
+    } else if (before.gameVolume != after.gameVolume || before.chatVolume != after.chatVolume ||
+               before.mediaVolume != after.mediaVolume) {
         ApplyLevels();
     }
     if (before.routing.autoRoute != after.routing.autoRoute) {
@@ -3613,9 +3628,11 @@ ui::Meters Host::ReadMeters() {
     if (g_app.settings.routing.enabled && g_app.router.IsRunning()) {
         meters.game = g_app.router.TakeGameMeter();
         meters.chat = g_app.router.TakeChatMeter();
+        meters.media = g_app.router.TakeMediaMeter();
     } else {
         meters.game = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Game, true);
         meters.chat = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Chat, true);
+        meters.media = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Media, true);
     }
     meters.mic = g_app.mic.IsRunning() ? g_app.mic.TakePeak() : 0.0f;
     return meters;

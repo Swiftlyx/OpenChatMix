@@ -35,7 +35,7 @@ cl /nologo /std:c++20 /O2 /MT /W4 /EHsc /utf-8 /permissive- /DUNICODE /D_UNICODE
     /Fobuild\ /Fdbuild\ /Febuild\OpenChatMix.exe src\*.cpp src\ui\*.cpp build\rnnoise\*.obj build\app.res ^
     /link /SUBSYSTEM:WINDOWS /MANIFEST:NO /OPT:REF /OPT:ICF /DEBUG /INCREMENTAL:NO /PDBALTPATH:%%_PDB%% ^
     dbghelp.lib user32.lib gdi32.lib shell32.lib ole32.lib setupapi.lib hid.lib advapi32.lib wtsapi32.lib ^
-    d2d1.lib dwrite.lib windowscodecs.lib dwmapi.lib shcore.lib version.lib avrt.lib dxgi.lib runtimeobject.lib winsqlite3.lib winhttp.lib bcrypt.lib ws2_32.lib oleaut32.lib
+    d2d1.lib dwrite.lib windowscodecs.lib dwmapi.lib shcore.lib version.lib avrt.lib dxgi.lib runtimeobject.lib winsqlite3.lib winhttp.lib bcrypt.lib ws2_32.lib oleaut32.lib mmdevapi.lib
 if errorlevel 1 exit /b 1
 
 echo Built build\OpenChatMix.exe

@@ -529,6 +529,8 @@ enum class Text {
     NoiseScreenHint,
     BluetoothEqHint,
     MicEqHint,
+    TipLeaveOutOfChatMix,
+    OutOfChatMix,
     Count,
 };
 

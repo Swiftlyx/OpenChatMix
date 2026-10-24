@@ -132,9 +132,9 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Mixer",  // Mixer
     L"Groups",  // Groups
     L"No apps yet",  // GroupEmpty
-    L"Apps here follow the Game side. Apps that are in no group land here too.",  // GroupGameHint
+    L"Apps here follow the Game side. Apps that are in no group land here too; removed ones are left out of ChatMix until you add them again.",  // GroupGameHint
     L"Apps here follow the Chat side of the balance.",  // GroupChatHint
-    L"Apps here keep their full volume and ignore ChatMix.",  // GroupMediaHint
+    L"Apps here ignore ChatMix; the Media slider on the mixer sets their volume.",  // GroupMediaHint
     L"Plays on",  // PlaysOn
     L"The equalizer works in virtual device mode, where Game and Chat pass through OpenChatMix, and on the processed microphone.",  // EqNeedsRouting
     L"Audio settings",  // OpenAudioSettings
@@ -187,7 +187,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Color",  // TrayColor
     L"Monochrome",  // TrayMono
     L"Media group",  // MediaGroupToggle
-    L"Apps in Media keep full volume and ignore ChatMix. In virtual device mode Media needs a virtual device of its own.",  // MediaGroupHint
+    L"Apps in Media ignore ChatMix and have a volume of their own. In virtual device mode Media needs a virtual device of its own.",  // MediaGroupHint
     L"Send apps to their device",  // AutoRoute
     L"Chat apps play on the Chat device, all others on the Game device. Some apps switch only after a restart.",  // AutoRouteHint
     L"Lower game during chat",  // Ducking
@@ -532,6 +532,8 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Shows the new mode there for a moment when it changes with the headset's button, while SteelSeries GG is closed.",  // NoiseScreenHint
     L"For sound over Bluetooth, such as from a phone.",  // BluetoothEqHint
     L"Your voice on the headset's microphone, set in the headset itself: no virtual cable and no added latency. Experimental on this headset: if it does not change, please report it on GitHub.",  // MicEqHint
+    L"Leave out of ChatMix: the app keeps its own volume",  // TipLeaveOutOfChatMix
+    L"out of ChatMix",  // OutOfChatMix
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -658,9 +660,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Мікшер",
     L"Групи",
     L"Поки немає програм",
-    L"Гучністю цих програм керує сторона гри. Сюди ж потрапляють програми без групи.",
+    L"Гучністю цих програм керує сторона гри. Сюди ж потрапляють програми без групи; прибрані з неї залишаються поза ChatMix, доки ви не додасте їх знову.",
     L"Гучністю цих програм керує сторона чату.",
-    L"Ці програми зберігають повну гучність і не залежать від ChatMix.",
+    L"Ці програми не залежать від ChatMix; їхню гучність задає повзунок «Медіа» в мікшері.",
     L"Відтворення на",
     L"Еквалайзер працює в режимі віртуальних пристроїв, де гра й чат проходять через OpenChatMix, а також на обробленому мікрофоні.",
     L"Налаштування звуку",
@@ -713,7 +715,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Кольоровий",
     L"Монохромний",
     L"Група «Медіа»",
-    L"Програми з «Медіа» мають повну гучність і не залежать від ChatMix. У режимі віртуальних пристроїв «Медіа» потребує окремого віртуального пристрою.",
+    L"Програми з «Медіа» не залежать від ChatMix і мають власну гучність. У режимі віртуальних пристроїв «Медіа» потребує окремого віртуального пристрою.",
     L"Спрямовувати програми на їхні пристрої",
     L"Програми чату відтворюються на пристрої чату, решта — на пристрої гри. Деякі програми перемкнуться лише після перезапуску.",
     L"Приглушувати гру під час чату",
@@ -1058,6 +1060,8 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Ненадовго показує там новий режим, коли його змінюють кнопкою на гарнітурі, поки SteelSeries GG закрито.",
     L"Для звуку через Bluetooth, наприклад із телефона.",
     L"Ваш голос у мікрофоні гарнітури, налаштовується в самій гарнітурі: без віртуального кабелю й без додаткової затримки. Експериментально на цій гарнітурі: якщо звук не змінюється, повідомте про це на GitHub.",
+    L"Прибрати з ChatMix: програма матиме власну гучність",
+    L"поза ChatMix",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

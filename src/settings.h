@@ -2,6 +2,7 @@
 
 #include <array>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -203,9 +204,13 @@ enum class PopupCorner { TopRight, TopLeft, BottomRight, BottomLeft };
 
 struct Settings {
     std::map<std::wstring, AppRule, NoCaseLess> apps;  // Executable name -> rule; Game apps are not stored.
+    // Apps left out of ChatMix (removed from Game): in no group, their volume untouched, and in virtual device mode
+    // played straight to the output.
+    std::set<std::wstring, NoCaseLess> ignoredApps;
     Levels levels;                                     // Restored on start and synced to the device.
     int gameVolume = 100;                              // Volume of each side in percent, on top of ChatMix;
     int chatVolume = 100;                              // Windows volumes stay untouched.
+    int mediaVolume = 100;                             // Volume of the Media group, which ChatMix leaves alone.
     std::array<Hotkey, kHotkeyCount> hotkeys{};
     UINT wheelModifiers = 0;                           // MOD_* held to turn the balance with the mouse wheel; 0 off.
     Language language = Language::English;
@@ -249,6 +254,7 @@ struct Settings {
     // The group that applies now: Media counts as Game while it is turned off or in virtual device mode.
     AppGroup EffectiveGroupOf(const std::wstring& exe) const;
     // In virtual device mode Media needs a device of its own; without one it plays with Game.
+    bool IsIgnored(const std::wstring& exe) const { return ignoredApps.contains(exe); }
     bool MediaAvailable() const { return mediaGroup && (!routing.enabled || !routing.media.empty()); }
     void SetGroup(const std::wstring& exe, AppGroup group, const std::wstring& path);
 };

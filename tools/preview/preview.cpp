@@ -475,7 +475,10 @@ void PushOutputs() {
 void PushApps() {
     std::vector<ui::AppItem> items;
     for (const ProcessApp& app : RunningApps()) {
-        items.push_back({app.exe, app.path, AppDisplayName(app.path, app.exe), g.settings.GroupOf(app.exe), true});
+        // As the app does: apps left out of ChatMix are in no group.
+        if (!g.settings.IsIgnored(app.exe)) {
+            items.push_back({app.exe, app.path, AppDisplayName(app.path, app.exe), g.settings.GroupOf(app.exe), true});
+        }
     }
     for (const auto& [exe, rule] : g.settings.apps) {
         const bool listed = std::any_of(items.begin(), items.end(),
@@ -540,19 +543,27 @@ public:
         UpdateTray(NIM_MODIFY);
     }
     void OnGroupChanged(const ui::AppItem& app, AppGroup group) override {
+        g.settings.ignoredApps.erase(app.exe);
         g.settings.SetGroup(app.exe, group, app.path);
         Save();
+        PushSettings();
         PushApps();
     }
     void OnAppRemoved(const ui::AppItem& app) override {
+        // As the app does: from Game out of ChatMix.
+        if (g.settings.GroupOf(app.exe) == AppGroup::Game) {
+            g.settings.ignoredApps.insert(app.exe);
+        }
         g.settings.apps.erase(app.exe);
         Save();
+        PushSettings();
         PushApps();
     }
     std::vector<ui::AppItem> RunningApps() override {
         std::vector<ui::AppItem> items;
         for (const ProcessApp& app : ::RunningApps()) {
-            items.push_back({app.exe, app.path, AppDisplayName(app.path, app.exe), g.settings.GroupOf(app.exe), true});
+            items.push_back({app.exe, app.path, AppDisplayName(app.path, app.exe), g.settings.GroupOf(app.exe), true,
+                             g.settings.IsIgnored(app.exe)});
         }
         std::sort(items.begin(), items.end(),
                   [](const ui::AppItem& a, const ui::AppItem& b) { return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0; });
@@ -826,6 +837,7 @@ public:
         meters.game = static_cast<float>(0.35 + 0.2 * std::fabs(std::sin(t * 2.1)) + 0.05 * std::sin(t * 13.0));
         meters.chat = std::fmod(t, 6.0) < 2.5 ? static_cast<float>(0.25 + 0.2 * std::fabs(std::sin(t * 7.3))) : 0.0f;
         meters.mic = static_cast<float>(0.2 + 0.15 * std::fabs(std::sin(t * 5.7)));
+        meters.media = std::fmod(t, 5.0) < 3.0 ? static_cast<float>(0.3 + 0.15 * std::fabs(std::sin(t * 3.1))) : 0.0f;
         return meters;
     }
 };

@@ -181,9 +181,8 @@ void Panel::DrawMixer() {
     for (const AppGroup group : AvailableGroups()) {
         const std::vector<AppItem> members = AppsInGroup(group);
         // As many names as fit beside the volume, then how many more the group holds.
-        const bool withVolume = group != AppGroup::Media;
         const float namesWidth = design::kTrailingIconCenter - design::kSpace4 - design::kLeadingTextInset -
-                                 (withVolume ? kGroupPercentWidth + design::kSpace3 : 0.0f);
+                                 kGroupPercentWidth - design::kSpace3;
         std::wstring names;
         for (size_t index = 0; index < members.size(); ++index) {
             const std::wstring candidate = names.empty() ? members[index].name : names + L", " + members[index].name;
@@ -200,16 +199,14 @@ void Panel::DrawMixer() {
                                                               : p.primary;
         const uint32_t id = HashId(kKindGroup, std::wstring(L"group") + GroupName(group));
         const std::wstring subtitle = names.empty() ? std::wstring(T(Text::GroupEmpty)) : names;
-        if (group == AppGroup::Media) {
-            rows.push_back(NavItem(id, GroupGlyph(group), color, GroupName(group), subtitle,
-                                   [this, group] { OpenGroup(group); }));
-            continue;
-        }
-        // Game and Chat carry their own volume, with what plays on them shown inside the slider.
+        // Each group carries its own volume, with what plays in it shown inside the slider.
         rows.push_back({kGroupVolumeRowHeight,
                         [this, &p, group, id, color, subtitle](float top) {
                             const bool chat = group == AppGroup::Chat;
-                            const int volume = chat ? settings_.chatVolume : settings_.gameVolume;
+                            const bool media = group == AppGroup::Media;
+                            const int volume = media ? settings_.mediaVolume
+                                               : chat ? settings_.chatVolume
+                                                      : settings_.gameVolume;
                             DrawNavRow(id, top, GroupGlyph(group), color, GroupName(group), subtitle,
                                        [this, group] { OpenGroup(group); }, kGroupPercentWidth + design::kSpace3);
                             // The percent sits on the chevron's line, beside it.
@@ -218,12 +215,17 @@ void Panel::DrawMixer() {
                                          {percentRight - kGroupPercentWidth, top, percentRight,
                                           top + design::kTwoLineRowHeight},
                                          TextStyle::LabelLarge, p.onSurfaceVariant, TextAlign::Trailing);
-                            DrawVolumeSlider(chat ? kIdChatVolume : kIdGameVolume, design::kLeadingTextInset,
-                                             kWidth - kInset, top + kGroupSliderY, volume,
-                                             chat ? meters_.chat : meters_.game, color,
-                                             chat ? p.tertiaryContainer : p.primaryContainer, [this, chat](int value) {
-                                                 Edit([chat, value](Settings& s) {
-                                                     (chat ? s.chatVolume : s.gameVolume) = value;
+                            DrawVolumeSlider(media ? kIdMediaVolume : chat ? kIdChatVolume : kIdGameVolume,
+                                             design::kLeadingTextInset, kWidth - kInset, top + kGroupSliderY, volume,
+                                             media ? meters_.media : chat ? meters_.chat : meters_.game, color,
+                                             media  ? p.secondaryContainer
+                                             : chat ? p.tertiaryContainer
+                                                    : p.primaryContainer,
+                                             [this, group](int value) {
+                                                 Edit([group, value](Settings& s) {
+                                                     (group == AppGroup::Media  ? s.mediaVolume
+                                                      : group == AppGroup::Chat ? s.chatVolume
+                                                                                : s.gameVolume) = value;
                                                  });
                                              });
                         },
@@ -368,14 +370,15 @@ void Panel::DrawAppRow(const AppItem& app, float top) {
     const float middle = top + kAppRowHeight / 2.0f;
     DrawAppIcon(app, {kInset, middle - 16.0f, kInset + 32.0f, middle + 16.0f});
 
-    // An app with a group of its own can be removed from it.
-    const bool removable = settings_.apps.contains(app.exe);
+    // Every app can be removed: from Chat or Media it goes back to Game, from Game out of ChatMix.
+    const bool removable = true;
     const float removeWidth = removable ? design::kSmallIconButtonSize + design::kSpace1 : 0.0f;
     if (removable) {
         const float centerX = kWidth - kInset - design::kSmallIconButtonSize / 2.0f + design::kSpace1;
         IconButton(HashId(kKindAppRemove, app.exe), {centerX, middle}, kGlyphDelete, p.onSurfaceVariant,
                    [this, app] { host_.OnAppRemoved(app); });
-        Tooltip(HashId(kKindAppRemove, app.exe), T(Text::TipRemoveFromGroup));
+        Tooltip(HashId(kKindAppRemove, app.exe),
+                T(app.group == AppGroup::Game ? Text::TipLeaveOutOfChatMix : Text::TipRemoveFromGroup));
     }
     const float segmentsRight = kWidth - kInset + design::kSpace1 - removeWidth;
     const D2D1_RECT_F segments{segmentsRight - groups.size() * kSegmentWidth, middle - design::kControlHeight / 2.0f,
@@ -488,7 +491,9 @@ void Panel::DrawRunningRow(const AppItem& app, float top) {
     const float textRight = design::kTrailingIconCenter - design::kSpace4;
     canvas_.Text(app.name, {textLeft, middle - 19.0f, textRight, middle + 1.0f}, TextStyle::BodyLarge, p.onSurface);
     std::wstring detail = app.exe;
-    if (!profile && app.group != AppGroup::Game) {
+    if (!profile && app.ignored) {
+        detail += std::wstring(L" · ") + T(Text::OutOfChatMix);
+    } else if (!profile && app.group != AppGroup::Game) {
         detail += std::wstring(L" · ") + GroupName(app.group);
     }
     canvas_.Text(detail, {textLeft, middle + 1.0f, textRight, middle + 18.0f}, TextStyle::BodySmall,
@@ -497,7 +502,7 @@ void Panel::DrawRunningRow(const AppItem& app, float top) {
                                              [&](const GameProfile& item) {
                                                  return _wcsicmp(item.exe.c_str(), app.exe.c_str()) == 0;
                                              })
-                               : app.group == addGroup_;
+                               : !app.ignored && app.group == addGroup_;
     canvas_.Glyph(added ? kGlyphCheck : kGlyphAdd, {design::kTrailingIconCenter, middle}, 16.0f,
                   added ? p.primary : p.onSurfaceVariant);
     AddHit({TileRect(top, kAppRowHeight), id, [this, app, profile] {

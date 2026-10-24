@@ -231,7 +231,7 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
                 return WritePresetFilters(path, name, current);
             });
         }
-        host_.OnEqualizerFilters(filters);
+        SetHeadsetFilters(filters);
         return;
     }
     const auto gains = GraphicEqGains(preset.eq, spec.range / 2.0f);
@@ -251,7 +251,7 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
             return WritePresetFile(path, name, current);
         });
     }
-    host_.OnEqualizerCurve(curve);
+    SetHeadsetCurve(curve);
 }
 
 // Before the headset saves a run of changes: a ring that empties and the seconds left; after it: Done, fading.
@@ -316,7 +316,7 @@ float Panel::DrawEqualizer(float y) {
     const int custom = eq.CustomIndex();
     const bool devicePreset = eq.presetCommand != 0 && headset_.eqPreset >= 0 && headset_.eqPreset < custom;
     const EqCurve curve = ActiveCurve();
-    y = DrawEqualizerTitle(y, [this] { host_.OnEqualizerCurve(EqCurve{}); });
+    y = DrawEqualizerTitle(y, [this] { SetHeadsetCurve(EqCurve{}); });
 
     // One hint under the presets: a preset stored on the headset cannot be edited, an untested format says so.
     const wchar_t* hint = devicePreset ? T(Text::EqPresetActive) : eq.experimental ? T(Text::EqExperimental) : nullptr;
@@ -330,7 +330,7 @@ float Panel::DrawEqualizer(float y) {
     }
     labels.push_back(T(Text::EqCustom));
     DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdEqPreset, labels, headset_.eqPreset,
-                  p.primary, p.onPrimary, [this](int index) { host_.OnEqualizerPreset(index); });
+                  p.primary, p.onPrimary, [this](int index) { SetHeadsetPreset(index); });
     float inner = y + 60.0f;
     if (hint) {
         canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
@@ -340,7 +340,7 @@ float Panel::DrawEqualizer(float y) {
 
     // A preset stored on the headset is shown as it plays, but only the custom curve can be edited.
     const float labelsBottom = DrawBandSliders(inner, curve, eq.range, !devicePreset, 0,
-                                               [this](const EqCurve& next) { host_.OnEqualizerCurve(next); });
+                                               [this](const EqCurve& next) { SetHeadsetCurve(next); });
     DrawHeadsetPresetTools(labelsBottom + 6.0f);
     return card.bottom + design::kSectionGap;
 }
@@ -439,7 +439,7 @@ float Panel::DrawExtraEqualizer(float y, ExtraEqualizer which) {
     const HeadsetState::ExtraEq& state = headset_.extraEq[static_cast<int>(which)];
     const bool bluetooth = which == ExtraEqualizer::Bluetooth;
     const uint32_t ids = bluetooth ? kIdBluetoothEqBase : kIdMicrophoneEqBase;
-    y = DrawEqualizerTitle(y, [this, which] { host_.OnExtraEqualizerCurve(which, EqCurve{}); });
+    y = DrawEqualizerTitle(y, [this, which] { SetExtraCurve(which, EqCurve{}); });
 
     const wchar_t* hint = T(bluetooth ? Text::BluetoothEqHint : Text::MicEqHint);
     const float hintHeight = HintHeight(hint, kWidth - 64.0f) + 4.0f;
@@ -454,7 +454,7 @@ float Panel::DrawExtraEqualizer(float y, ExtraEqualizer which) {
         }
         labels.push_back(T(Text::EqCustom));
         DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, ids + kIdEqPreset, labels, state.preset,
-                      p.primary, p.onPrimary, [this, which](int index) { host_.OnExtraEqualizerPreset(which, index); });
+                      p.primary, p.onPrimary, [this, which](int index) { SetExtraPreset(which, index); });
     } else {
         // Longer names (the microphone's): the chosen one as a dropdown.
         const D2D1_RECT_F button{24.0f, y + 12.0f, kWidth - 24.0f, y + 52.0f};
@@ -477,14 +477,14 @@ float Panel::DrawExtraEqualizer(float y, ExtraEqualizer which) {
                     }
                     items.push_back({T(Text::EqCustom)});
                     OpenMenu(button, std::move(items), headset_.extraEq[static_cast<int>(which)].preset,
-                             [this, which](int index) { host_.OnExtraEqualizerPreset(which, index); });
+                             [this, which](int index) { SetExtraPreset(which, index); });
                 }});
     }
     const float inner = y + 60.0f;
     canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,
                  TextAlign::Leading, true);
     DrawBandSliders(inner + hintHeight, ActiveExtraCurve(which), eq.range, true, ids,
-                    [this, which](const EqCurve& next) { host_.OnExtraEqualizerCurve(which, next); });
+                    [this, which](const EqCurve& next) { SetExtraCurve(which, next); });
     return card.bottom + design::kSectionGap;
 }
 
@@ -549,11 +549,11 @@ void Panel::DrawHeadsetPresetTools(float actions) {
             if (parametric) {
                 const EqFilters presetFilters = PresetFilters(preset, eq.range);
                 DrawPresetRow(preset, row, presetFilters == filters,
-                              [this, presetFilters] { host_.OnEqualizerFilters(presetFilters); });
+                              [this, presetFilters] { SetHeadsetFilters(presetFilters); });
             } else {
                 const EqCurve presetCurve = PresetCurve(preset, eq.range);
                 const bool active = presetCurve == curve && (eq.presetCommand == 0 || headset_.eqPreset == custom);
-                DrawPresetRow(preset, row, active, [this, presetCurve] { host_.OnEqualizerCurve(presetCurve); });
+                DrawPresetRow(preset, row, active, [this, presetCurve] { SetHeadsetCurve(presetCurve); });
             }
             rowTop += kPresetRowHeight + design::kSegmentGap;
         }

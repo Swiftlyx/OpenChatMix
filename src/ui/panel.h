@@ -34,6 +34,7 @@ struct AppItem {
     std::wstring name;
     AppGroup group = AppGroup::Game;
     bool running = false;
+    bool ignored = false;  // Left out of ChatMix; listed only where apps are added.
 };
 
 // The device pickers: the three of virtual device mode, then the two of the microphone chain.
@@ -99,6 +100,7 @@ struct Meters {
     float game = 0.0f;
     float chat = 0.0f;
     float mic = 0.0f;
+    float media = 0.0f;
 };
 
 // State of the update check as shown in the panel.
@@ -354,6 +356,8 @@ private:
     bool CommitField(bool keepOnError = false);
     bool FieldKey(UINT key);
     void FieldChar(wchar_t ch);
+    // Keeps the field's text before a change for Ctrl+Z; typed: a typed character, which joins a run of them.
+    void KeepFieldText(bool typed);
     // Caret position for a pointer x inside the field.
     size_t FieldCaretAt(float x);
     void CancelField();
@@ -539,6 +543,36 @@ private:
     // The curve of an extra equalizer: its preset's, or the custom one.
     EqCurve ActiveExtraCurve(ExtraEqualizer which) const;
 
+    // Ctrl+Z and Ctrl+Y for the equalizers (panel_undo.cpp): how one looked before a change. The Headset tab's
+    // steps hold all the headset's equalizers; the Equalizer tab's one channel.
+    struct HeadsetEqSnapshot {
+        int eqPreset = -1;
+        EqCurve eqCurve{};
+        bool eqCurveKnown = false;
+        EqFilters eqFilters{};
+        bool eqFiltersKnown = false;
+        std::array<HeadsetState::ExtraEq, kExtraEqualizers> extraEq{};
+    };
+    struct UndoStep {
+        bool headset = false;
+        EqChannel channel = EqChannel::Game;
+        EqChannelSettings eq;
+        HeadsetEqSnapshot headsetEq;
+    };
+    UndoStep ChannelUndoStep(EqChannel channel);
+    UndoStep HeadsetUndoStep() const;
+    // Keeps the state before a change; a press (a drag included) or a quick run of wheel notches is one step.
+    void RecordUndo(UndoStep before);
+    // Undoes or redoes the last step of the equalizer page in view; false when there is none.
+    bool UndoEqualizer(bool redo);
+    void RestoreHeadsetEq(const HeadsetEqSnapshot& before);
+    // The headset's equalizer changes, each kept for Ctrl+Z.
+    void SetHeadsetPreset(int index);
+    void SetHeadsetCurve(const EqCurve& curve);
+    void SetHeadsetFilters(const EqFilters& filters);
+    void SetExtraPreset(ExtraEqualizer which, int index);
+    void SetExtraCurve(ExtraEqualizer which, const EqCurve& curve);
+
     // Settings (panel_settings.cpp).
     void DrawSettings();
     void DrawGeneral();
@@ -665,6 +699,12 @@ private:
     int eqBand_ = 0;                        // Band selected in the equalizer graph.
     int headsetBand_ = 0;                   // Band selected in the headset's filter graph.
     int headsetEqView_ = 0;                 // The Headset tab's equalizer: 0 the main one, 1 + ExtraEqualizer.
+    std::vector<UndoStep> undo_;            // Oldest first.
+    std::vector<UndoStep> redo_;
+    uint64_t gesture_ = 0;                  // Counts presses, so the steps of one press go together.
+    uint64_t undoGesture_ = 0;              // The press the last step was kept for.
+    ULONGLONG undoTick_ = 0;                // When it was kept.
+    bool clicking_ = false;                 // A click's action is running.
     std::vector<NamedEq> eqLibrary_[3];     // Built-in, Sonar and own presets of eqLibraryChannel_.
     EqChannel eqLibraryChannel_ = EqChannel::Game;
     struct MenuState {
@@ -708,6 +748,15 @@ private:
         D2D1_RECT_F rect{};   // Where the field is, for placing the caret with the mouse.
         float textLeft = 0.0f;
         bool numeric = true;  // A number: centered, at most 16 characters. Otherwise a name.
+        // Ctrl+Z and Ctrl+Y while it is open: the text before each change since it opened.
+        struct Snapshot {
+            std::wstring text;
+            size_t caret = 0;
+            size_t anchor = 0;
+        };
+        std::vector<Snapshot> undo;
+        std::vector<Snapshot> redo;
+        bool typing = false;  // The last change typed a character; the next one joins its step.
     } field_;
     bool pinned_ = false;
     Meters meters_;            // Shown levels: the peaks, falling back slowly.

@@ -15,6 +15,7 @@
 
 #include "app_info.h"
 #include "balance.h"
+#include "process_meters.h"
 #include "settings.h"
 
 // Applies ChatMix levels to the apps on the target render endpoints through the per-channel volume of
@@ -96,6 +97,8 @@ private:
 
     template <class Fn>
     static void ForEachSession(const std::vector<Endpoint>& endpoints, Fn&& fn);
+    // Current peak of one session's app; heard: after its volume and ChatMix level, as it reaches the device.
+    float SessionPeak(const Session& session, bool heard) const;
     std::vector<Endpoint> ResolveEndpoints();
     void Unregister(std::vector<Endpoint>& endpoints);
     void SetLevel(const Session& session, float level);
@@ -112,4 +115,5 @@ private:
     Microsoft::WRL::ComPtr<IMMNotificationClient> endpointNotifier_;
     std::vector<Endpoint> endpoints_;
     std::map<std::wstring, Changed> changed_;  // Keyed by session instance identifier.
+    mutable ProcessMeters meters_;
 };

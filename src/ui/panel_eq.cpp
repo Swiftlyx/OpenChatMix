@@ -159,7 +159,7 @@ Panel::EqEditor Panel::HeadsetEqEditor() {
         ParametricEq eq;
         eq.bands = ActiveHeadsetFilters();
         edit(eq);
-        host_.OnEqualizerFilters(PresetFilters(eq, features_->equalizer.notch));
+        SetHeadsetFilters(PresetFilters(eq, features_->equalizer.notch));
     };
     editor.band = &headsetBand_;
     editor.accent = p.primary;
@@ -173,6 +173,7 @@ Panel::EqEditor Panel::HeadsetEqEditor() {
 
 void Panel::EditEq(const std::function<void(ParametricEq&)>& edit) {
     const EqChannel channel = eqChannel_;
+    RecordUndo(ChannelUndoStep(channel));
     Edit([channel, edit](Settings& s) {
         EqChannelSettings& state = EqStateOf(s, channel);
         edit(state.eq);
@@ -182,11 +183,13 @@ void Panel::EditEq(const std::function<void(ParametricEq&)>& edit) {
 
 void Panel::EditEffects(const std::function<void(EqEffects&)>& edit) {
     const EqChannel channel = eqChannel_;
+    RecordUndo(ChannelUndoStep(channel));
     Edit([channel, edit](Settings& s) { edit(EqStateOf(s, channel).eq.effects); });
 }
 
 void Panel::ApplyEqPreset(const NamedEq& preset) {
     const EqChannel channel = eqChannel_;
+    RecordUndo(ChannelUndoStep(channel));
     Edit([channel, preset](Settings& s) {
         EqChannelSettings& state = EqStateOf(s, channel);
         AssignBands(state.eq, preset.eq);
@@ -349,6 +352,7 @@ void Panel::DrawEqualizerPage() {
     DrawSwitch(track, state.enabled, kIdEqToggle);
     AddHit({Inset(track, -8.0f, -8.0f), kIdEqToggle, [this] {
                 const EqChannel channel = eqChannel_;
+                RecordUndo(ChannelUndoStep(channel));
                 Edit([channel](Settings& s) {
                     EqChannelSettings& target = EqStateOf(s, channel);
                     target.enabled = !target.enabled;
@@ -374,7 +378,7 @@ void Panel::DrawEqualizerPage() {
 float Panel::DrawHeadsetFilters(float y) {
     const Palette& p = P();
     const EqualizerSpec& eq = features_->equalizer;
-    y = DrawEqualizerTitle(y, [this] { host_.OnEqualizerCurve(EqCurve{}); });
+    y = DrawEqualizerTitle(y, [this] { SetHeadsetCurve(EqCurve{}); });
 
     const wchar_t* hint = eq.experimental ? T(Text::EqExperimental) : nullptr;
     const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
@@ -385,7 +389,7 @@ float Panel::DrawHeadsetFilters(float y) {
     }
     labels.push_back(T(Text::EqCustom));
     DrawSegmented({32.0f, y + 16.0f, kWidth - 32.0f, y + 48.0f}, kIdEqPreset, labels, headset_.eqPreset, p.primary,
-                  p.onPrimary, [this](int index) { host_.OnEqualizerPreset(index); });
+                  p.onPrimary, [this](int index) { SetHeadsetPreset(index); });
     float inner = y + 60.0f;
     if (hint) {
         canvas_.Text(hint, {32.0f, inner, kWidth - 32.0f, inner + hintHeight}, TextStyle::BodySmall, p.onSurfaceVariant,

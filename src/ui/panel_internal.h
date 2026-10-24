@@ -216,6 +216,7 @@ enum : uint32_t {
     kIdNoisePopup,
     kIdNoiseScreen,
     kIdPageScrollbar,
+    kIdMediaVolume,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,
