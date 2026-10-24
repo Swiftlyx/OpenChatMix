@@ -284,9 +284,9 @@ void Panel::OpenEqPresetMenu(const D2D1_RECT_F& anchor) {
 
 void Panel::DrawEqualizerPage() {
     const Palette& p = P();
-    DrawTitle(T(Text::Equalizers));
     const std::vector<EqChannel> channels = EqChannels();
     if (channels.empty()) {
+        DrawTitle(T(Text::Equalizers));
         const D2D1_RECT_F card = Card(kHeaderHeight, 172.0f);
         canvas_.Glyph(kGlyphEqualizer, {kWidth / 2.0f, card.top + 34.0f}, 24.0f, p.primary);
         canvas_.Text(T(Text::EqNeedsRouting),
@@ -317,9 +317,19 @@ void Panel::DrawEqualizerPage() {
     // Narrower segments when three or four channels share the title row.
     const float segmentsWidth = (labels.size() > 3 ? 54.0f : labels.size() > 2 ? 60.0f : 72.0f) * labels.size();
     const int selected = static_cast<int>(std::find(channels.begin(), channels.end(), eqChannel_) - channels.begin());
-    // The channel switch sits left of the pin.
+    // The channel switch sits left of the pin. The title stays while it fits beside the switch; otherwise the
+    // switch takes the whole row, as the Equalizer tab below already names the page.
     const float segmentsRight = kWidth - kGutter - design::kIconButtonSize - design::kSpace1;
-    DrawSegmented({segmentsRight - segmentsWidth, (kHeaderHeight - design::kControlHeight) / 2.0f, segmentsRight,
+    const wchar_t* title = T(Text::Equalizers);
+    const bool titled = kInset + canvas_.Measure(title, TextStyle::TitleLarge) + design::kSpace3 <=
+                        segmentsRight - segmentsWidth;
+    if (titled) {
+        DrawTitle(title);
+    } else {
+        DrawPinButton();
+    }
+    const float segmentsLeft = titled ? segmentsRight - segmentsWidth : kGutter;
+    DrawSegmented({segmentsLeft, (kHeaderHeight - design::kControlHeight) / 2.0f, segmentsRight,
                    (kHeaderHeight + design::kControlHeight) / 2.0f},
                   kIdEqChannel, labels, selected,
                   colors.container, colors.onContainer, [this, channels](int index) {
