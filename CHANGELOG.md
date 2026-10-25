@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.2 — 2026-10-25
+
+- Arctis Nova Elite: the microphone equalizer gets GG's other presets, Broadcast Low Pitch, Clarity Low Pitch
+  and Less Nasal, and lists them in GG's order. From [@Lasfecas](https://github.com/Lasfecas)'s USB capture in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); every preset matches
+  what GG sends.
+- Arctis Nova Elite: a custom microphone curve goes to the slot GG uses for it. Until now it took the slot of
+  Clarity Low Pitch on the base station; choosing that preset again puts it back.
+- The Elite's microphone equalizer works, as [@Lasfecas](https://github.com/Lasfecas) reports in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6), so it is no longer experimental.
+
 ## 2.6.1 — 2026-10-24
 
 - *Equalizer* tab: when the page title does not fit beside the channel switch (in Ukrainian with three or four
