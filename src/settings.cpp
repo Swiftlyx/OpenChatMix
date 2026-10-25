@@ -958,12 +958,18 @@ std::wstring HeadsetSection(uint16_t productId) {
 
 }  // namespace
 
-// Ini keys of the extra equalizers, by ExtraEqualizer.
+// Ini keys of the extra equalizers, by ExtraEqualizer. The microphone's preset is kept as its onboard slot, which
+// stays put while GG's list grows.
 struct ExtraEqKeys {
     const wchar_t* preset;
     const wchar_t* curve;
+    bool slot;  // preset holds the onboard slot instead of the list index.
 };
-constexpr ExtraEqKeys kExtraEqKeys[kExtraEqualizers] = {{L"BtEqPreset", L"BtEqCurve"}, {L"MicEqPreset", L"MicEqCurve"}};
+constexpr ExtraEqKeys kExtraEqKeys[kExtraEqualizers] = {{L"BtEqPreset", L"BtEqCurve", false},
+                                                        {L"MicEqSlot", L"MicEqCurve", true}};
+// Up to 2.6.1 MicEqPreset held the index in a list of five presets, by slot here; index 5 was the custom setting.
+constexpr wchar_t kLegacyMicPresetKey[] = L"MicEqPreset";
+constexpr int kLegacyMicSlots[] = {0, 1, 2, 5, 6};
 
 void LoadHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features,
                       HeadsetState& state) {
@@ -1029,8 +1035,17 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
             continue;
         }
         HeadsetState::ExtraEq& target = state.extraEq[index];
-        const int extraPreset = static_cast<int>(
-            GetPrivateProfileIntW(section.c_str(), kExtraEqKeys[index].preset, -1, path.c_str()));
+        const ExtraEqKeys& keys = kExtraEqKeys[index];
+        const int stored = static_cast<int>(GetPrivateProfileIntW(section.c_str(), keys.preset, -1, path.c_str()));
+        int extraPreset = keys.slot && stored >= 0 ? extra.IndexOfSlot(stored) : stored;
+        if (keys.slot && stored < 0) {
+            const int legacy = static_cast<int>(
+                GetPrivateProfileIntW(section.c_str(), kLegacyMicPresetKey, -1, path.c_str()));
+            const int legacyCount = static_cast<int>(std::size(kLegacyMicSlots));
+            extraPreset = legacy >= 0 && legacy < legacyCount ? extra.IndexOfSlot(kLegacyMicSlots[legacy])
+                          : legacy == legacyCount              ? extra.CustomIndex()
+                                                               : -1;
+        }
         if (extraPreset >= 0 && extraPreset <= extra.CustomIndex()) {
             target.preset = extraPreset;
         }
@@ -1050,7 +1065,8 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
     }
 }
 
-void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetState& state) {
+void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features,
+                      const HeadsetState& state) {
     const std::wstring section = HeadsetSection(productId);
     for (size_t command = 0; command < state.values.size(); ++command) {
         if (state.values[command] >= 0) {
@@ -1085,9 +1101,14 @@ void SaveHeadsetState(const std::wstring& path, uint16_t productId, const Headse
     }
     for (int index = 0; index < kExtraEqualizers; ++index) {
         const HeadsetState::ExtraEq& extra = state.extraEq[index];
+        const ExtraEqKeys& keys = kExtraEqKeys[index];
         if (extra.preset >= 0) {
-            WritePrivateProfileStringW(section.c_str(), kExtraEqKeys[index].preset, std::to_wstring(extra.preset).c_str(),
-                                       path.c_str());
+            const int value = keys.slot ? features.Extra(static_cast<ExtraEqualizer>(index)).SlotOf(extra.preset)
+                                        : extra.preset;
+            WritePrivateProfileStringW(section.c_str(), keys.preset, std::to_wstring(value).c_str(), path.c_str());
+            if (keys.slot) {
+                WritePrivateProfileStringW(section.c_str(), kLegacyMicPresetKey, nullptr, path.c_str());
+            }
         }
         if (extra.curveKnown) {
             std::wstring curve;

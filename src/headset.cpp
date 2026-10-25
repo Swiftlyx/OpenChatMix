@@ -246,16 +246,20 @@ constexpr SettingSection kEliteSections[] = {
 constexpr uint8_t kEliteEqCommand = 0x1B;
 constexpr uint8_t kEliteBluetoothEqCommand = 0x1F;
 constexpr uint8_t kEliteMicEqCommand = 0x1D;
-// The microphone presets GG sends with the slots it writes them to, in half-decibel steps (capture in issue #6;
-// GG cuts their -12 dB to the equalizer's -10 dB). Flat takes slot 0 as on the other equalizers; the slots of GG's
-// other microphone presets have not been seen yet.
+// The microphone presets GG offers on the Elite, in its order, with the slots it writes them to and in half-decibel
+// steps (captures in issue #6; GG cuts their -12 dB to the equalizer's -10 dB). GG writes the custom setting to
+// slot 8.
 constexpr EqPreset kEliteMicPresets[] = {
     {L"Flat", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "FLAT", 0},
     {L"Balanced", {-20, 0, 0, -6, -4, 0, 4, 6, 2, 0}, "BAL", 1},
     {L"Broadcast High Pitch", {-20, -20, -6, 12, 6, -5, 0, 6, 8, 8}, "BC HI", 2},
+    {L"Broadcast Low Pitch", {-20, 4, 10, 4, -6, -4, 0, 6, 8, 8}, "BC LO", 3},
     {L"Clarity High Pitch", {-20, -20, -8, -8, 0, 0, 6, 8, 8, 8}, "CT HI", 5},
+    {L"Clarity Low Pitch", {-20, -6, -5, 0, 0, 0, 6, 8, 8, 8}, "CT LO", 4},
     {L"Deep Voice", {-20, 8, 8, 6, 0, -6, -2, 0, 0, 0}, "DEEP", 6},
+    {L"Less Nasal", {-20, 0, 0, 0, -4, -8, -4, 4, 8, 0}, "NASAL-", 7},
 };
+constexpr uint8_t kEliteMicCustom = 8;
 const HeadsetFeatures kNovaElite{
     .sections = kEliteSections,
     .equalizer = {.bandsCommand = kEliteEqCommand,
@@ -271,7 +275,7 @@ const HeadsetFeatures kNovaElite{
                             .range = 20,
                             .presets = kEliteMicPresets,
                             .format = EqFormat::FeatureGains,
-                            .experimental = true},
+                            .customSlot = kEliteMicCustom},
     .save = kSaveState,
     .stateQuery = kEliteDisplayQuery,
     .batteryQuery = kStatusRequest,
@@ -305,9 +309,8 @@ constexpr float kOctaveQ = 1.414f;
 // bytes], then for 1b ten filters of six bytes each (see AppendFilter, frequency little-endian), for 1f (Bluetooth)
 // and 1d (microphone) ten gains of fixed bands (signed, in 0.1 dB); the rest of the report stays zero. Kind is the
 // onboard slot of a built-in preset (0 Flat, 1 Bass Boost, 2 Focus, 3 Smiley, with their names; the microphone's
-// own), 4 with the alias "CUSTOM" the custom setting (seen on the main and Bluetooth equalizers, taken for the
-// microphone's too), 5 one of GG's game presets.
-constexpr uint8_t kEliteEqCustom = 0x04;
+// own), EqualizerSpec::customSlot with the alias "CUSTOM" the custom setting (4 on the main and Bluetooth
+// equalizers, 8 on the microphone's), 5 one of GG's game presets.
 constexpr char kEliteEqAlias[] = "CUSTOM";
 constexpr size_t kEliteEqAliasLength = 6;
 constexpr size_t kEliteEqNameLength = 61;
@@ -483,8 +486,7 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
 // those of the custom setting.
 std::vector<uint8_t> EliteReportHead(const EqualizerSpec& spec, int preset) {
     const bool builtin = preset >= 0 && preset < spec.CustomIndex();
-    const int slot = builtin && spec.presets[preset].slot >= 0 ? spec.presets[preset].slot : preset;
-    std::vector<uint8_t> report{spec.bandsCommand, static_cast<uint8_t>(builtin ? slot : kEliteEqCustom)};
+    std::vector<uint8_t> report{spec.bandsCommand, static_cast<uint8_t>(builtin ? spec.SlotOf(preset) : spec.customSlot)};
     // Fixed-size text fields, padded with zeros; the preset names are ASCII.
     auto text = [&report](auto value, size_t length) {
         size_t index = 0;

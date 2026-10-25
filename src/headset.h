@@ -91,8 +91,25 @@ struct EqualizerSpec {
     EqFormat format = EqFormat::Graphic;
     bool experimental = false;  // Written from protocol descriptions only, not yet confirmed on the headset.
     bool notch = false;         // Parametric: the headset has a notch filter type of its own.
-    // The custom curve is preset index presets.size() (4 on every supported device).
+    uint8_t customSlot = 4;     // Nova Elite: the onboard slot of the custom setting.
+    // The custom curve is preset index presets.size().
     int CustomIndex() const { return static_cast<int>(presets.size()); }
+    // Nova Elite: the onboard slot of a preset index or of the custom setting; -1 for neither.
+    int SlotOf(int index) const {
+        if (index >= 0 && index < CustomIndex()) {
+            return presets[index].slot >= 0 ? presets[index].slot : index;
+        }
+        return index == CustomIndex() ? customSlot : -1;
+    }
+    // The preset index of an onboard slot, the custom one included; -1 when no preset has it.
+    int IndexOfSlot(int slot) const {
+        for (int index = 0; index <= CustomIndex(); ++index) {
+            if (SlotOf(index) == slot) {
+                return index;
+            }
+        }
+        return -1;
+    }
     // Filters of any frequency, type and Q instead of ten fixed bands; the custom setting is EqFilters.
     bool Parametric() const { return format == EqFormat::Parametric || format == EqFormat::Feature; }
     // Sent as a feature report rather than output reports.

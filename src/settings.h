@@ -281,7 +281,8 @@ bool IsDefaultChatApp(const std::wstring& exe);
 
 // Last known native settings of one headset model, so values the device cannot report survive restarts.
 void LoadHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features, HeadsetState& state);
-void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetState& state);
+void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features,
+                      const HeadsetState& state);
 
 // Autostart via HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
 bool IsAutostartEnabled();

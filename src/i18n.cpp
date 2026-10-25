@@ -531,7 +531,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Noise control on the base station screen",  // NoiseScreen
     L"Shows the new mode there for a moment when it changes with the headset's button, while SteelSeries GG is closed.",  // NoiseScreenHint
     L"For sound over Bluetooth, such as from a phone.",  // BluetoothEqHint
-    L"Your voice on the headset's microphone, set in the headset itself: no virtual cable and no added latency. Experimental on this headset: if it does not change, please report it on GitHub.",  // MicEqHint
+    L"Your voice on the headset's microphone, set in the headset itself: no virtual cable and no added latency.",  // MicEqHint
     L"Leave out of ChatMix: the app keeps its own volume",  // TipLeaveOutOfChatMix
     L"out of ChatMix",  // OutOfChatMix
 };
@@ -1059,7 +1059,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Керування шумом на екрані базової станції",
     L"Ненадовго показує там новий режим, коли його змінюють кнопкою на гарнітурі, поки SteelSeries GG закрито.",
     L"Для звуку через Bluetooth, наприклад із телефона.",
-    L"Ваш голос у мікрофоні гарнітури, налаштовується в самій гарнітурі: без віртуального кабелю й без додаткової затримки. Експериментально на цій гарнітурі: якщо звук не змінюється, повідомте про це на GitHub.",
+    L"Ваш голос у мікрофоні гарнітури, налаштовується в самій гарнітурі: без віртуального кабелю й без додаткової затримки.",
     L"Прибрати з ChatMix: програма матиме власну гучність",
     L"поза ChatMix",
 };

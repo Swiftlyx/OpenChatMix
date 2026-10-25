@@ -762,8 +762,8 @@ void ScheduleHeadsetSave() {
 }
 
 void SaveHeadset() {
-    if (g_app.device.IsOpen()) {
-        SaveHeadsetState(g_app.iniPath, g_app.device.Model()->productId, g_app.headset);
+    if (g_app.device.IsOpen() && g_app.features) {
+        SaveHeadsetState(g_app.iniPath, g_app.device.Model()->productId, *g_app.features, g_app.headset);
     }
 }
 
