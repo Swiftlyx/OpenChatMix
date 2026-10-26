@@ -19,6 +19,7 @@ enum class AppGroup {
     Game,   // Follows the Game side of ChatMix; default for unknown apps.
     Chat,   // Follows the Chat side of ChatMix.
     Media,  // Never touched by ChatMix.
+    Aux,    // Never touched by ChatMix either: a second group like Media, as in SteelSeries Sonar.
 };
 
 struct NoCaseLess {
@@ -36,11 +37,13 @@ struct RoutingSettings {
     std::wstring game;    // Endpoint IDs.
     std::wstring chat;
     std::wstring media;   // A virtual device of its own for the Media group, chosen by hand; empty: none.
+    std::wstring aux;     // The same for the Aux group.
     std::wstring output;  // Empty: the connected SteelSeries headset.
     // Where each channel plays; empty: the output above.
     std::wstring gameOutput;
     std::wstring chatOutput;
     std::wstring mediaOutput;
+    std::wstring auxOutput;
     // The Game and Chat devices are enabled and made the Windows defaults only while the mode runs.
     bool manageDevices = true;
     std::wstring savedDefault;         // Default output and communications device before the mode
@@ -134,6 +137,7 @@ struct GameProfile {
     std::wstring gameEq;         // Equalizer presets by name (virtual device mode); empty: unchanged.
     std::wstring chatEq;
     std::wstring mediaEq;
+    std::wstring auxEq;
     int headsetEq = -1;          // Headset equalizer preset index; -1: unchanged.
 
     bool operator==(const GameProfile&) const = default;
@@ -211,6 +215,7 @@ struct Settings {
     int gameVolume = 100;                              // Volume of each side in percent, on top of ChatMix;
     int chatVolume = 100;                              // Windows volumes stay untouched.
     int mediaVolume = 100;                             // Volume of the Media group, which ChatMix leaves alone.
+    int auxVolume = 100;                               // Volume of the Aux group, likewise.
     std::array<Hotkey, kHotkeyCount> hotkeys{};
     UINT wheelModifiers = 0;                           // MOD_* held to turn the balance with the mouse wheel; 0 off.
     Language language = Language::English;
@@ -224,6 +229,7 @@ struct Settings {
     PopupCorner popupCorner = PopupCorner::TopRight;
     bool warnGg = true;                                // Notify when SteelSeries GG takes over the headset.
     bool mediaGroup = false;                           // Offer the Media group outside the virtual device mode.
+    bool auxGroup = false;                             // Offer the Aux group, likewise.
     bool equalizer = false;                            // Equalizer tab and processing in virtual device mode.
     AppearanceSettings appearance;
     RoutingSettings routing;
@@ -234,10 +240,12 @@ struct Settings {
     EqChannelSettings chatEq;
     EqChannelSettings micEq;
     EqChannelSettings mediaEq;
+    EqChannelSettings auxEq;
     // Plugins of the virtual device channels; they run with the equalizer, before the channel's volume.
     std::vector<ChainPlugin> gamePlugins;
     std::vector<ChainPlugin> chatPlugins;
     std::vector<ChainPlugin> mediaPlugins;
+    std::vector<ChainPlugin> auxPlugins;
     MicSettings mic;
     DuckingSettings ducking;
     BatteryAlertSettings battery;
@@ -251,11 +259,12 @@ struct Settings {
     bool firstRun = false;                             // The ini file did not exist when loaded.
 
     AppGroup GroupOf(const std::wstring& exe) const;
-    // The group that applies now: Media counts as Game while it is turned off or in virtual device mode.
+    // The group that applies now: Media and Aux count as Game while they are not available.
     AppGroup EffectiveGroupOf(const std::wstring& exe) const;
-    // In virtual device mode Media needs a device of its own; without one it plays with Game.
     bool IsIgnored(const std::wstring& exe) const { return ignoredApps.contains(exe); }
+    // In virtual device mode Media and Aux need a device of their own; without one they play with Game.
     bool MediaAvailable() const { return mediaGroup && (!routing.enabled || !routing.media.empty()); }
+    bool AuxAvailable() const { return auxGroup && (!routing.enabled || !routing.aux.empty()); }
     void SetGroup(const std::wstring& exe, AppGroup group, const std::wstring& path);
 };
 

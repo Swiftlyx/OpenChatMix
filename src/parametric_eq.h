@@ -75,8 +75,8 @@ Biquad MakeBiquad(const EqBand& band, double sampleRate);
 // Magnitude response in dB at a frequency, preamp and boost effects included.
 double ResponseDb(const ParametricEq& eq, double frequency, double sampleRate = 48000.0);
 
-// Media has Game's presets: both carry music and effects rather than voice.
-enum class EqChannel { Game, Chat, Mic, Media };
+// Media and Aux have Game's presets: they carry music and effects rather than voice.
+enum class EqChannel { Game, Chat, Mic, Media, Aux };
 
 struct NamedEq {
     std::wstring name;

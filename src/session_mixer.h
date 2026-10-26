@@ -46,9 +46,9 @@ public:
     std::wstring OutputEndpointId() const { return endpoints_.empty() ? std::wstring{} : endpoints_.front().id; }
 
     // Posts WM_APP_SESSIONS_CHANGED when a session it changed expires.
-    // media: the level of the Media group, which follows no balance: 1, or 0 while it is muted.
-    void Apply(Levels levels, const Settings& settings, float media = 1.0f);
-    // Returns one app to full volume, e.g. after it moved to the Media group.
+    // media, aux: the levels of the Media and Aux groups, which follow no balance.
+    void Apply(Levels levels, const Settings& settings, float media = 1.0f, float aux = 1.0f);
+    // Returns one app to full volume, e.g. after it moved to the Media or Aux group.
     void RestoreApp(const std::wstring& exe);
     // Returns every app changed by this mixer to full volume.
     void ResetVolumes();

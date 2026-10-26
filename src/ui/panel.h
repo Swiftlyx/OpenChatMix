@@ -40,8 +40,9 @@ struct AppItem {
 // The device pickers: the three of virtual device mode, then the two of the microphone chain.
 // Devices the picker page chooses: the virtual devices, the shared output, where each channel plays
 // (empty: the shared output) and the microphone's.
-enum class RoutingSlot { Game, Chat, Output, MicInput, MicOutput, Media, GameOutput, ChatOutput, MediaOutput };
-inline constexpr int kRoutingSlots = 9;
+enum class RoutingSlot { Game, Chat, Output, MicInput, MicOutput, Media, GameOutput, ChatOutput, MediaOutput, Aux,
+                         AuxOutput };
+inline constexpr int kRoutingSlots = 11;
 
 struct MenuItem {
     std::wstring text;
@@ -56,6 +57,7 @@ struct RoutingView {
     std::wstring ids[kRoutingSlots];  // Indexed by RoutingSlot; an empty output means the headset.
     std::wstring names[kRoutingSlots];
     bool mediaRouted = false;         // Media has a device of its own and the group is on.
+    bool auxRouted = false;           // The same for Aux.
     std::wstring status;
     bool error = false;
     bool running = false;
@@ -101,6 +103,7 @@ struct Meters {
     float chat = 0.0f;
     float mic = 0.0f;
     float media = 0.0f;
+    float aux = 0.0f;
 };
 
 // State of the update check as shown in the panel.
@@ -615,8 +618,9 @@ private:
     // The picker chooses for one channel's page rather than for the Audio page.
     bool ChannelSlot() const {
         return pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media ||
-               pickSlot_ == RoutingSlot::GameOutput || pickSlot_ == RoutingSlot::ChatOutput ||
-               pickSlot_ == RoutingSlot::MediaOutput;
+               pickSlot_ == RoutingSlot::Aux || pickSlot_ == RoutingSlot::GameOutput ||
+               pickSlot_ == RoutingSlot::ChatOutput || pickSlot_ == RoutingSlot::MediaOutput ||
+               pickSlot_ == RoutingSlot::AuxOutput;
     }
     GameProfile* EditedProfile();
     std::wstring HotkeyHint() const;
@@ -675,13 +679,13 @@ private:
     IdleScreenView idle_;
     AddOnsView addOns_;
     MicView mic_;
-    std::array<PluginChainView, 4> pluginChains_;  // By EqChannel.
+    std::array<PluginChainView, 5> pluginChains_;  // By EqChannel.
     EqChannel pluginDialog_ = EqChannel::Mic;      // The chain the plugin file dialog adds to.
     std::vector<OutputView> outputs_;
     UpdateView update_;
     std::vector<AudioEndpoint> endpoints_;
     RoutingSlot pickSlot_ = RoutingSlot::Game;
-    int routingChannel_ = 0;  // Page::RoutingChannel: 0 Game, 1 Chat, 2 Media.
+    int routingChannel_ = 0;  // Page::RoutingChannel: 0 Game, 1 Chat, 2 Media, 3 Aux.
     std::vector<UserPreset> userPresets_;
 
     AppGroup group_ = AppGroup::Chat;      // Group page being shown.

@@ -19,7 +19,8 @@ enum HotkeyAction : int {
     kHotkeyCenter,
     kHotkeyMuteGame,    // Silences the Game side until pressed again; the balance stays.
     kHotkeyMuteChat,    // The same for the Chat side,
-    kHotkeyMuteMedia,   // ...and for the Media group, which ChatMix otherwise leaves alone.
+    kHotkeyMuteMedia,   // ...and for the Media group, which ChatMix otherwise leaves alone,
+    kHotkeyMuteAux,     // ...and for the Aux group.
     kHotkeyNextOutput,  // Sends the sound to the next playback device, virtual cables left out.
     kHotkeyNextMicrophone,  // Feeds the microphone chain from the next microphone, virtual cables left out.
     kHotkeyScreensaver,  // Shows the headset display's screensaver now, or hides it.

@@ -28,10 +28,12 @@ constexpr wchar_t kGameEqSection[] = L"Equalizer.Game";
 constexpr wchar_t kChatEqSection[] = L"Equalizer.Chat";
 constexpr wchar_t kMicEqSection[] = L"Equalizer.Mic";
 constexpr wchar_t kMediaEqSection[] = L"Equalizer.Media";
+constexpr wchar_t kAuxEqSection[] = L"Equalizer.Aux";
 constexpr wchar_t kMicSection[] = L"Microphone";
 constexpr wchar_t kGamePluginsSection[] = L"Plugins.Game";
 constexpr wchar_t kChatPluginsSection[] = L"Plugins.Chat";
 constexpr wchar_t kMediaPluginsSection[] = L"Plugins.Media";
+constexpr wchar_t kAuxPluginsSection[] = L"Plugins.Aux";
 constexpr wchar_t kOutputsSection[] = L"Outputs";
 constexpr const wchar_t* kNoiseNames[] = {L"off", L"standard", L"strong"};
 constexpr const wchar_t* kCompressorNames[] = {L"off", L"light", L"medium", L"strong"};
@@ -43,7 +45,7 @@ constexpr wchar_t kConfigFile[] = L"OpenChatMix.ini";
 constexpr wchar_t kPathSeparator = L'|';
 constexpr const wchar_t* kHotkeyKeys[kHotkeyCount] = {L"HotkeyTowardGame", L"HotkeyTowardChat", L"HotkeyCenter",
                                                        L"HotkeyMuteGame", L"HotkeyMuteChat", L"HotkeyMuteMedia",
-                                                       L"HotkeyNextOutput", L"HotkeyNextMicrophone",
+                                                       L"HotkeyMuteAux", L"HotkeyNextOutput", L"HotkeyNextMicrophone",
                                                        L"HotkeyScreensaver"};
 constexpr const wchar_t* kThemeNames[] = {L"system", L"light", L"dark"};
 constexpr const wchar_t* kBackdropNames[] = {L"acrylic", L"mica", L"solid"};
@@ -141,7 +143,7 @@ void SaveEqChannel(const std::wstring& path, const wchar_t* section, const EqCha
     WriteSectionString(path, section, L"SmartVolume", SmartVolumeKey(effects.smartVolume));
 }
 
-// [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq; an empty field leaves that unchanged.
+// [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq|auxEq; an empty field leaves that unchanged.
 void LoadProfiles(const std::wstring& path, Settings& settings) {
     std::vector<wchar_t> buffer(65536, L'\0');
     const DWORD length = GetPrivateProfileSectionW(kProfilesSection, buffer.data(), static_cast<DWORD>(buffer.size()),
@@ -165,7 +167,7 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
             }
             start = end + 1;
         }
-        fields.resize(6);
+        fields.resize(7);
         profile.path = fields[0];
         // Percent with a "%" sign; a bare number is a dial step of earlier versions.
         if (!fields[1].empty()) {
@@ -177,6 +179,7 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
         profile.headsetEq = fields[3].empty() ? -1 : _wtoi(fields[3].c_str());
         profile.chatEq = fields[4];
         profile.mediaEq = fields[5];
+        profile.auxEq = fields[6];
         if (!profile.exe.empty()) {
             settings.profiles.push_back(std::move(profile));
         }
@@ -189,7 +192,7 @@ void SaveProfiles(const std::wstring& path, const Settings& settings) {
         section += profile.exe + L"=" + profile.path + kPathSeparator +
                    (profile.balance ? std::to_wstring(*profile.balance) + L"%" : L"") + kPathSeparator + profile.gameEq +
                    kPathSeparator + (profile.headsetEq >= 0 ? std::to_wstring(profile.headsetEq) : L"") +
-                   kPathSeparator + profile.chatEq + kPathSeparator + profile.mediaEq;
+                   kPathSeparator + profile.chatEq + kPathSeparator + profile.mediaEq + kPathSeparator + profile.auxEq;
         section += L'\0';
     }
     section += L'\0';
@@ -323,6 +326,7 @@ const wchar_t* GroupName(AppGroup group) {
     switch (group) {
     case AppGroup::Chat: return L"chat";
     case AppGroup::Media: return L"media";
+    case AppGroup::Aux: return L"aux";
     case AppGroup::Game: break;
     }
     return L"game";
@@ -334,6 +338,9 @@ AppGroup ParseGroup(const std::wstring& text) {
     }
     if (_wcsicmp(text.c_str(), L"media") == 0) {
         return AppGroup::Media;
+    }
+    if (_wcsicmp(text.c_str(), L"aux") == 0) {
+        return AppGroup::Aux;
     }
     return AppGroup::Game;
 }
@@ -582,7 +589,10 @@ AppGroup Settings::GroupOf(const std::wstring& exe) const {
 
 AppGroup Settings::EffectiveGroupOf(const std::wstring& exe) const {
     const AppGroup group = GroupOf(exe);
-    return group == AppGroup::Media && !MediaAvailable() ? AppGroup::Game : group;
+    if ((group == AppGroup::Media && !MediaAvailable()) || (group == AppGroup::Aux && !AuxAvailable())) {
+        return AppGroup::Game;
+    }
+    return group;
 }
 
 void Settings::SetGroup(const std::wstring& exe, AppGroup group, const std::wstring& path) {
@@ -602,6 +612,7 @@ EqChannelSettings& EqStateOf(Settings& settings, EqChannel channel) {
     case EqChannel::Chat: return settings.chatEq;
     case EqChannel::Mic: return settings.micEq;
     case EqChannel::Media: return settings.mediaEq;
+    case EqChannel::Aux: return settings.auxEq;
     case EqChannel::Game: break;
     }
     return settings.gameEq;
@@ -616,6 +627,7 @@ std::vector<ChainPlugin>& PluginsOf(Settings& settings, EqChannel channel) {
     case EqChannel::Chat: return settings.chatPlugins;
     case EqChannel::Mic: return settings.mic.plugins;
     case EqChannel::Media: return settings.mediaPlugins;
+    case EqChannel::Aux: return settings.auxPlugins;
     case EqChannel::Game: break;
     }
     return settings.gamePlugins;
@@ -710,9 +722,11 @@ Settings LoadSettings(const std::wstring& path) {
     settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
     settings.chatVolume = std::clamp(ReadInt(path, L"ChatVolume", 100), 0, 100);
     settings.mediaVolume = std::clamp(ReadInt(path, L"MediaVolume", 100), 0, 100);
+    settings.auxVolume = std::clamp(ReadInt(path, L"AuxVolume", 100), 0, 100);
     settings.warnGg = ReadInt(path, L"WarnGg", 1) != 0;
     // Media and the equalizer start turned off; settings files from earlier versions keep their choice.
     settings.mediaGroup = ReadInt(path, L"MediaGroup", 0) != 0;
+    settings.auxGroup = ReadInt(path, L"AuxGroup", 0) != 0;
     settings.equalizer = ReadInt(path, L"Equalizer", 0) != 0;
 
     AppearanceSettings& appearance = settings.appearance;
@@ -751,9 +765,11 @@ Settings LoadSettings(const std::wstring& path) {
     LoadEqChannel(path, kChatEqSection, settings.chatEq);
     LoadEqChannel(path, kMicEqSection, settings.micEq);
     LoadEqChannel(path, kMediaEqSection, settings.mediaEq);
+    LoadEqChannel(path, kAuxEqSection, settings.auxEq);
     LoadPlugins(path, kGamePluginsSection, settings.gamePlugins);
     LoadPlugins(path, kChatPluginsSection, settings.chatPlugins);
     LoadPlugins(path, kMediaPluginsSection, settings.mediaPlugins);
+    LoadPlugins(path, kAuxPluginsSection, settings.auxPlugins);
     LoadMic(path, settings.mic);
     LoadProfiles(path, settings);
     settings.routing.enabled = GetPrivateProfileIntW(kRoutingSection, L"Enabled", 0, path.c_str()) != 0;
@@ -761,9 +777,11 @@ Settings LoadSettings(const std::wstring& path) {
     settings.routing.chat = ReadString(path, kRoutingSection, L"Chat", L"");
     settings.routing.output = ReadString(path, kRoutingSection, L"Output", L"");
     settings.routing.media = ReadString(path, kRoutingSection, L"Media", L"");
+    settings.routing.aux = ReadString(path, kRoutingSection, L"Aux", L"");
     settings.routing.gameOutput = ReadString(path, kRoutingSection, L"GameOutput", L"");
     settings.routing.chatOutput = ReadString(path, kRoutingSection, L"ChatOutput", L"");
     settings.routing.mediaOutput = ReadString(path, kRoutingSection, L"MediaOutput", L"");
+    settings.routing.auxOutput = ReadString(path, kRoutingSection, L"AuxOutput", L"");
     settings.routing.manageDevices = GetPrivateProfileIntW(kRoutingSection, L"ManageDevices", 1, path.c_str()) != 0;
     settings.routing.savedDefault = ReadString(path, kRoutingSection, L"SavedDefault", L"");
     settings.routing.savedCommunications = ReadString(path, kRoutingSection, L"SavedCommunications", L"");
@@ -837,8 +855,10 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());
     WriteString(path, L"ChatVolume", std::to_wstring(settings.chatVolume).c_str());
     WriteString(path, L"MediaVolume", std::to_wstring(settings.mediaVolume).c_str());
+    WriteString(path, L"AuxVolume", std::to_wstring(settings.auxVolume).c_str());
     WriteString(path, L"WarnGg", settings.warnGg ? L"1" : L"0");
     WriteString(path, L"MediaGroup", settings.mediaGroup ? L"1" : L"0");
+    WriteString(path, L"AuxGroup", settings.auxGroup ? L"1" : L"0");
     WriteString(path, L"Equalizer", settings.equalizer ? L"1" : L"0");
     WriteString(path, L"Translucent", nullptr);
 
@@ -870,9 +890,11 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     SaveEqChannel(path, kChatEqSection, settings.chatEq);
     SaveEqChannel(path, kMicEqSection, settings.micEq);
     SaveEqChannel(path, kMediaEqSection, settings.mediaEq);
+    SaveEqChannel(path, kAuxEqSection, settings.auxEq);
     SavePlugins(path, kGamePluginsSection, settings.gamePlugins);
     SavePlugins(path, kChatPluginsSection, settings.chatPlugins);
     SavePlugins(path, kMediaPluginsSection, settings.mediaPlugins);
+    SavePlugins(path, kAuxPluginsSection, settings.auxPlugins);
     SaveMic(path, settings.mic);
     SaveProfiles(path, settings);
     WritePrivateProfileStringW(kRoutingSection, L"Enabled", settings.routing.enabled ? L"1" : L"0", path.c_str());
@@ -880,9 +902,11 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WritePrivateProfileStringW(kRoutingSection, L"Chat", settings.routing.chat.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Output", settings.routing.output.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Media", settings.routing.media.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"Aux", settings.routing.aux.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"GameOutput", settings.routing.gameOutput.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"ChatOutput", settings.routing.chatOutput.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"MediaOutput", settings.routing.mediaOutput.c_str(), path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"AuxOutput", settings.routing.auxOutput.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"ManageDevices", settings.routing.manageDevices ? L"1" : L"0",
                                path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"SavedDefault", settings.routing.savedDefault.c_str(), path.c_str());

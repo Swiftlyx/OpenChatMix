@@ -311,7 +311,7 @@ void SessionMixer::ForEachSession(const std::vector<Endpoint>& endpoints, Fn&& f
     }
 }
 
-void SessionMixer::Apply(Levels levels, const Settings& settings, float media) {
+void SessionMixer::Apply(Levels levels, const Settings& settings, float media, float aux) {
     const float game = levels.game / 100.0f;
     const float chat = levels.chat / 100.0f;
     ForEachSession(endpoints_, [&](const Session& session) {
@@ -319,7 +319,8 @@ void SessionMixer::Apply(Levels levels, const Settings& settings, float media) {
         if (settings.IsIgnored(session.exe)) {
             return;
         }
-        switch (settings.EffectiveGroupOf(session.exe)) {
+        const AppGroup group = settings.EffectiveGroupOf(session.exe);
+        switch (group) {
         case AppGroup::Game:
             SetLevel(session, game);
             break;
@@ -327,11 +328,14 @@ void SessionMixer::Apply(Levels levels, const Settings& settings, float media) {
             SetLevel(session, chat);
             break;
         case AppGroup::Media:
-            // Untouched unless muted; once lowered, a session is set back to full when unmuted.
-            if (media < 1.0f || changed_.count(InstanceId(session.control2))) {
-                SetLevel(session, media);
+        case AppGroup::Aux: {
+            // Untouched at full volume; once lowered, a session is set back to full when raised again.
+            const float level = group == AppGroup::Aux ? aux : media;
+            if (level < 1.0f || changed_.count(InstanceId(session.control2))) {
+                SetLevel(session, level);
             }
             break;
+        }
         }
     });
 }

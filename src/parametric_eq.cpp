@@ -144,10 +144,10 @@ ParametricEq FromGgFilters(const JsonValue& filters, float preamp, bool enabled)
 }
 
 // Sonar keeps one configuration per channel ("vad"): 1 game with a parametric equalizer, 2 chat with
-// a ten-band graphic one, 3 the microphone, 4 media.
+// a ten-band graphic one, 3 the microphone, 4 media, 5 aux.
 std::optional<ParametricEq> FromSonar(const JsonValue& data, EqChannel channel) {
     ParametricEq eq = FlatEq();
-    // Game and media always have the parametric equalizer; chat and the microphone have it in recent Sonar
+    // Game, media and aux always have the parametric equalizer; chat and the microphone have it in recent Sonar
     // versions and the ten-band graphic one before.
     if (const JsonValue* parametric = data.Find(L"parametricEQ")) {
         const float preamp =
@@ -156,7 +156,7 @@ std::optional<ParametricEq> FromSonar(const JsonValue& data, EqChannel channel) 
         return FromGgFilters(*parametric, preamp, enabled);
     }
     const JsonValue* graphic = data.Find(L"equalizer");
-    if (!graphic || channel == EqChannel::Game || channel == EqChannel::Media) {
+    if (!graphic || channel == EqChannel::Game || channel == EqChannel::Media || channel == EqChannel::Aux) {
         return std::nullopt;
     }
     const bool enabled = graphic->Find(L"enabled") ? graphic->Find(L"enabled")->BoolOr(true) : true;
@@ -593,6 +593,7 @@ std::vector<NamedEq> SonarEqPresets(EqChannel channel) {
                          channel == EqChannel::Chat    ? 2
                          : channel == EqChannel::Mic   ? 3
                          : channel == EqChannel::Media ? 4
+                         : channel == EqChannel::Aux   ? 5
                                                        : 1);
         while (sqlite3_step(statement) == SQLITE_ROW) {
             const auto* name = reinterpret_cast<const char*>(sqlite3_column_text(statement, 0));

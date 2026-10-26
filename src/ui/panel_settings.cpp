@@ -593,6 +593,8 @@ void Panel::DrawAudio() {
     std::vector<CardRow> groups{
         SwitchItem(kIdMediaGroup, T(Text::MediaGroupToggle), settings_.mediaGroup,
                    [this] { Edit([](Settings& s) { s.mediaGroup = !s.mediaGroup; }); }, T(Text::MediaGroupHint)),
+        SwitchItem(kIdAuxGroup, T(Text::AuxGroupToggle), settings_.auxGroup,
+                   [this] { Edit([](Settings& s) { s.auxGroup = !s.auxGroup; }); }, T(Text::AuxGroupHint)),
         SwitchItem(kIdDucking, T(Text::Ducking), settings_.ducking.enabled,
                    [this] { Edit([](Settings& s) { s.ducking.enabled = !s.ducking.enabled; }); }, T(Text::DuckingHint)),
     };
@@ -626,14 +628,15 @@ void Panel::DrawHotkeys() {
     const Palette& p = P();
     DrawHeader(T(Text::Hotkeys));
     float y = BeginScroll(Page::Hotkeys, kHeaderHeight);
-    const Text labels[kHotkeyCount] = {Text::MoreGame,   Text::MoreChat,       Text::Balanced,
-                                       Text::MuteGame,   Text::MuteChat,       Text::MuteMedia,
-                                       Text::NextOutput, Text::NextMicrophone, Text::StartScreensaver};
+    const Text labels[kHotkeyCount] = {Text::MoreGame, Text::MoreChat,   Text::Balanced,   Text::MuteGame,
+                                       Text::MuteChat, Text::MuteMedia,  Text::MuteAux,    Text::NextOutput,
+                                       Text::NextMicrophone, Text::StartScreensaver};
     bool anyFailed = false;
     std::vector<CardRow> keys;
     for (int action = 0; action < kHotkeyCount; ++action) {
-        // Muting Media only means something while the Media group is in use.
-        if (action == kHotkeyMuteMedia && !settings_.MediaAvailable()) {
+        // Muting Media or Aux only means something while its group is in use.
+        if ((action == kHotkeyMuteMedia && !settings_.MediaAvailable()) ||
+            (action == kHotkeyMuteAux && !settings_.AuxAvailable())) {
             continue;
         }
         // Nor the next microphone while the microphone is not processed.
@@ -944,6 +947,9 @@ void Panel::DrawProfileEdit() {
     if (routing_.mediaRouted || !profile->mediaEq.empty()) {
         rows.push_back(
             eqRow(kIdProfileMediaEq, Text::ProfileMediaEq, EqChannel::Media, profile->mediaEq, &GameProfile::mediaEq));
+    }
+    if (routing_.auxRouted || !profile->auxEq.empty()) {
+        rows.push_back(eqRow(kIdProfileAuxEq, Text::ProfileAuxEq, EqChannel::Aux, profile->auxEq, &GameProfile::auxEq));
     }
 
     if (features_ && features_->equalizer.bandsCommand && features_->equalizer.presetCommand) {

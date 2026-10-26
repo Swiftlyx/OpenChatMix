@@ -372,16 +372,19 @@ void PushRouting() {
     set(ui::RoutingSlot::Game, routing.game, named(routing.game, L"CABLE-A Input (VB-Audio Cable A)"));
     set(ui::RoutingSlot::Chat, routing.chat, named(routing.chat, L"CABLE-B Input (VB-Audio Cable B)"));
     set(ui::RoutingSlot::Media, routing.media, routing.media.empty() ? L"" : named(routing.media, L""));
+    set(ui::RoutingSlot::Aux, routing.aux, routing.aux.empty() ? L"" : named(routing.aux, L""));
     set(ui::RoutingSlot::Output, routing.output,
         routing.output.empty() ? std::wstring(T(Text::AutomaticHeadset)) + L" · " + Current().name
                                : named(routing.output, L""));
     for (const auto& [slot, id] : {std::pair{ui::RoutingSlot::GameOutput, routing.gameOutput},
                                    std::pair{ui::RoutingSlot::ChatOutput, routing.chatOutput},
-                                   std::pair{ui::RoutingSlot::MediaOutput, routing.mediaOutput}}) {
+                                   std::pair{ui::RoutingSlot::MediaOutput, routing.mediaOutput},
+                                   std::pair{ui::RoutingSlot::AuxOutput, routing.auxOutput}}) {
         set(slot, id,
             id.empty() ? std::wstring(T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput)) : named(id, L""));
     }
     view.mediaRouted = routing.enabled && g.settings.mediaGroup && !routing.media.empty();
+    view.auxRouted = routing.enabled && g.settings.auxGroup && !routing.aux.empty();
     view.manageDevices = routing.manageDevices;
     if (routing.enabled) {
         view.running = true;
@@ -407,7 +410,7 @@ void PushMic() {
     g.panel->SetMic(view);
     // Plugins are listed by their file, as loaded; the preview loads none. DeepFilterNet and NVIDIA Audio Effects DLLs
     // show their settings.
-    for (const EqChannel channel : {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media}) {
+    for (const EqChannel channel : {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media, EqChannel::Aux}) {
         ui::PluginChainView chain;
         for (const ChainPlugin& plugin : PluginsOf(g.settings, channel)) {
             std::wstring name = FileNameOf(plugin.path);
@@ -679,6 +682,8 @@ public:
         case ui::RoutingSlot::GameOutput: routing.gameOutput = id; break;
         case ui::RoutingSlot::ChatOutput: routing.chatOutput = id; break;
         case ui::RoutingSlot::MediaOutput: routing.mediaOutput = id; break;
+        case ui::RoutingSlot::Aux: routing.aux = id; break;
+        case ui::RoutingSlot::AuxOutput: routing.auxOutput = id; break;
         case ui::RoutingSlot::MicInput:
         case ui::RoutingSlot::MicOutput: break;
         }
@@ -838,6 +843,7 @@ public:
         meters.chat = std::fmod(t, 6.0) < 2.5 ? static_cast<float>(0.25 + 0.2 * std::fabs(std::sin(t * 7.3))) : 0.0f;
         meters.mic = static_cast<float>(0.2 + 0.15 * std::fabs(std::sin(t * 5.7)));
         meters.media = std::fmod(t, 5.0) < 3.0 ? static_cast<float>(0.3 + 0.15 * std::fabs(std::sin(t * 3.1))) : 0.0f;
+        meters.aux = std::fmod(t, 7.0) < 4.0 ? static_cast<float>(0.2 + 0.1 * std::fabs(std::sin(t * 4.3))) : 0.0f;
         return meters;
     }
 };

@@ -51,6 +51,7 @@ const wchar_t* GroupName(AppGroup group) {
     switch (group) {
     case AppGroup::Chat: return T(Text::Chat);
     case AppGroup::Media: return T(Text::Media);
+    case AppGroup::Aux: return T(Text::Aux);
     case AppGroup::Game: break;
     }
     return T(Text::Game);
@@ -60,9 +61,18 @@ wchar_t GroupGlyph(AppGroup group) {
     switch (group) {
     case AppGroup::Chat: return kGlyphChat;
     case AppGroup::Media: return kGlyphVolume;
+    case AppGroup::Aux: return kGlyphApps;
     case AppGroup::Game: break;
     }
     return kGlyphGame;
+}
+
+// The group an app is shown in: Media and Aux apps are with Game while their group is not in use.
+AppGroup ShownGroup(const Settings& settings, AppGroup group) {
+    if ((group == AppGroup::Media && !settings.MediaAvailable()) || (group == AppGroup::Aux && !settings.AuxAvailable())) {
+        return AppGroup::Game;
+    }
+    return group;
 }
 
 }  // namespace
@@ -72,15 +82,16 @@ std::vector<AppGroup> Panel::AvailableGroups() const {
     if (settings_.MediaAvailable()) {
         groups.push_back(AppGroup::Media);
     }
+    if (settings_.AuxAvailable()) {
+        groups.push_back(AppGroup::Aux);
+    }
     return groups;
 }
 
 std::vector<AppItem> Panel::AppsInGroup(AppGroup group) const {
     std::vector<AppItem> result;
     for (const auto& app : apps_) {
-        const AppGroup effective =
-            app.group == AppGroup::Media && !settings_.MediaAvailable() ? AppGroup::Game : app.group;
-        if (effective == group) {
+        if (ShownGroup(settings_, app.group) == group) {
             result.push_back(app);
         }
     }
@@ -196,6 +207,7 @@ void Panel::DrawMixer() {
         }
         const D2D1_COLOR_F color = group == AppGroup::Chat    ? p.tertiary
                                    : group == AppGroup::Media ? p.onSurfaceVariant
+                                   : group == AppGroup::Aux   ? p.secondary
                                                               : p.primary;
         const uint32_t id = HashId(kKindGroup, std::wstring(L"group") + GroupName(group));
         const std::wstring subtitle = names.empty() ? std::wstring(T(Text::GroupEmpty)) : names;
@@ -204,9 +216,11 @@ void Panel::DrawMixer() {
                         [this, &p, group, id, color, subtitle](float top) {
                             const bool chat = group == AppGroup::Chat;
                             const bool media = group == AppGroup::Media;
-                            const int volume = media ? settings_.mediaVolume
-                                               : chat ? settings_.chatVolume
-                                                      : settings_.gameVolume;
+                            const bool aux = group == AppGroup::Aux;
+                            const int volume = aux     ? settings_.auxVolume
+                                               : media ? settings_.mediaVolume
+                                               : chat  ? settings_.chatVolume
+                                                       : settings_.gameVolume;
                             DrawNavRow(id, top, GroupGlyph(group), color, GroupName(group), subtitle,
                                        [this, group] { OpenGroup(group); }, kGroupPercentWidth + design::kSpace3);
                             // The percent sits on the chevron's line, beside it.
@@ -215,17 +229,25 @@ void Panel::DrawMixer() {
                                          {percentRight - kGroupPercentWidth, top, percentRight,
                                           top + design::kTwoLineRowHeight},
                                          TextStyle::LabelLarge, p.onSurfaceVariant, TextAlign::Trailing);
-                            DrawVolumeSlider(media ? kIdMediaVolume : chat ? kIdChatVolume : kIdGameVolume,
+                            DrawVolumeSlider(aux     ? kIdAuxVolume
+                                             : media ? kIdMediaVolume
+                                             : chat  ? kIdChatVolume
+                                                     : kIdGameVolume,
                                              design::kLeadingTextInset, kWidth - kInset, top + kGroupSliderY, volume,
-                                             media ? meters_.media : chat ? meters_.chat : meters_.game, color,
-                                             media  ? p.secondaryContainer
-                                             : chat ? p.tertiaryContainer
-                                                    : p.primaryContainer,
+                                             aux     ? meters_.aux
+                                             : media ? meters_.media
+                                             : chat  ? meters_.chat
+                                                     : meters_.game,
+                                             color,
+                                             media || aux ? p.secondaryContainer
+                                             : chat       ? p.tertiaryContainer
+                                                          : p.primaryContainer,
                                              [this, group](int value) {
                                                  Edit([group, value](Settings& s) {
-                                                     (group == AppGroup::Media  ? s.mediaVolume
-                                                      : group == AppGroup::Chat ? s.chatVolume
-                                                                                : s.gameVolume) = value;
+                                                     (group == AppGroup::Aux     ? s.auxVolume
+                                                      : group == AppGroup::Media ? s.mediaVolume
+                                                      : group == AppGroup::Chat  ? s.chatVolume
+                                                                                 : s.gameVolume) = value;
                                                  });
                                              });
                         },
@@ -315,7 +337,7 @@ void Panel::DrawGroup() {
     const Palette& p = P();
     constexpr float kAddWidth = 112.0f;
     std::wstring subtitle;
-    if (routing_.enabled && group_ != AppGroup::Media) {
+    if (routing_.enabled && (group_ == AppGroup::Game || group_ == AppGroup::Chat)) {
         const std::wstring& device = routing_.names[group_ == AppGroup::Chat ? 1 : 0];
         const std::wstring playsOn = std::wstring(T(Text::PlaysOn)) + L" ";
         subtitle = playsOn + (device.empty() ? T(Text::NotSelected) : device.c_str());
@@ -335,6 +357,7 @@ void Panel::DrawGroup() {
 
     const Text hint = group_ == AppGroup::Chat    ? Text::GroupChatHint
                       : group_ == AppGroup::Media ? Text::GroupMediaHint
+                      : group_ == AppGroup::Aux   ? Text::GroupAuxHint
                                                   : Text::GroupGameHint;
     const float listTop = PageHint(T(hint), kHeaderHeight);
 
@@ -366,11 +389,12 @@ void Panel::DrawAppIcon(const AppItem& app, const D2D1_RECT_F& rect) {
 void Panel::DrawAppRow(const AppItem& app, float top) {
     const Palette& p = P();
     const std::vector<AppGroup> groups = AvailableGroups();
-    constexpr float kSegmentWidth = 52.0f;
+    // Four groups take narrower segments, so the app's name keeps some room.
+    const float segmentWidth = groups.size() > 3 ? 46.0f : 52.0f;
     const float middle = top + kAppRowHeight / 2.0f;
     DrawAppIcon(app, {kInset, middle - 16.0f, kInset + 32.0f, middle + 16.0f});
 
-    // Every app can be removed: from Chat or Media it goes back to Game, from Game out of ChatMix.
+    // Every app can be removed: from Chat, Media or Aux it goes back to Game, from Game out of ChatMix.
     const bool removable = true;
     const float removeWidth = removable ? design::kSmallIconButtonSize + design::kSpace1 : 0.0f;
     if (removable) {
@@ -381,7 +405,7 @@ void Panel::DrawAppRow(const AppItem& app, float top) {
                 T(app.group == AppGroup::Game ? Text::TipLeaveOutOfChatMix : Text::TipRemoveFromGroup));
     }
     const float segmentsRight = kWidth - kInset + design::kSpace1 - removeWidth;
-    const D2D1_RECT_F segments{segmentsRight - groups.size() * kSegmentWidth, middle - design::kControlHeight / 2.0f,
+    const D2D1_RECT_F segments{segmentsRight - groups.size() * segmentWidth, middle - design::kControlHeight / 2.0f,
                                segmentsRight, middle + design::kControlHeight / 2.0f};
     const float textLeft = kInset + 32.0f + design::kSpace3;
     const float textRight = segments.left - design::kSpace2;
@@ -398,14 +422,11 @@ void Panel::DrawAppRow(const AppItem& app, float top) {
     canvas_.Text(detail, {textLeft, middle + 1.0f, textRight, middle + 18.0f}, TextStyle::BodySmall,
                  p.onSurfaceVariant);
 
-    const AppGroup effective = app.group == AppGroup::Media && !settings_.MediaAvailable() ? AppGroup::Game : app.group;
+    const AppGroup effective = ShownGroup(settings_, app.group);
     const int selected = static_cast<int>(std::find(groups.begin(), groups.end(), effective) - groups.begin());
-    const D2D1_COLOR_F fill = effective == AppGroup::Chat    ? p.tertiary
-                              : effective == AppGroup::Media ? p.secondaryContainer
-                                                             : p.primary;
-    const D2D1_COLOR_F onFill = effective == AppGroup::Chat    ? p.onTertiary
-                                : effective == AppGroup::Media ? p.onSecondaryContainer
-                                                               : p.onPrimary;
+    const bool aside = effective == AppGroup::Media || effective == AppGroup::Aux;
+    const D2D1_COLOR_F fill = effective == AppGroup::Chat ? p.tertiary : aside ? p.secondaryContainer : p.primary;
+    const D2D1_COLOR_F onFill = effective == AppGroup::Chat ? p.onTertiary : aside ? p.onSecondaryContainer : p.onPrimary;
     std::vector<const wchar_t*> labels;
     for (const AppGroup group : groups) {
         labels.push_back(GroupName(group));
@@ -449,12 +470,11 @@ void Panel::DrawAddApp() {
             labels.push_back(GroupName(group));
         }
         const int selected = static_cast<int>(std::find(groups.begin(), groups.end(), addGroup_) - groups.begin());
-        const D2D1_COLOR_F fill = addGroup_ == AppGroup::Chat    ? p.tertiary
-                                  : addGroup_ == AppGroup::Media ? p.secondaryContainer
-                                                                 : p.primary;
-        const D2D1_COLOR_F onFill = addGroup_ == AppGroup::Chat    ? p.onTertiary
-                                    : addGroup_ == AppGroup::Media ? p.onSecondaryContainer
-                                                                   : p.onPrimary;
+        const bool aside = addGroup_ == AppGroup::Media || addGroup_ == AppGroup::Aux;
+        const D2D1_COLOR_F fill = addGroup_ == AppGroup::Chat ? p.tertiary : aside ? p.secondaryContainer : p.primary;
+        const D2D1_COLOR_F onFill = addGroup_ == AppGroup::Chat ? p.onTertiary
+                                    : aside                     ? p.onSecondaryContainer
+                                                                : p.onPrimary;
         const float groupsLeft = labelRight + design::kSpace3;
         DrawSegmented({groupsLeft, top, std::min(kWidth - kInset, groupsLeft + 84.0f * groups.size()),
                        top + design::kControlHeight},

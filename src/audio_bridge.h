@@ -76,8 +76,8 @@ private:
     std::atomic<int> latencyMs_{0};
 };
 
-// The devices of virtual device mode: where Game, Chat and optionally Media come from and where each
-// plays. Every output is resolved, never empty; media is empty when Media has no device of its own.
+// The devices of virtual device mode: where Game, Chat and optionally Media and Aux come from and where
+// each plays. Every output is resolved, never empty; media and aux are empty without a device of their own.
 struct RoutingPlan {
     std::wstring game;
     std::wstring chat;
@@ -85,38 +85,45 @@ struct RoutingPlan {
     std::wstring gameOutput;
     std::wstring chatOutput;
     std::wstring mediaOutput;
+    std::wstring aux;
+    std::wstring auxOutput;
 };
 
-// Bridges that implement ChatMix with virtual devices: Game and Chat, and Media when it has a device,
+// Bridges that implement ChatMix with virtual devices: Game and Chat, and Media and Aux when they have a device,
 // each played into its output. Loopback capture takes the sound before the Windows volume of a
 // device, so the router applies it: each device scales its own channel, and the Game device (the
 // default output, so the taskbar slider and volume keys) also scales the channels that play on the
-// same output as Game. ChatMix never changes Media. Captures of the devices by other apps keep the
+// same output as Game. ChatMix never changes Media or Aux. Captures of the devices by other apps keep the
 // full level.
 class AudioRouter {
 public:
     // Posts WM_APP_DEVICE_VOLUME to notifyWindow when the volume of a routed device changes.
     bool Start(const RoutingPlan& plan, HWND notifyWindow);
     void Stop();
-    bool IsRunning() const { return game_.IsRunning() && chat_.IsRunning() && (!mediaRouted_ || media_.IsRunning()); }
+    bool IsRunning() const {
+        return game_.IsRunning() && chat_.IsRunning() && (!mediaRouted_ || media_.IsRunning()) &&
+               (!auxRouted_ || aux_.IsRunning());
+    }
     BridgeError Error() const;
     void SetLevels(Levels levels);
-    // The Media channel follows no balance; 0 mutes it.
+    // The Media and Aux channels follow no balance; 0 mutes them.
     void SetMediaLevel(float level);
+    void SetAuxLevel(float level);
     // Reads the Windows volume and mute of the Game and Chat devices again.
     void UpdateDeviceVolumes();
     void SetEqualizers(std::shared_ptr<const ParametricEq> game, std::shared_ptr<const ParametricEq> chat,
-                       std::shared_ptr<const ParametricEq> media);
-    // Game, Chat or Media; see AudioBridge::SetPlugins.
+                       std::shared_ptr<const ParametricEq> media, std::shared_ptr<const ParametricEq> aux);
+    // Game, Chat, Media or Aux; see AudioBridge::SetPlugins.
     void SetPlugins(EqChannel channel, PluginList plugins, UINT32 rate);
     // The rate the channel's bridge plays at; 0 while it does not run.
     UINT32 Rate(EqChannel channel) const;
     // Largest Chat output sample since the last call.
     float TakeChatPeak() { return chat_.TakePeak(); }
-    // Largest Game, Chat and Media output samples since the last call, for the level meters.
+    // Largest Game, Chat, Media and Aux output samples since the last call, for the level meters.
     float TakeGameMeter() { return game_.TakeMeterPeak(); }
     float TakeChatMeter() { return chat_.TakeMeterPeak(); }
     float TakeMediaMeter() { return mediaRouted_ ? media_.TakeMeterPeak() : 0.0f; }
+    float TakeAuxMeter() { return auxRouted_ ? aux_.TakeMeterPeak() : 0.0f; }
     int LatencyMs() const;
 
 private:
@@ -133,12 +140,17 @@ private:
     AudioBridge game_;
     AudioBridge chat_;
     AudioBridge media_;
+    AudioBridge aux_;
     DeviceVolume gameVolume_;
     DeviceVolume chatVolume_;
     DeviceVolume mediaVolume_;
+    DeviceVolume auxVolume_;
     bool mediaRouted_ = false;
+    bool auxRouted_ = false;
     bool chatWithGame_ = true;   // Chat plays on the Game output, so the Game device's volume applies.
     bool mediaWithGame_ = true;
+    bool auxWithGame_ = true;
     Levels levels_;
     float mediaLevel_ = 1.0f;
+    float auxLevel_ = 1.0f;
 };

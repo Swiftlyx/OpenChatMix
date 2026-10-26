@@ -812,6 +812,14 @@ float Panel::DrawRoutingSettings(float y) {
     const Palette& p = P();
     y = SectionTitle(T(Text::Routing), y);
     const bool on = routing_.enabled;
+    // Game and Chat, then Media and Aux while their groups are on; indexes into the arrays below.
+    std::vector<int> shown{0, 1};
+    if (settings_.mediaGroup) {
+        shown.push_back(2);
+    }
+    if (settings_.auxGroup) {
+        shown.push_back(3);
+    }
     std::vector<CardRow> rows{
         SwitchItem(kIdRoutingToggle, T(Text::RoutingMode), on, [this] { host_.OnRoutingEnabled(!routing_.enabled); },
                    T(Text::RoutingModeHint)),
@@ -820,18 +828,19 @@ float Panel::DrawRoutingSettings(float y) {
         if (routing_.cablesMissing) {
             rows.push_back(HintItem(T(Text::RoutingNoCables)));
         }
-        // A row per channel with its device and where it plays; Media only while its group is on.
-        constexpr Text kChannels[] = {Text::Game, Text::Chat, Text::Media};
-        constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media};
-        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
-        const D2D1_COLOR_F colors[] = {p.primary, p.tertiary, p.onSurfaceVariant};
-        const wchar_t glyphs[] = {kGlyphGame, kGlyphChat, kGlyphVolume};
-        for (int channel = 0; channel < (settings_.mediaGroup ? 3 : 2); ++channel) {
+        // A row per channel with its device and where it plays.
+        constexpr Text kChannels[] = {Text::Game, Text::Chat, Text::Media, Text::Aux};
+        constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media, RoutingSlot::Aux};
+        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput,
+                                            RoutingSlot::AuxOutput};
+        constexpr Text kNone[] = {Text::NotSelected, Text::NotSelected, Text::RoutingMediaNone, Text::RoutingAuxNone};
+        const D2D1_COLOR_F colors[] = {p.primary, p.tertiary, p.onSurfaceVariant, p.secondary};
+        const wchar_t glyphs[] = {kGlyphGame, kGlyphChat, kGlyphVolume, kGlyphApps};
+        for (const int channel : shown) {
             // The device, and where it plays when that is not the shared output.
             const std::wstring& device = routing_.names[static_cast<int>(kDevices[channel])];
             const int output = static_cast<int>(kOutputs[channel]);
-            std::wstring subtitle =
-                device.empty() ? std::wstring(T(channel == 2 ? Text::RoutingMediaNone : Text::NotSelected)) : device;
+            std::wstring subtitle = device.empty() ? std::wstring(T(kNone[channel])) : device;
             if (!device.empty() && !routing_.ids[output].empty()) {
                 subtitle += L" → " + routing_.names[output];
             }
@@ -858,9 +867,10 @@ float Panel::DrawRoutingSettings(float y) {
     }
     if (!on) {
         // Without virtual devices each group can still play on a device of its own.
-        constexpr Text kGroupNames[] = {Text::Game, Text::Chat, Text::Media};
-        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
-        for (int group = 0; group < (settings_.mediaGroup ? 3 : 2); ++group) {
+        constexpr Text kGroupNames[] = {Text::Game, Text::Chat, Text::Media, Text::Aux};
+        constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput,
+                                            RoutingSlot::AuxOutput};
+        for (const int group : shown) {
             const RoutingSlot output = kOutputs[group];
             rows.push_back(ValueItem(kIdRoutingRow + 16 + group, T(kGroupNames[group]),
                                      routing_.names[static_cast<int>(output)], [this, output] { OpenPicker(output); }));
@@ -885,11 +895,14 @@ float Panel::DrawRoutingSettings(float y) {
 
 void Panel::DrawRoutingChannel() {
     const Palette& p = P();
-    constexpr Text kTitles[] = {Text::Game, Text::Chat, Text::Media};
-    constexpr Text kHints[] = {Text::RoutingGameHint, Text::RoutingChatHint, Text::RoutingMediaHint};
-    constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media};
-    constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput};
-    const int channel = std::clamp(routingChannel_, 0, 2);
+    constexpr Text kTitles[] = {Text::Game, Text::Chat, Text::Media, Text::Aux};
+    constexpr Text kHints[] = {Text::RoutingGameHint, Text::RoutingChatHint, Text::RoutingMediaHint,
+                               Text::RoutingAuxHint};
+    constexpr RoutingSlot kDevices[] = {RoutingSlot::Game, RoutingSlot::Chat, RoutingSlot::Media, RoutingSlot::Aux};
+    constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput,
+                                        RoutingSlot::AuxOutput};
+    constexpr Text kNone[] = {Text::NotSelected, Text::NotSelected, Text::RoutingMediaNone, Text::RoutingAuxNone};
+    const int channel = std::clamp(routingChannel_, 0, 3);
     DrawHeader(T(kTitles[channel]));
     float y = BeginScroll(Page::RoutingChannel, kHeaderHeight);
     y = PageHint(T(kHints[channel]), y);
@@ -898,8 +911,7 @@ void Panel::DrawRoutingChannel() {
     const std::wstring& deviceName = routing_.names[static_cast<int>(device)];
     std::vector<CardRow> rows{
         ValueItem(kIdRoutingRow + 14, T(Text::RoutingDevice),
-                  deviceName.empty() ? std::wstring(T(channel == 2 ? Text::RoutingMediaNone : Text::NotSelected))
-                                     : deviceName,
+                  deviceName.empty() ? std::wstring(T(kNone[channel])) : deviceName,
                   [this, device] { OpenPicker(device); }),
     };
     // Where a channel plays matters only once it has a device.
@@ -918,7 +930,8 @@ void Panel::DrawPickDevice() {
     const Palette& p = P();
     constexpr Text kTitles[] = {Text::RoutingGame,    Text::RoutingChat,    Text::RoutingOutput,
                                 Text::MicInput,       Text::MicOutput,      Text::RoutingMediaDevice,
-                                Text::RoutingPlaysOn, Text::RoutingPlaysOn, Text::RoutingPlaysOn};
+                                Text::RoutingPlaysOn, Text::RoutingPlaysOn, Text::RoutingPlaysOn,
+                                Text::RoutingAuxDevice,  Text::RoutingPlaysOn};
     const int slot = static_cast<int>(pickSlot_);
     DrawHeader(T(kTitles[slot]));
 
@@ -929,9 +942,11 @@ void Panel::DrawPickDevice() {
     case RoutingSlot::MicInput: items.push_back({L"", T(Text::MicDefaultInput), std::nullopt}); break;
     case RoutingSlot::MicOutput: items.push_back({L"", T(Text::MicAutomaticCable), std::nullopt}); break;
     case RoutingSlot::Media: items.push_back({L"", T(Text::RoutingMediaNone), std::nullopt}); break;
+    case RoutingSlot::Aux: items.push_back({L"", T(Text::RoutingAuxNone), std::nullopt}); break;
     case RoutingSlot::GameOutput:
     case RoutingSlot::ChatOutput:
     case RoutingSlot::MediaOutput:
+    case RoutingSlot::AuxOutput:
         items.push_back({L"", T(routing_.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput), std::nullopt});
         break;
     case RoutingSlot::Game:
@@ -944,25 +959,29 @@ void Panel::DrawPickDevice() {
 
     // Pickers list connected devices only; the hint says where the others went. Virtual cables are what
     // the Game, Chat and cable slots are for, so only the output and microphone pickers leave them out.
-    const bool cables = pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat ||
-                        pickSlot_ == RoutingSlot::Media || pickSlot_ == RoutingSlot::MicOutput;
+    const bool source = pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat ||
+                        pickSlot_ == RoutingSlot::Media || pickSlot_ == RoutingSlot::Aux;
+    const bool cables = source || pickSlot_ == RoutingSlot::MicOutput;
     if (!cables) {
         std::erase_if(items, [](const AudioEndpoint& item) { return !item.id.empty() && IsVirtualEndpoint(item); });
     }
     // The channels play from virtual cables only: a headset or speakers there would loop the sound
     // into itself and be switched off with the mode.
-    if (pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media) {
+    if (source) {
         std::erase_if(items, [](const AudioEndpoint& item) { return !item.id.empty() && !IsVirtualEndpoint(item); });
     }
-    // Media cannot share the Game or Chat device.
-    if (pickSlot_ == RoutingSlot::Media) {
-        std::erase_if(items, [this](const AudioEndpoint& item) {
+    // Media and Aux cannot share the Game or Chat device, nor each other's while the other group is on.
+    if (pickSlot_ == RoutingSlot::Media || pickSlot_ == RoutingSlot::Aux) {
+        const bool media = pickSlot_ == RoutingSlot::Media;
+        const std::wstring& other = routing_.ids[static_cast<int>(media ? RoutingSlot::Aux : RoutingSlot::Media)];
+        const bool otherOn = media ? settings_.auxGroup : settings_.mediaGroup;
+        std::erase_if(items, [this, &other, otherOn](const AudioEndpoint& item) {
             return !item.id.empty() && (item.id == routing_.ids[static_cast<int>(RoutingSlot::Game)] ||
-                                        item.id == routing_.ids[static_cast<int>(RoutingSlot::Chat)]);
+                                        item.id == routing_.ids[static_cast<int>(RoutingSlot::Chat)] ||
+                                        (otherOn && item.id == other));
         });
     }
-    const bool channel = pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media;
-    const wchar_t* hintText = T(channel  ? Text::ChannelDevicesHint
+    const wchar_t* hintText = T(source   ? Text::ChannelDevicesHint
                                 : cables ? Text::DisabledDevicesHint
                                          : Text::HiddenDevicesHint);
     const float listTop = PageHint(hintText, kHeaderHeight);

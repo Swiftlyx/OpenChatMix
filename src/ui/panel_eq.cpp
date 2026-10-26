@@ -84,6 +84,7 @@ ChannelColors ColorsOf(const Palette& p, EqChannel channel) {
     // The palette has no plain secondary tone; the container pair stands in for it.
     case EqChannel::Mic: return {p.onSecondaryContainer, p.secondaryContainer, p.primary, p.onPrimary};
     case EqChannel::Media: return {p.onSurfaceVariant, p.surfaceContainerHighest, p.secondaryContainer, p.onSecondaryContainer};
+    case EqChannel::Aux: return {p.secondary, p.surfaceContainerHighest, p.secondaryContainer, p.onSecondaryContainer};
     case EqChannel::Game: break;
     }
     return {p.primary, p.onPrimary, p.primaryContainer, p.onPrimaryContainer};
@@ -94,6 +95,7 @@ const wchar_t* ChannelName(EqChannel channel) {
     case EqChannel::Chat: return T(Text::Chat);
     case EqChannel::Mic: return T(Text::Microphone);
     case EqChannel::Media: return T(Text::Media);
+    case EqChannel::Aux: return T(Text::Aux);
     case EqChannel::Game: break;
     }
     return T(Text::Game);
@@ -128,6 +130,9 @@ std::vector<EqChannel> Panel::EqChannels() const {
         channels = {EqChannel::Game, EqChannel::Chat};
         if (routing_.mediaRouted) {
             channels.push_back(EqChannel::Media);
+        }
+        if (routing_.auxRouted) {
+            channels.push_back(EqChannel::Aux);
         }
     }
     if (settings_.mic.enabled) {
@@ -312,6 +317,7 @@ void Panel::DrawEqualizerPage() {
         labels.push_back(channel == EqChannel::Game    ? T(Text::Game)
                          : channel == EqChannel::Chat  ? T(Text::Chat)
                          : channel == EqChannel::Media ? T(Text::Media)
+                         : channel == EqChannel::Aux   ? T(Text::Aux)
                                                        : T(Text::MicShort));
     }
     // Narrower segments when three or four channels share the title row.

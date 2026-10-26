@@ -346,7 +346,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Virtual device",  // RoutingDevice
     L"Plays on",  // RoutingPlaysOn
     L"Media device",  // RoutingMediaDevice
-    L"Apps that are not in Chat or Media play into this device. While the mode runs it is the default output, so the taskbar slider and the volume keys control it and the channels that play with it.",  // RoutingGameHint
+    L"Apps that are not in Chat, Media or Aux play into this device. While the mode runs it is the default output, so the taskbar slider and the volume keys control it and the channels that play with it.",  // RoutingGameHint
     L"Apps in the Chat group play into this device. While the mode runs it is the default communications device, so calls land here too. ChatMix balances it against Game.",  // RoutingChatHint
     L"Media gets a virtual cable of its own, for example a third VB-Audio or Virtual Audio Cable; choosing one is up to you. ChatMix never changes it, its own Windows volume does. Don't pick the cable your microphone plays into. Without one, Media plays with Game.",  // RoutingMediaHint
     L"Line out",  // LineOut
@@ -534,6 +534,17 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Your voice on the headset's microphone, set in the headset itself: no virtual cable and no added latency.",  // MicEqHint
     L"Leave out of ChatMix: the app keeps its own volume",  // TipLeaveOutOfChatMix
     L"out of ChatMix",  // OutOfChatMix
+    L"Aux",  // Aux
+    L"Apps here ignore ChatMix; the Aux slider on the mixer sets their volume.",  // GroupAuxHint
+    L"Aux group",  // AuxGroupToggle
+    L"A second group like Media, as Aux in SteelSeries Sonar: its apps ignore ChatMix and have a volume of their own. In virtual device mode Aux needs a virtual device of its own.",  // AuxGroupHint
+    L"None · Aux plays with Game",  // RoutingAuxNone
+    L"Aux device",  // RoutingAuxDevice
+    L"Aux gets a virtual cable of its own, apart from Media's; choosing one is up to you. ChatMix never changes it, its own Windows volume does. Don't pick the cable your microphone plays into. Without one, Aux plays with Game.",  // RoutingAuxHint
+    L"Aux equalizer",  // ProfileAuxEq
+    L"Mute aux",  // MuteAux
+    L"Aux muted",  // AuxMuted
+    L"Aux unmuted",  // AuxUnmuted
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -874,7 +885,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Віртуальний пристрій",
     L"Відтворення на",
     L"Пристрій для медіа",
-    L"Програми, що не входять у «Чат» чи «Медіа», виводять звук на цей пристрій. Поки режим працює, він є типовим пристроєм виводу, тож повзунок на панелі завдань і клавіші гучності керують ним і каналами, що відтворюються разом із ним.",
+    L"Програми, що не входять у «Чат», «Медіа» чи «Aux», виводять звук на цей пристрій. Поки режим працює, він є типовим пристроєм виводу, тож повзунок на панелі завдань і клавіші гучності керують ним і каналами, що відтворюються разом із ним.",
     L"Програми з групи «Чат» виводять звук на цей пристрій. Поки режим працює, він є типовим пристроєм зв'язку, тож дзвінки теж ідуть сюди. ChatMix урівноважує його з грою.",
     L"«Медіа» отримує власний віртуальний кабель, наприклад третій VB-Audio чи Virtual Audio Cable; який саме — обираєте ви. ChatMix його не змінює — лише власна гучність у Windows. Не обирайте кабель, на який виводиться мікрофон. Без нього «Медіа» відтворюється разом із грою.",
     L"Лінійний вихід",
@@ -1062,6 +1073,17 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Ваш голос у мікрофоні гарнітури, налаштовується в самій гарнітурі: без віртуального кабелю й без додаткової затримки.",
     L"Прибрати з ChatMix: програма матиме власну гучність",
     L"поза ChatMix",
+    L"Aux",
+    L"Ці програми не залежать від ChatMix; їхню гучність задає повзунок «Aux» у мікшері.",
+    L"Група «Aux»",
+    L"Друга група на кшталт «Медіа», як Aux у SteelSeries Sonar: її програми не залежать від ChatMix і мають власну гучність. У режимі віртуальних пристроїв «Aux» потребує окремого віртуального пристрою.",
+    L"Немає · «Aux» відтворюється разом із грою",
+    L"Пристрій для Aux",
+    L"«Aux» отримує власний віртуальний кабель, окремий від кабелю «Медіа»; який саме — обираєте ви. ChatMix його не змінює — лише власна гучність у Windows. Не обирайте кабель, на який виводиться мікрофон. Без нього «Aux» відтворюється разом із грою.",
+    L"Еквалайзер Aux",
+    L"Вимкнути звук Aux",
+    L"Звук Aux вимкнено",
+    L"Звук Aux увімкнено",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

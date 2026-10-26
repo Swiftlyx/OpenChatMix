@@ -531,6 +531,17 @@ enum class Text {
     MicEqHint,
     TipLeaveOutOfChatMix,
     OutOfChatMix,
+    Aux,
+    GroupAuxHint,
+    AuxGroupToggle,
+    AuxGroupHint,
+    RoutingAuxNone,
+    RoutingAuxDevice,
+    RoutingAuxHint,
+    ProfileAuxEq,
+    MuteAux,
+    AuxMuted,
+    AuxUnmuted,
     Count,
 };
 

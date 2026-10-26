@@ -56,6 +56,7 @@ inline constexpr wchar_t kGlyphMixer = 0xF4C3;
 inline constexpr wchar_t kGlyphEqualizer = 0xE9E9;
 inline constexpr wchar_t kGlyphPalette = 0xE790;
 inline constexpr wchar_t kGlyphVolume = 0xE767;
+inline constexpr wchar_t kGlyphApps = 0xF0E2;  // GridView, the Aux group.
 inline constexpr wchar_t kGlyphKeyboard = 0xE765;
 inline constexpr wchar_t kGlyphBell = 0xEA8F;
 inline constexpr wchar_t kGlyphDelete = 0xE74D;
@@ -217,6 +218,9 @@ enum : uint32_t {
     kIdNoiseScreen,
     kIdPageScrollbar,
     kIdMediaVolume,
+    kIdAuxGroup,
+    kIdProfileAuxEq,
+    kIdAuxVolume,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,
@@ -254,8 +258,8 @@ inline constexpr uint32_t kShapeChannel = 0xF1;
 inline constexpr uint32_t kPressChannel = 0xF2;
 inline constexpr uint32_t kSelectChannel = 0xF3;
 
-inline constexpr AppGroup kGroups[] = {AppGroup::Game, AppGroup::Chat, AppGroup::Media};
-inline constexpr AppGroup kAddGroups[] = {AppGroup::Chat, AppGroup::Media};
+inline constexpr AppGroup kGroups[] = {AppGroup::Game, AppGroup::Chat, AppGroup::Media, AppGroup::Aux};
+inline constexpr AppGroup kAddGroups[] = {AppGroup::Chat, AppGroup::Media, AppGroup::Aux};
 inline constexpr Language kLanguages[] = {Language::English, Language::Ukrainian};
 // Language names are shown in their own language regardless of the current UI language.
 inline constexpr const wchar_t* kLanguageLabels[] = {L"English", L"Українська"};

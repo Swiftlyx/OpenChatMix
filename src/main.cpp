@@ -96,6 +96,7 @@ constexpr wchar_t kGlyphMute = 0xE74F;
 constexpr wchar_t kGlyphChat = 0xE8BD;
 constexpr wchar_t kGlyphGame = 0xE7FC;
 constexpr wchar_t kGlyphMedia = 0xE767;  // Volume, as the Media group.
+constexpr wchar_t kGlyphAux = 0xF0E2;    // GridView, as the Aux group.
 constexpr wchar_t kGlyphSpeakers = 0xE7F5;
 constexpr wchar_t kGlyphMicrophone = 0xE720;
 constexpr wchar_t kGlyphScreensaver = 0xE7F4;  // TVMonitor.
@@ -224,8 +225,9 @@ struct LoadedPlugins {
 };
 
 // The microphone chain and the virtual device channels.
-constexpr EqChannel kPluginChains[] = {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media};
-constexpr EqChannel kOutputChains[] = {EqChannel::Game, EqChannel::Chat, EqChannel::Media};
+constexpr EqChannel kPluginChains[] = {EqChannel::Mic, EqChannel::Game, EqChannel::Chat, EqChannel::Media,
+                                       EqChannel::Aux};
+constexpr EqChannel kOutputChains[] = {EqChannel::Game, EqChannel::Chat, EqChannel::Media, EqChannel::Aux};
 
 struct App {
     HINSTANCE instance = nullptr;
@@ -309,6 +311,7 @@ struct App {
     bool chatMuted = false;
     bool gameMuted = false;
     bool mediaMuted = false;
+    bool auxMuted = false;
     float duck = 0.0f;  // Share of the ducking amount applied to the Game side, 0-1.
     ULONGLONG chatActiveTick = 0;
     bool batteryWarned = false;
@@ -319,6 +322,7 @@ struct App {
         std::optional<EqChannelSettings> gameEq;
         std::optional<EqChannelSettings> chatEq;
         std::optional<EqChannelSettings> mediaEq;
+        std::optional<EqChannelSettings> auxEq;
         int headsetEq = -1;
     } profileRestore;
     TrayMotion tray;
@@ -953,7 +957,7 @@ void RefreshOutputName() {
 
 bool IsRoutingDevice(const std::wstring& id) {
     const RoutingSettings& routing = g_app.settings.routing;
-    return !id.empty() && (id == routing.game || id == routing.chat || id == routing.media);
+    return !id.empty() && (id == routing.game || id == routing.chat || id == routing.media || id == routing.aux);
 }
 
 // Whether a playback device is a virtual cable. Only those are ever switched off or used as a channel's
@@ -976,13 +980,25 @@ bool MediaRouted() {
     return settings.routing.enabled && settings.mediaGroup && !settings.routing.media.empty();
 }
 
+// The same for Aux.
+bool AuxRouted() {
+    const Settings& settings = g_app.settings;
+    return settings.routing.enabled && settings.auxGroup && !settings.routing.aux.empty();
+}
+
 // The devices virtual device mode would use now; empty channel outputs become the shared output.
 RoutingPlan CurrentRoutingPlan() {
     const RoutingSettings& routing = g_app.settings.routing;
     const std::wstring output = RoutingOutputId(ListRenderEndpoints());
     auto resolve = [&](const std::wstring& id) { return id.empty() ? output : id; };
-    RoutingPlan plan{routing.game, routing.chat, MediaRouted() ? routing.media : L"",
-                     resolve(routing.gameOutput), resolve(routing.chatOutput), resolve(routing.mediaOutput)};
+    RoutingPlan plan{routing.game,
+                     routing.chat,
+                     MediaRouted() ? routing.media : L"",
+                     resolve(routing.gameOutput),
+                     resolve(routing.chatOutput),
+                     resolve(routing.mediaOutput),
+                     AuxRouted() ? routing.aux : L"",
+                     resolve(routing.auxOutput)};
     return plan;
 }
 
@@ -990,12 +1006,14 @@ RoutingPlan CurrentRoutingPlan() {
 // channel playing into a source.
 std::optional<Text> RoutingProblem(const RoutingPlan& plan) {
     if (plan.game.empty() || plan.chat.empty() || plan.gameOutput.empty() || plan.chatOutput.empty() ||
-        (!plan.media.empty() && plan.mediaOutput.empty())) {
+        (!plan.media.empty() && plan.mediaOutput.empty()) || (!plan.aux.empty() && plan.auxOutput.empty())) {
         return Text::RoutingNeedsDevices;
     }
     std::vector<std::wstring> sources{plan.game, plan.chat};
-    if (!plan.media.empty()) {
-        sources.push_back(plan.media);
+    for (const std::wstring* source : {&plan.media, &plan.aux}) {
+        if (!source->empty()) {
+            sources.push_back(*source);
+        }
     }
     for (size_t i = 0; i < sources.size(); ++i) {
         for (size_t j = i + 1; j < sources.size(); ++j) {
@@ -1004,7 +1022,7 @@ std::optional<Text> RoutingProblem(const RoutingPlan& plan) {
             }
         }
     }
-    for (const std::wstring* output : {&plan.gameOutput, &plan.chatOutput, &plan.mediaOutput}) {
+    for (const std::wstring* output : {&plan.gameOutput, &plan.chatOutput, &plan.mediaOutput, &plan.auxOutput}) {
         if (std::find(sources.begin(), sources.end(), *output) != sources.end()) {
             return Text::RoutingSameDevice;
         }
@@ -1033,6 +1051,9 @@ void AcquireRoutingDevices() {
     ok = SetEndpointEnabled(routing.chat, true) && ok;
     if (MediaRouted() && routing.media != routing.game && routing.media != routing.chat) {
         ok = SetEndpointEnabled(routing.media, true) && ok;
+    }
+    if (AuxRouted() && routing.aux != routing.game && routing.aux != routing.chat && routing.aux != routing.media) {
+        ok = SetEndpointEnabled(routing.aux, true) && ok;
     }
     ok = SetDefaultRenderEndpoint(routing.game, eConsole) && ok;
     ok = SetDefaultRenderEndpoint(routing.game, eMultimedia) && ok;
@@ -1071,8 +1092,13 @@ void ReleaseRoutingDevices(bool disable) {
     restore(routing.savedDefault, eMultimedia);
     restore(routing.savedCommunications, eCommunications);
     if (disable) {
-        for (const std::wstring* id : {&routing.game, &routing.chat, &routing.media}) {
-            if (id->empty() || (id == &routing.media && (routing.media == routing.game || routing.media == routing.chat))) {
+        for (const std::wstring* id : {&routing.game, &routing.chat, &routing.media, &routing.aux}) {
+            // A device shared with a channel before it is that channel's.
+            const bool shared =
+                (id == &routing.media && (routing.media == routing.game || routing.media == routing.chat)) ||
+                (id == &routing.aux &&
+                 (routing.aux == routing.game || routing.aux == routing.chat || routing.aux == routing.media));
+            if (id->empty() || shared) {
                 continue;
             }
             if (IsVirtualDeviceId(*id)) {
@@ -1155,6 +1181,7 @@ void UpdateRouting() {
     set(ui::RoutingSlot::Game, routing.game, nameOf(routing.game));
     set(ui::RoutingSlot::Chat, routing.chat, nameOf(routing.chat));
     set(ui::RoutingSlot::Media, routing.media, routing.media.empty() ? L"" : nameOf(routing.media));
+    set(ui::RoutingSlot::Aux, routing.aux, routing.aux.empty() ? L"" : nameOf(routing.aux));
     set(ui::RoutingSlot::Output, routing.output,
         routing.output.empty()
             ? std::wstring(T(Text::AutomaticHeadset)) + (outputId.empty() ? L"" : L" · " + nameOf(outputId))
@@ -1167,7 +1194,9 @@ void UpdateRouting() {
     channelOutput(ui::RoutingSlot::GameOutput, routing.gameOutput);
     channelOutput(ui::RoutingSlot::ChatOutput, routing.chatOutput);
     channelOutput(ui::RoutingSlot::MediaOutput, routing.mediaOutput);
+    channelOutput(ui::RoutingSlot::AuxOutput, routing.auxOutput);
     view.mediaRouted = MediaRouted();
+    view.auxRouted = AuxRouted();
     view.manageDevices = routing.manageDevices;
     view.cablesMissing = (routing.game.empty() || routing.chat.empty()) && !FindVirtualDevices(endpoints);
     if (routing.enabled) {
@@ -1207,9 +1236,12 @@ void StartRouting() {
         DropSonarDevices();
         AssignVirtualDevices();
         AcquireRoutingDevices();
-        // The Media device may come into use after the others were taken over, with the Media group.
+        // The Media and Aux devices may come into use after the others were taken over, with their groups.
         if (MediaRouted() && routing.manageDevices) {
             SetEndpointEnabled(routing.media, true);
+        }
+        if (AuxRouted() && routing.manageDevices) {
+            SetEndpointEnabled(routing.aux, true);
         }
         UpdateMixerEndpoints();
         const RoutingPlan plan = CurrentRoutingPlan();
@@ -1255,7 +1287,7 @@ void PushEqualizers() {
         return g_app.settings.equalizer && channel.enabled ? std::make_shared<const ParametricEq>(channel.eq) : nullptr;
     };
     g_app.router.SetEqualizers(equalizer(g_app.settings.gameEq), equalizer(g_app.settings.chatEq),
-                               equalizer(g_app.settings.mediaEq));
+                               equalizer(g_app.settings.mediaEq), equalizer(g_app.settings.auxEq));
 }
 
 // ---- Microphone chain -------------------------------------------------------------------------------
@@ -1553,7 +1585,7 @@ void UpdateMixerEndpoints() {
     const RoutingSettings& routing = g_app.settings.routing;
     std::vector<std::wstring> extra;
     if (routing.enabled) {
-        for (const std::wstring* id : {&routing.game, &routing.chat, &routing.media}) {
+        for (const std::wstring* id : {&routing.game, &routing.chat, &routing.media, &routing.aux}) {
             if (!id->empty()) {
                 extra.push_back(*id);
             }
@@ -1562,7 +1594,7 @@ void UpdateMixerEndpoints() {
         return;
     }
     // Devices the groups play on directly: their apps are listed and get the balance there.
-    for (const std::wstring* id : {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput}) {
+    for (const std::wstring* id : {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput, &routing.auxOutput}) {
         if (!id->empty() && std::find(extra.begin(), extra.end(), *id) == extra.end()) {
             extra.push_back(*id);
         }
@@ -1575,13 +1607,15 @@ void UpdateMixerEndpoints() {
 bool DirectGroupOutputs() {
     const RoutingSettings& routing = g_app.settings.routing;
     return !routing.enabled &&
-           (!routing.gameOutput.empty() || !routing.chatOutput.empty() || !routing.mediaOutput.empty());
+           (!routing.gameOutput.empty() || !routing.chatOutput.empty() || !routing.mediaOutput.empty() ||
+            !routing.auxOutput.empty());
 }
 
 std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& connected) {
     const RoutingSettings& routing = g_app.settings.routing;
     const std::wstring& id = group == AppGroup::Chat    ? routing.chatOutput
                              : group == AppGroup::Media ? routing.mediaOutput
+                             : group == AppGroup::Aux   ? routing.auxOutput
                                                         : routing.gameOutput;
     const bool present = std::any_of(connected.begin(), connected.end(),
                                      [&](const AudioEndpoint& endpoint) { return endpoint.id == id; });
@@ -1621,10 +1655,12 @@ void RouteApps() {
         const AppGroup group = g_app.settings.EffectiveGroupOf(app.exe);
         const bool chat = !ignored && group == AppGroup::Chat;
         const bool media = !ignored && group == AppGroup::Media && (direct || MediaRouted());
+        const bool aux = !ignored && group == AppGroup::Aux && (direct || AuxRouted());
         const std::wstring target = ignored ? outside
                                     : direct ? DirectTarget(group, connected)
                                     : chat   ? routing.chat
                                     : media  ? routing.media
+                                    : aux    ? routing.aux
                                              : (routing.manageDevices ? L"" : routing.game);
         const auto now = g_app.routedNow.find(app.exe);
         const bool listed = std::any_of(routing.routedApps.begin(), routing.routedApps.end(), [&](const std::wstring& exe) {
@@ -1638,7 +1674,12 @@ void RouteApps() {
             RememberRouted(app.exe, !target.empty());
             changed = true;
             Log("routed %s to %s", Utf8(app.exe).c_str(),
-                target.empty() ? "the default device" : ignored ? "the output" : chat ? "Chat" : media ? "Media" : "Game");
+                target.empty() ? "the default device"
+                : ignored      ? "the output"
+                : chat         ? "Chat"
+                : media        ? "Media"
+                : aux          ? "Aux"
+                               : "Game");
         }
     }
     if (changed) {
@@ -1715,8 +1756,10 @@ void RefreshApps() {
         Save();
     }
 
-    // Chat first, then Game, then Media; running apps before closed ones.
-    auto order = [](AppGroup group) { return group == AppGroup::Chat ? 0 : group == AppGroup::Game ? 1 : 2; };
+    // Chat first, then Game, Media and Aux; running apps before closed ones.
+    auto order = [](AppGroup group) {
+        return group == AppGroup::Chat ? 0 : group == AppGroup::Game ? 1 : group == AppGroup::Media ? 2 : 3;
+    };
     std::sort(items.begin(), items.end(), [&](const ui::AppItem& a, const ui::AppItem& b) {
         if (order(a.group) != order(b.group)) {
             return order(a.group) < order(b.group);
@@ -1766,12 +1809,14 @@ void ApplyLevels() {
     const Levels levels = EffectiveLevels();
     // Virtual device mode mixes the streams itself; until it runs, app volumes keep ChatMix working.
     const float media = g_app.mediaMuted ? 0.0f : g_app.settings.mediaVolume / 100.0f;
+    const float aux = g_app.auxMuted ? 0.0f : g_app.settings.auxVolume / 100.0f;
     if (g_app.settings.routing.enabled && g_app.router.IsRunning()) {
         g_app.router.SetLevels(levels);
         g_app.router.SetMediaLevel(media);
+        g_app.router.SetAuxLevel(aux);
         return;
     }
-    g_app.mixer.Apply(levels, g_app.settings, media);
+    g_app.mixer.Apply(levels, g_app.settings, media, aux);
 }
 
 void UpdateDucking() {
@@ -2475,7 +2520,8 @@ void RestoreProfile() {
     bool equalizers = false;
     for (auto [saved, state] : {std::pair{&restore.gameEq, &g_app.settings.gameEq},
                                 std::pair{&restore.chatEq, &g_app.settings.chatEq},
-                                std::pair{&restore.mediaEq, &g_app.settings.mediaEq}}) {
+                                std::pair{&restore.mediaEq, &g_app.settings.mediaEq},
+                                std::pair{&restore.auxEq, &g_app.settings.auxEq}}) {
         if (*saved) {
             *state = **saved;
             equalizers = true;
@@ -2528,6 +2574,7 @@ void ApplyProfile(const GameProfile& profile) {
     bool equalizers = applyEq(profile.gameEq, EqChannel::Game, g_app.settings.gameEq, restore.gameEq);
     equalizers = applyEq(profile.chatEq, EqChannel::Chat, g_app.settings.chatEq, restore.chatEq) || equalizers;
     equalizers = applyEq(profile.mediaEq, EqChannel::Media, g_app.settings.mediaEq, restore.mediaEq) || equalizers;
+    equalizers = applyEq(profile.auxEq, EqChannel::Aux, g_app.settings.auxEq, restore.auxEq) || equalizers;
     if (equalizers) {
         ScheduleSave();
         PushEqualizers();
@@ -2731,7 +2778,7 @@ void Host::OnBalanceChanged(int balance) {
 void Host::OnGroupChanged(const ui::AppItem& app, AppGroup group) {
     g_app.settings.ignoredApps.erase(app.exe);
     g_app.settings.SetGroup(app.exe, group, app.path);
-    if (group == AppGroup::Media) {
+    if (group == AppGroup::Media || group == AppGroup::Aux) {
         g_app.mixer.RestoreApp(app.exe);
     }
     Save();
@@ -2961,7 +3008,8 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
     if (slot == ui::RoutingSlot::MicInput || slot == ui::RoutingSlot::MicOutput) {
         return;  // The panel edits the microphone devices as settings.
     }
-    const bool source = slot == ui::RoutingSlot::Game || slot == ui::RoutingSlot::Chat || slot == ui::RoutingSlot::Media;
+    const bool source = slot == ui::RoutingSlot::Game || slot == ui::RoutingSlot::Chat ||
+                        slot == ui::RoutingSlot::Media || slot == ui::RoutingSlot::Aux;
     if (source && !id.empty() && !IsVirtualDeviceId(id)) {
         // A channel plays from a virtual cable only; a real device here would be looped and switched off.
         Log("routing: refused a device that is not a virtual cable");
@@ -2980,6 +3028,8 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
     case ui::RoutingSlot::GameOutput: routing.gameOutput = id; break;
     case ui::RoutingSlot::ChatOutput: routing.chatOutput = id; break;
     case ui::RoutingSlot::MediaOutput: routing.mediaOutput = id; break;
+    case ui::RoutingSlot::Aux: routing.aux = id; break;
+    case ui::RoutingSlot::AuxOutput: routing.auxOutput = id; break;
     case ui::RoutingSlot::MicInput:
     case ui::RoutingSlot::MicOutput: break;
     }
@@ -3178,22 +3228,23 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
     if (!(before.appearance == after.appearance)) {
         ApplyAppearance();
     }
-    if (before.mediaGroup != after.mediaGroup) {
-        // With a Media device the bridge for it starts or stops with the group.
-        if (after.routing.enabled && !after.routing.media.empty()) {
+    if (before.mediaGroup != after.mediaGroup || before.auxGroup != after.auxGroup) {
+        // With a Media or Aux device the bridge for it starts or stops with the group.
+        if (after.routing.enabled && ((before.mediaGroup != after.mediaGroup && !after.routing.media.empty()) ||
+                                      (before.auxGroup != after.auxGroup && !after.routing.aux.empty()))) {
             StartRouting();
         }
         ApplyLevels();
         RefreshApps();
     } else if (before.gameVolume != after.gameVolume || before.chatVolume != after.chatVolume ||
-               before.mediaVolume != after.mediaVolume) {
+               before.mediaVolume != after.mediaVolume || before.auxVolume != after.auxVolume) {
         ApplyLevels();
     }
     if (before.routing.autoRoute != after.routing.autoRoute) {
         SyncAppRouting();
     }
     if (!(before.gameEq == after.gameEq) || !(before.chatEq == after.chatEq) || !(before.mediaEq == after.mediaEq) ||
-        before.equalizer != after.equalizer) {
+        !(before.auxEq == after.auxEq) || before.equalizer != after.equalizer) {
         PushEqualizers();
     }
     if (before.equalizer != after.equalizer) {
@@ -3290,6 +3341,18 @@ void ToggleMediaMute() {
     if (g_app.settings.showPopup) {
         g_app.osd->ShowMessage(g_app.mediaMuted ? kGlyphMute : kGlyphMedia,
                                T(g_app.mediaMuted ? Text::MediaMuted : Text::MediaUnmuted), T(Text::Media));
+    }
+}
+
+void ToggleAuxMute() {
+    if (!g_app.settings.AuxAvailable()) {
+        return;
+    }
+    g_app.auxMuted = !g_app.auxMuted;
+    ApplyLevels();
+    if (g_app.settings.showPopup) {
+        g_app.osd->ShowMessage(g_app.auxMuted ? kGlyphMute : kGlyphAux,
+                               T(g_app.auxMuted ? Text::AuxMuted : Text::AuxUnmuted), T(Text::Aux));
     }
 }
 
@@ -3629,10 +3692,12 @@ ui::Meters Host::ReadMeters() {
         meters.game = g_app.router.TakeGameMeter();
         meters.chat = g_app.router.TakeChatMeter();
         meters.media = g_app.router.TakeMediaMeter();
+        meters.aux = g_app.router.TakeAuxMeter();
     } else {
         meters.game = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Game, true);
         meters.chat = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Chat, true);
         meters.media = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Media, true);
+        meters.aux = g_app.mixer.GroupPeak(g_app.settings, AppGroup::Aux, true);
     }
     meters.mic = g_app.mic.IsRunning() ? g_app.mic.TakePeak() : 0.0f;
     return meters;
@@ -3649,7 +3714,7 @@ bool Host::OnSettingsExport(const std::wstring& path) {
     const App::ProfileRestore& restore = g_app.profileRestore;
     own.levels = restore.levels.value_or(g_app.levels);
     for (auto [saved, state] : {std::pair{&restore.gameEq, &own.gameEq}, std::pair{&restore.chatEq, &own.chatEq},
-                                std::pair{&restore.mediaEq, &own.mediaEq}}) {
+                                std::pair{&restore.mediaEq, &own.mediaEq}, std::pair{&restore.auxEq, &own.auxEq}}) {
         if (*saved) {
             *state = **saved;
         }
@@ -3754,6 +3819,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             break;
         case kHotkeyMuteMedia:
             ToggleMediaMute();
+            break;
+        case kHotkeyMuteAux:
+            ToggleAuxMute();
             break;
         case kHotkeyNextOutput:
             NextOutputDevice();
