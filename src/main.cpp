@@ -2534,6 +2534,9 @@ void ConnectDevice() {
     NotifyGg();
     if (g_app.settings.routing.enabled && g_app.settings.routing.output.empty()) {
         StartRouting();
+    } else if (!g_app.settings.routing.enabled) {
+        // Apps that already play move to the devices of a headset that mixes by its dial.
+        SyncAppRouting();
     }
 }
 
@@ -2566,6 +2569,10 @@ void HandleDeviceLost() {
     UpdateStatus();
     PushHeadset();
     RefreshApps();
+    if (!g_app.settings.routing.enabled) {
+        // Apps sent to the devices of a headset that mixes by its dial go back to the default.
+        SyncAppRouting();
+    }
     if (g_app.settings.routing.enabled) {
         UpdateRouting();
     }
