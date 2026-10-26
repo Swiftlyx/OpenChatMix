@@ -900,11 +900,55 @@ void SendExtraEqualizer(ExtraEqualizer which, const EqCurve& curve, int preset) 
 }
 
 // Endpoint ID of the routing output: the chosen device or the connected SteelSeries headset.
+// The connected headset mixes Game and Chat itself by its dial (the Arctis 7).
+bool HeadsetMixes() {
+    return g_app.device.IsOpen() && MixesInHeadset(*g_app.device.Model());
+}
+
+// The Game and Chat playback devices of a headset that mixes by its dial, such as "Arctis 7 Game" and
+// "Arctis 7 Chat"; both empty while it is not connected or shows only one.
+struct HeadsetSides {
+    std::wstring game;
+    std::wstring chat;
+};
+
+HeadsetSides MixingHeadsetSides(const std::vector<AudioEndpoint>& endpoints) {
+    HeadsetSides sides;
+    if (!HeadsetMixes()) {
+        return sides;
+    }
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.steelSeriesProductId != g_app.device.Model()->productId) {
+            continue;
+        }
+        // The parentheses of the Windows name hold the headset's own name for the device, which is not translated.
+        const size_t open = endpoint.name.rfind(L'(');
+        std::wstring own = open == std::wstring::npos ? endpoint.name : endpoint.name.substr(open);
+        CharLowerBuffW(own.data(), static_cast<DWORD>(own.size()));
+        std::wstring& side = own.find(L"chat") != std::wstring::npos ? sides.chat : sides.game;
+        if (side.empty()) {
+            side = endpoint.id;
+        }
+    }
+    return sides.game.empty() || sides.chat.empty() ? HeadsetSides{} : sides;
+}
+
+// The same while one of the two is the Windows default output, so the headset is what plays.
+HeadsetSides DefaultHeadsetSides(const std::vector<AudioEndpoint>& endpoints) {
+    const HeadsetSides sides = MixingHeadsetSides(endpoints);
+    const std::wstring current = DefaultRenderEndpoint(eConsole);
+    return !sides.game.empty() && (current == sides.game || current == sides.chat) ? sides : HeadsetSides{};
+}
+
 std::wstring RoutingOutputId(const std::vector<AudioEndpoint>& endpoints) {
     if (!g_app.settings.routing.output.empty()) {
         return g_app.settings.routing.output;
     }
     if (g_app.device.IsOpen()) {
+        // A headset with Game and Chat devices of its own takes the mix on its Game device.
+        if (const HeadsetSides sides = MixingHeadsetSides(endpoints); !sides.game.empty()) {
+            return sides.game;
+        }
         for (const auto& endpoint : endpoints) {
             if (endpoint.steelSeriesProductId == g_app.device.Model()->productId) {
                 return endpoint.id;
@@ -989,13 +1033,26 @@ bool AuxRouted() {
 // The devices virtual device mode would use now; empty channel outputs become the shared output.
 RoutingPlan CurrentRoutingPlan() {
     const RoutingSettings& routing = g_app.settings.routing;
-    const std::wstring output = RoutingOutputId(ListRenderEndpoints());
-    auto resolve = [&](const std::wstring& id) { return id.empty() ? output : id; };
+    const std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
+    const std::wstring output = RoutingOutputId(endpoints);
+    // On a headset that mixes by its dial, Chat plays on its Chat device and the other channels on its Game device,
+    // so the dial balances them.
+    const HeadsetSides sides = MixingHeadsetSides(endpoints);
+    const bool onHeadset = !sides.game.empty() && (output == sides.game || output == sides.chat);
+    auto resolve = [&](const std::wstring& id, bool chat = false) -> std::wstring {
+        if (!id.empty()) {
+            return id;
+        }
+        if (onHeadset) {
+            return chat ? sides.chat : sides.game;
+        }
+        return output;
+    };
     RoutingPlan plan{routing.game,
                      routing.chat,
                      MediaRouted() ? routing.media : L"",
                      resolve(routing.gameOutput),
-                     resolve(routing.chatOutput),
+                     resolve(routing.chatOutput, true),
                      resolve(routing.mediaOutput),
                      AuxRouted() ? routing.aux : L"",
                      resolve(routing.auxOutput)};
@@ -1604,11 +1661,12 @@ void UpdateMixerEndpoints() {
 
 // Without virtual devices, a group whose device is chosen plays there through the per-app device of
 // Windows; the others follow the Windows default. A chosen device that is not connected counts as none.
+// A headset that mixes by its dial gets Game and Chat on its own devices while it is the default output.
 bool DirectGroupOutputs() {
     const RoutingSettings& routing = g_app.settings.routing;
     return !routing.enabled &&
            (!routing.gameOutput.empty() || !routing.chatOutput.empty() || !routing.mediaOutput.empty() ||
-            !routing.auxOutput.empty());
+            !routing.auxOutput.empty() || (HeadsetMixes() && !DefaultHeadsetSides(ListRenderEndpoints()).game.empty()));
 }
 
 std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& connected) {
@@ -1619,7 +1677,15 @@ std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& conn
                                                         : routing.gameOutput;
     const bool present = std::any_of(connected.begin(), connected.end(),
                                      [&](const AudioEndpoint& endpoint) { return endpoint.id == id; });
-    return present ? id : std::wstring();
+    if (present) {
+        return id;
+    }
+    // A headset that mixes by its dial, while it plays: Chat on its Chat device, the others on its Game device.
+    const HeadsetSides sides = DefaultHeadsetSides(connected);
+    if (!sides.game.empty()) {
+        return group == AppGroup::Chat ? sides.chat : sides.game;
+    }
+    return {};
 }
 
 void RememberRouted(const std::wstring& exe, bool routed) {
@@ -1788,7 +1854,8 @@ Levels DialLevels(Levels levels) {
 
 // The balance with chat mute and ducking applied; the dial and the panel keep showing the balance itself.
 Levels EffectiveLevels() {
-    Levels levels = g_app.levels;
+    // The dial of a headset that mixes by itself is already heard; the app's balance stays out of the way.
+    Levels levels = HeadsetMixes() ? Levels{} : g_app.levels;
     // Each side's own volume scales its ChatMix level; Windows volumes stay at 100%.
     levels.game = static_cast<int>(std::lround(levels.game * g_app.settings.gameVolume / 100.0f));
     levels.chat = static_cast<int>(std::lround(levels.chat * g_app.settings.chatVolume / 100.0f));
@@ -1853,6 +1920,11 @@ void TickDucking() {
 
 // fromDevice: the change came from the headset dial and must not be echoed back to it.
 void SetLevels(Levels levels, bool fromDevice) {
+    // Only the dial moves the balance of a headset that mixes by itself; the panel goes back to it.
+    if (!fromDevice && HeadsetMixes()) {
+        g_app.panel->SetLevels(g_app.levels);
+        return;
+    }
     if (levels == g_app.levels) {
         return;
     }
@@ -4011,8 +4083,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             g_app.mixer.Rebind();
             ApplyLevels();
             RefreshApps();
-            // A group's device that came or went: its apps move there or back to the default.
-            if (DirectGroupOutputs()) {
+            // A group's device that came or went, or a new default output: its apps move there or back to the default.
+            if (!g_app.settings.routing.enabled) {
                 SyncAppRouting();
             }
             if (g_app.settings.routing.enabled && !g_app.router.IsRunning()) {

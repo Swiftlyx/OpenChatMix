@@ -25,9 +25,11 @@ constexpr uint8_t kNovaProLinkEvent = 0xB5;      // The 2.4 GHz link to the head
 constexpr uint8_t kNovaProBatteryEvent = 0xB7;   // Headset or spare battery level changed.
 constexpr uint8_t kNovaStatusRequest = 0xB0;
 constexpr uint8_t kNovaStatusLinkEvent = 0xB9;   // Dongles: the 2.4 GHz link to the headset changed.
+constexpr uint8_t kArctis7DialRequest = 0x24;    // Arctis 7: answered with 06 24 [game] [chat].
 
 constexpr DWORD kCommandGapMs = 10;
 constexpr DWORD kStatusPollMs = 100;
+constexpr DWORD kArctis7PollMs = 250;  // The dial only shows in the panel, so a slower poll will do.
 constexpr ULONGLONG kBatteryPollMs = 30000;
 constexpr DWORD kReaderStopTimeoutMs = 2000;
 
@@ -42,14 +44,21 @@ constexpr ProtocolLayout kNovaProLayout{4, 0x06, {4, -1}, false};
 constexpr ProtocolLayout kNovaStatusLayout{3, 0x00, {3, 5}, true};
 // Commands and their replies on page FFC0, events on page FF00, both on interface 3.
 constexpr ProtocolLayout kEliteLayout{3, 0x01, {3, -1}, false};
+constexpr ProtocolLayout kArctis7Layout{5, 0x06, {5, -1}, true};
 
 const ProtocolLayout& LayoutFor(const DeviceModel& model) {
     switch (model.protocol) {
     case DeviceProtocol::NovaPro: return kNovaProLayout;
     case DeviceProtocol::Elite: return kEliteLayout;
+    case DeviceProtocol::ArctisLegacy: return kArctis7Layout;
     case DeviceProtocol::NovaStatus: break;
     }
     return kNovaStatusLayout;
+}
+
+// What a polled device is asked for every poll.
+uint8_t PollRequest(const DeviceModel& model) {
+    return model.protocol == DeviceProtocol::ArctisLegacy ? kArctis7DialRequest : kNovaStatusRequest;
 }
 
 // Base stations that push 07 events: the dial, the knob and the menu, as on the GameDAC.
@@ -213,7 +222,7 @@ void ChatMixDevice::Start(Levels levels) {
         Sleep(kCommandGapMs);
         Send({kNovaProChatMixEnable, 1});
     } else {
-        Send({kNovaStatusRequest});
+        Send({PollRequest(*model_)});
     }
     // Read-only queries; their answers arrive as headset updates.
     const HeadsetFeatures& features = FeaturesFor(model_->family);
@@ -315,8 +324,8 @@ bool ChatMixDevice::Send(std::span<const uint8_t> payload) {
     std::vector<uint8_t> report(outputLength_, 0);
     report[0] = reportId_;
     std::copy(payload.begin(), payload.end(), report.begin() + 1);
-    // Status polls repeat every 100 ms; only their first failure and recovery are logged.
-    const bool poll = model_ && model_->protocol == DeviceProtocol::NovaStatus && payload[0] == kNovaStatusRequest;
+    // Status polls repeat several times a second; only their first failure and recovery are logged.
+    const bool poll = model_ && LayoutFor(*model_).polled && payload[0] == PollRequest(*model_);
     DWORD written = 0;
     if (!WriteFile(command_, report.data(), static_cast<DWORD>(report.size()), &written, nullptr)) {
         const DWORD error = GetLastError();
@@ -356,7 +365,7 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
     // Settings replies are logged in full, other reports by their first bytes; everything from an experimental
     // model in full, so its log shows what it sends.
     const bool state = model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[1] == 0x20;
-    const bool full = state || model_->protocol == DeviceProtocol::Elite;
+    const bool full = state || model_->protocol == DeviceProtocol::Elite || model_->protocol == DeviceProtocol::ArctisLegacy;
     const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, full ? 32 : 8));
     if (current != channel.last) {
         Log("rx %s", HexBytes(current.data(), current.size()).c_str());
@@ -434,7 +443,8 @@ void ChatMixDevice::ReadLoop() {
     const uint8_t batteryQuery = FeaturesFor(model_->family).batteryQuery;
     ULONGLONG nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
     while (!lost) {
-        DWORD timeout = polled && !pushEventsSeen_ ? kStatusPollMs : INFINITE;
+        const DWORD pollMs = model_->protocol == DeviceProtocol::ArctisLegacy ? kArctis7PollMs : kStatusPollMs;
+        DWORD timeout = polled && !pushEventsSeen_ ? pollMs : INFINITE;
         if (batteryQuery) {
             const ULONGLONG now = GetTickCount64();
             timeout = std::min<DWORD>(timeout, nextBatteryPoll > now ? static_cast<DWORD>(nextBatteryPoll - now) : 0);
@@ -446,7 +456,7 @@ void ChatMixDevice::ReadLoop() {
                 nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
             }
             if (polled && !pushEventsSeen_) {
-                Send({kNovaStatusRequest});
+                Send({PollRequest(*model_)});
             }
             continue;
         }

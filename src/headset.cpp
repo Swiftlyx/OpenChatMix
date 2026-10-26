@@ -518,6 +518,22 @@ const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
     return nullptr;
 }
 
+// Arctis 7 of 2017 and 2019, as HeadsetControl documents it: auto-off 06 51 [minutes, 0-90], the battery in percent
+// in the answer to 06 18, and 06 09 to keep a setting.
+constexpr SettingSpec kArctis7Power[] = {
+    {0x51, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts},
+};
+constexpr SettingSection kArctis7Sections[] = {
+    {Power, kArctis7Power},
+};
+constexpr uint8_t kArctis7Battery = 0x18;
+const HeadsetFeatures kArctis7{
+    .sections = kArctis7Sections,
+    .save = kSaveState,
+    .batteryQuery = kArctis7Battery,
+    .experimental = true,
+};
+
 const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     switch (family) {
     case DeviceFamily::NovaProWired: return kNovaProWired;
@@ -526,6 +542,7 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     case DeviceFamily::Nova7Gen2: return kNova7Gen2;
     case DeviceFamily::Arctis7Plus: return kArctis7Plus;
     case DeviceFamily::NovaElite: return kNovaElite;
+    case DeviceFamily::Arctis7: return kArctis7;
     case DeviceFamily::Nova5X: break;
     }
     return kNova5X;
@@ -539,6 +556,13 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
     if (model.protocol == DeviceProtocol::NovaStatus) {
         if (const auto battery = ParseStatusBattery(model, data, size)) {
             updates.push_back(*battery);
+        }
+        return updates;
+    }
+    if (model.protocol == DeviceProtocol::ArctisLegacy) {
+        // 06 18 [battery 0-100]; the answer tells nothing about charging.
+        if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Battery) {
+            updates.push_back({.kind = HeadsetUpdate::Kind::Battery, .value = std::min<int>(data[2], 100)});
         }
         return updates;
     }

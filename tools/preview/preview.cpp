@@ -73,6 +73,7 @@ const Choice kChoices[] = {
     {DeviceFamily::Arctis7Plus, Other::None, true, L"Arctis 7+"},
     {DeviceFamily::Nova5X, Other::None, true, L"Arctis Nova 5X"},
     {DeviceFamily::NovaElite, Other::None, true, L"Arctis Nova Elite"},
+    {DeviceFamily::Arctis7, Other::None, true, L"Arctis 7"},
     {DeviceFamily::NovaProWired, Other::UsbHeadset, false, L"Headset (USB Audio Device)"},
     {DeviceFamily::NovaProWired, Other::BluetoothHeadset, false, L"Headphones (Bluetooth)"},
     {DeviceFamily::NovaProWired, Other::Speakers, false, L"Speakers (High Definition Audio Device)"},

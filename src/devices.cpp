@@ -42,7 +42,16 @@ constexpr DeviceModel kModels[] = {
     // Experimental: from HeadsetControl issue #481 (captures of a real base station) and Linux-Arctis-Manager.
     {0x2244, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
     {0x2270, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
+    // Experimental: the protocol as HeadsetControl documents it.
+    {0x1260, L"Arctis 7", ArctisLegacy, Arctis7, 0, 0},
+    {0x12AD, L"Arctis 7 (2019)", ArctisLegacy, Arctis7, 0, 0},
 };
+
+// The Arctis 7 reports each side's cut by its dial as a signed step count: 0 is full, about -64 silent.
+int Arctis7Level(uint8_t value) {
+    const int steps = -static_cast<int8_t>(value);
+    return std::clamp(100 - steps * 100 / 64, 0, 100);
+}
 
 std::optional<unsigned> ParseHexAfter(std::wstring_view path, std::wstring_view marker, size_t digits) {
     std::wstring lower(path);
@@ -117,6 +126,16 @@ std::optional<Levels> ParseChatMixReport(const DeviceModel& model, const uint8_t
         }
         break;
     }
+    case ArctisLegacy:
+        // 06 24 [game] [chat], the answer to the poll.
+        if (size >= 4 && data[0] == 0x06 && data[1] == 0x24) {
+            return Levels{Arctis7Level(data[2]), Arctis7Level(data[3])};
+        }
+        break;
     }
     return std::nullopt;
+}
+
+bool MixesInHeadset(const DeviceModel& model) {
+    return model.protocol == ArctisLegacy;
 }

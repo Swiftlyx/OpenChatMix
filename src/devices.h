@@ -19,6 +19,9 @@ enum class DeviceProtocol {
     // Nova Elite base station (experimental): like the Nova Pro, but on interface 3 and with report ID 0x01 for
     // commands and their replies; events still arrive as report ID 0x07.
     Elite,
+    // Arctis 7 of 2017 and 2019 (experimental): 31-byte reports with report ID 0x06 on interface 5, answered on the
+    // same interface. Its dial mixes the Game and Chat devices in the headset; 06 24 asks where it stands.
+    ArctisLegacy,
 };
 
 // Selects the set of native headset settings (see headset.h).
@@ -30,6 +33,7 @@ enum class DeviceFamily {
     Arctis7Plus,
     Nova5X,
     NovaElite,
+    Arctis7,
 };
 
 struct DeviceModel {
@@ -44,6 +48,8 @@ struct DeviceModel {
 
 std::span<const DeviceModel> SupportedDevices();
 const DeviceModel* FindDeviceModel(uint16_t productId);
+// The headset mixes Game and Chat itself by its dial, so the app adds no balance of its own.
+bool MixesInHeadset(const DeviceModel& model);
 
 // Parses "vid_1038&pid_xxxx" and "&mi_xx" from a device path or hardware ID (case-insensitive).
 std::optional<uint16_t> ParseSteelSeriesProductId(std::wstring_view path);
