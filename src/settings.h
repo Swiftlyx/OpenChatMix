@@ -257,6 +257,7 @@ struct Settings {
     std::map<std::wstring, std::vector<unsigned long long>> ggHeartbeats;
     std::vector<AddOnSettings> addOns;
     bool firstRun = false;                             // The ini file did not exist when loaded.
+    bool portable = false;                             // Loaded from next to the executable; not a stored key.
 
     AppGroup GroupOf(const std::wstring& exe) const;
     // The group that applies now: Media and Aux count as Game while they are not available.
@@ -279,6 +280,9 @@ std::wstring ExeDirectory();
 // Next to the executable when OpenChatMix.ini already lives there (portable mode),
 // otherwise %APPDATA%\OpenChatMix. The directory is created on demand.
 std::wstring ConfigDirectory();
+// %APPDATA%\OpenChatMix, created on demand, whether or not the settings are portable; the executable's folder if
+// Windows has no application data folder.
+std::wstring AppDataDirectory();
 // Writes the Log key at once, for the switch in Settings; Save keeps a Log key that exists.
 void SaveLogSetting(const std::wstring& path, bool log);
 

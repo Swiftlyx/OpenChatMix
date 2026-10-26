@@ -221,6 +221,7 @@ enum : uint32_t {
     kIdAuxGroup,
     kIdProfileAuxEq,
     kIdAuxVolume,
+    kIdPortable,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,

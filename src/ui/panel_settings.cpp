@@ -181,7 +181,15 @@ void Panel::DrawGeneral() {
                                     kGlyphImport, T(Text::SettingsImport), true,
                                     [this] { RunFileDialog(FileDialog::ImportSettings); });
                      }};
-    y = DrawCard(y, {transfer, HintItem(transferNote_.empty() ? T(Text::SettingsTransferHint) : transferNote_.c_str())}) +
+    const CardRow portable =
+        SwitchItem(kIdPortable, T(Text::PortableMode), settings_.portable,
+                   [this] {
+                       portableNote_ = host_.OnPortableChanged(!settings_.portable) ? L"" : T(Text::PortableFailed);
+                       Invalidate();
+                   },
+                   portableNote_.empty() ? T(Text::PortableModeHint) : portableNote_.c_str());
+    y = DrawCard(y, {transfer, HintItem(transferNote_.empty() ? T(Text::SettingsTransferHint) : transferNote_.c_str()),
+                     portable}) +
         design::kSectionGap;
 
     // The log for bug reports, without editing the settings file.

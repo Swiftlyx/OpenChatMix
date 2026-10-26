@@ -682,8 +682,12 @@ std::wstring ConfigDirectory() {
     if (GetFileAttributesW((portable + L"\\" + kConfigFile).c_str()) != INVALID_FILE_ATTRIBUTES) {
         return portable;
     }
+    return AppDataDirectory();
+}
+
+std::wstring AppDataDirectory() {
     PWSTR appData = nullptr;
-    std::wstring directory = portable;
+    std::wstring directory = ExeDirectory();
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &appData))) {
         directory = std::wstring(appData) + L"\\OpenChatMix";
         CreateDirectoryW(directory.c_str(), nullptr);
@@ -706,6 +710,7 @@ bool IsDefaultChatApp(const std::wstring& exe) {
 Settings LoadSettings(const std::wstring& path) {
     Settings settings;
     settings.firstRun = GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES;
+    settings.portable = _wcsicmp(ConfigDirectory().c_str(), ExeDirectory().c_str()) == 0;
     for (int action = 0; action < kHotkeyCount; ++action) {
         settings.hotkeys[action] = DefaultHotkey(action);
     }

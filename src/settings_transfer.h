@@ -11,6 +11,13 @@ bool ExportSettings(const std::wstring& configDirectory, const std::wstring& zip
 // compression, and only safe paths inside the settings folders.
 bool IsSettingsArchive(const std::wstring& zipPath);
 
+// Copies the settings files of one folder into another, replacing files of the same name; the ini comes last,
+// as it marks a portable folder. False if one could not be copied.
+bool CopySettings(const std::wstring& from, const std::wstring& to);
+
+// Sends the settings files of a folder to the Recycle Bin; false if the ini is still there.
+bool RecycleSettings(const std::wstring& directory);
+
 // Where an archive waits to be imported by the next start of OpenChatMix.
 std::wstring PendingImportPath(const std::wstring& configDirectory);
 

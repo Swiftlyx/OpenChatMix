@@ -200,6 +200,7 @@ public:
     void OnQuit() override;
     bool OnSettingsExport(const std::wstring& path) override;
     bool OnSettingsImport(const std::wstring& path) override;
+    bool OnPortableChanged(bool portable) override;
     ui::Meters ReadMeters() override;
 };
 
@@ -3822,6 +3823,34 @@ bool Host::OnSettingsImport(const std::wstring& path) {
         return false;
     }
     Log("settings import from %s, restarting", Utf8(path).c_str());
+    return true;
+}
+
+bool Host::OnPortableChanged(bool portable) {
+    const std::wstring from = ConfigDirectory();
+    const std::wstring to = portable ? ExeDirectory() : AppDataDirectory();
+    if (_wcsicmp(from.c_str(), to.c_str()) == 0) {
+        return true;
+    }
+    // What is only in memory goes to the files first, as for an export.
+    Save();
+    SaveHeadset();
+    SaveAllPluginStates();
+    if (!CopySettings(from, to)) {
+        Log("settings not copied to %s, error %lu", Utf8(to).c_str(), GetLastError());
+        return false;
+    }
+    // The ini next to the executable is what makes the settings portable, so it leaves that folder last.
+    if (!portable && !RecycleSettings(from)) {
+        Log("portable settings not removed from %s", Utf8(from).c_str());
+        return false;
+    }
+    // The settings saved on the way out go to their new place.
+    g_app.iniPath = to + L"\\OpenChatMix.ini";
+    if (!RestartApp(L"--restart")) {
+        return false;
+    }
+    Log("settings moved to %s, restarting", Utf8(to).c_str());
     return true;
 }
 

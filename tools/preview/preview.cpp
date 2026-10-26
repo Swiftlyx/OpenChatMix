@@ -829,6 +829,10 @@ public:
         Save();
         return ExportSettings(ConfigDirectory(), path);
     }
+    bool OnPortableChanged(bool) override {
+        // The preview keeps its settings beside itself either way.
+        return true;
+    }
     bool OnSettingsImport(const std::wstring& path) override {
         if (!IsSettingsArchive(path)) {
             return false;

@@ -190,6 +190,8 @@ public:
     virtual bool OnSettingsExport(const std::wstring& path) = 0;
     // Takes the settings of an archive and restarts; false if the file holds none.
     virtual bool OnSettingsImport(const std::wstring& path) = 0;
+    // Moves the settings next to the executable or back to %APPDATA% and restarts; false if they could not move.
+    virtual bool OnPortableChanged(bool portable) = 0;
     // Peak samples (0-1) since the last call: Game and Chat as heard, and the processed microphone.
     virtual Meters ReadMeters() = 0;
 
@@ -657,6 +659,7 @@ private:
     std::wstring deviceDetail_;
     std::wstring connection_;
     std::wstring transferNote_;  // How the last settings export or import went; shown until the page closes.
+    std::wstring portableNote_;  // Why the settings could not move, if they could not.
     std::wstring warning_;
     bool deviceConnected_ = false;
     std::vector<AppItem> apps_;

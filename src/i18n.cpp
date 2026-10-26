@@ -545,6 +545,9 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Mute aux",  // MuteAux
     L"Aux muted",  // AuxMuted
     L"Aux unmuted",  // AuxUnmuted
+    L"Keep settings next to the app",  // PortableMode
+    L"Portable mode: settings, presets and plugin states live in the folder of OpenChatMix.exe instead of %APPDATA%, so they travel with it. Switching moves them and restarts OpenChatMix.",  // PortableModeHint
+    L"The settings could not be moved. The app's folder may be read-only, such as Program Files; move OpenChatMix.exe to a folder you can write to.",  // PortableFailed
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1084,6 +1087,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Вимкнути звук Aux",
     L"Звук Aux вимкнено",
     L"Звук Aux увімкнено",
+    L"Зберігати налаштування біля програми",
+    L"Портативний режим: налаштування, пресети й стани плагінів лежать у теці OpenChatMix.exe, а не в %APPDATA%, тож переносяться разом із програмою. Перемикання переносить їх і перезапускає OpenChatMix.",
+    L"Не вдалося перенести налаштування. Тека програми може бути лише для читання, як-от Program Files; перенесіть OpenChatMix.exe у теку, куди можна записувати.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1623,6 +1629,9 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Aux'u sustur",
     L"Aux susturuldu",
     L"Aux'un sesi açıldı",
+    L"Ayarları uygulamanın yanında tut",
+    L"Taşınabilir mod: ayarlar, ön ayarlar ve eklenti durumları %APPDATA% yerine OpenChatMix.exe'nin klasöründe durur, böylece uygulamayla birlikte taşınır. Değiştirmek bunları taşır ve OpenChatMix'i yeniden başlatır.",
+    L"Ayarlar taşınamadı. Uygulamanın klasörü Program Files gibi salt okunur olabilir; OpenChatMix.exe'yi yazılabilir bir klasöre taşıyın.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

@@ -543,6 +543,9 @@ enum class Text {
     MuteAux,
     AuxMuted,
     AuxUnmuted,
+    PortableMode,
+    PortableModeHint,
+    PortableFailed,
     Count,
 };
 

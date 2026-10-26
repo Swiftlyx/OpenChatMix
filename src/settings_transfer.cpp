@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#include <shellapi.h>
+#include <shlobj.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -358,6 +361,46 @@ bool ExportSettings(const std::wstring& configDirectory, const std::wstring& zip
         return false;
     }
     return true;
+}
+
+bool CopySettings(const std::wstring& from, const std::wstring& to) {
+    std::vector<std::pair<std::wstring, std::wstring>> files;
+    for (const wchar_t* folder : kFolders) {
+        CollectFolder(from + L"\\" + folder, std::wstring(folder) + L"/", files);
+    }
+    files.emplace_back(kIniName, from + L"\\" + kIniName);
+    for (auto& [name, path] : files) {
+        std::replace(name.begin(), name.end(), L'/', L'\\');
+        const std::wstring target = to + L"\\" + name;
+        const std::wstring folder = target.substr(0, target.find_last_of(L'\\'));
+        const int made = SHCreateDirectoryExW(nullptr, folder.c_str(), nullptr);
+        if ((made != ERROR_SUCCESS && made != ERROR_ALREADY_EXISTS && made != ERROR_FILE_EXISTS) ||
+            !CopyFileW(path.c_str(), target.c_str(), FALSE)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool RecycleSettings(const std::wstring& directory) {
+    // A list of paths, each ended by a null character and the whole by another.
+    std::wstring paths;
+    for (const std::wstring& name : {std::wstring(kIniName), std::wstring(kFolders[0]), std::wstring(kFolders[1])}) {
+        const std::wstring path = directory + L"\\" + name;
+        if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            paths += path;
+            paths += L'\0';
+        }
+    }
+    if (!paths.empty()) {
+        paths += L'\0';
+        SHFILEOPSTRUCTW operation{};
+        operation.wFunc = FO_DELETE;
+        operation.pFrom = paths.c_str();
+        operation.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
+        SHFileOperationW(&operation);
+    }
+    return GetFileAttributesW((directory + L"\\" + kIniName).c_str()) == INVALID_FILE_ATTRIBUTES;
 }
 
 bool IsSettingsArchive(const std::wstring& zipPath) {
