@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.2 — 2026-10-26
+
+- Arctis 7: without virtual devices, apps that already play move to its Game and Chat devices as soon as the
+  headset connects, e.g. after SteelSeries GG lets it go, and back to the default device when it goes away.
+  Until now they waited for the next app to start playing.
+
 ## 2.7.1 — 2026-10-26
 
 - Arctis 7 of 2017 and 2019 (experimental). Its ChatMix dial mixes the headset's own Game and Chat devices, so
