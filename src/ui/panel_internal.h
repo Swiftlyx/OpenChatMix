@@ -260,9 +260,9 @@ inline constexpr uint32_t kSelectChannel = 0xF3;
 
 inline constexpr AppGroup kGroups[] = {AppGroup::Game, AppGroup::Chat, AppGroup::Media, AppGroup::Aux};
 inline constexpr AppGroup kAddGroups[] = {AppGroup::Chat, AppGroup::Media, AppGroup::Aux};
-inline constexpr Language kLanguages[] = {Language::English, Language::Ukrainian};
+inline constexpr Language kLanguages[] = {Language::English, Language::Ukrainian, Language::Turkish};
 // Language names are shown in their own language regardless of the current UI language.
-inline constexpr const wchar_t* kLanguageLabels[] = {L"English", L"Українська"};
+inline constexpr const wchar_t* kLanguageLabels[] = {L"English", L"Українська", L"Türkçe"};
 
 inline uint32_t HashId(uint32_t kind, std::wstring_view key) {
     uint32_t hash = 2166136261u ^ kind;

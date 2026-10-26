@@ -3,6 +3,7 @@
 enum class Language {
     English,
     Ukrainian,
+    Turkish,
 };
 
 enum class Text {

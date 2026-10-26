@@ -322,6 +322,25 @@ IdleAnimationKind ParseIdleAnimation(const std::wstring& text) {
     return IdleAnimationKind::Off;
 }
 
+// The language's code in the settings file.
+const wchar_t* LanguageCode(Language language) {
+    switch (language) {
+    case Language::Ukrainian: return L"uk";
+    case Language::Turkish: return L"tr";
+    case Language::English: break;
+    }
+    return L"en";
+}
+
+Language ParseLanguage(const std::wstring& code) {
+    for (const Language language : {Language::Ukrainian, Language::Turkish}) {
+        if (_wcsicmp(code.c_str(), LanguageCode(language)) == 0) {
+            return language;
+        }
+    }
+    return Language::English;
+}
+
 const wchar_t* GroupName(AppGroup group) {
     switch (group) {
     case AppGroup::Chat: return L"chat";
@@ -807,8 +826,7 @@ Settings LoadSettings(const std::wstring& path) {
         }
     }
     settings.language =
-        _wcsicmp(ReadString(path, kMainSection, L"Language", L"en").c_str(), L"uk") == 0 ? Language::Ukrainian
-                                                                                          : Language::English;
+        ParseLanguage(ReadString(path, kMainSection, L"Language", L"en"));
     const UINT wheel = static_cast<UINT>(wcstoul(ReadString(path, kMainSection, L"WheelModifiers", L"0").c_str(), nullptr, 0));
     if (std::find(std::begin(kWheelModifierChoices), std::end(kWheelModifierChoices), wheel) != std::end(kWheelModifierChoices)) {
         settings.wheelModifiers = wheel;
@@ -945,7 +963,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
                                path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"BluetoothIcon",
                                kIconCornerNames[static_cast<size_t>(settings.idleScreen.bluetoothIcon)], path.c_str());
-    WriteString(path, L"Language", settings.language == Language::Ukrainian ? L"uk" : L"en");
+    WriteString(path, L"Language", LanguageCode(settings.language));
     for (int action = 0; action < kHotkeyCount; ++action) {
         wchar_t value[16];
         swprintf_s(value, L"0x%06X", PackHotkey(settings.hotkeys[action]));
