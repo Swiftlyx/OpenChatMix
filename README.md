@@ -303,6 +303,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Hotkeys, popups and their corner, battery warning | *Settings* → *Hotkeys* / *Notifications*. |
 | Write a log for a bug report | *Settings* → *General* → *Diagnostics* → *Write a log*; *Open the log folder* shows `OpenChatMix.log`. |
 | Language, startup, the tour | *Settings* → *General*. |
+| Keep the settings next to the app (portable) | *Settings* → *General* → *Keep settings next to the app*. |
 | Back up the settings or move them to another PC | *Settings* → *General* → *Export*; *Import* there takes them back and restarts OpenChatMix. The previous settings go to `%APPDATA%\OpenChatMix\Backups` first. |
 | Recover the headset | Tray menu → *Reconnect headset*. |
 | Headset settings and EQ | *Headset* tab (shown when a supported headset is connected). |
@@ -610,8 +611,9 @@ talk to a GameSense receiver on 127.0.0.1 with a free port, whose address goes i
 afterwards; requests a web page could send are refused. Add-ons run in a job object, so they end with
 OpenChatMix.
 
-**Settings** live in `%APPDATA%\OpenChatMix\OpenChatMix.ini`. If an `OpenChatMix.ini` file is placed
-next to the executable, it is used instead (portable mode).
+**Settings** live in `%APPDATA%\OpenChatMix\OpenChatMix.ini`. In portable mode (*Settings → General → Keep
+settings next to the app*) they live next to the executable instead, with the presets and plugin states; an
+`OpenChatMix.ini` placed there by hand does the same.
 
 ## Building from source
 

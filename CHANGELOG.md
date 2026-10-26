@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.3 — 2026-10-26
+
+- Portable mode as a switch: *Settings → General → Keep settings next to the app* moves the settings, presets and
+  plugin states next to OpenChatMix.exe, so they travel with it, and back to %APPDATA% when it is turned off;
+  OpenChatMix restarts either way. A folder it cannot write to, such as Program Files, is reported and nothing
+  changes. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#11](https://github.com/Swiftlyx/OpenChatMix/issues/11).
+
 ## 2.7.2 — 2026-10-26
 
 - Arctis 7: without virtual devices, apps that already play move to its Game and Chat devices as soon as the
