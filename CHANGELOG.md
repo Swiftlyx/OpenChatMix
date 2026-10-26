@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.0 — 2026-10-26
+
+- Aux group: a second group like Media, as the Aux channel of SteelSeries Sonar, so the mixer can have all four
+  of GG's channels. Its apps ignore ChatMix and get a volume slider and a level meter of their own; the group
+  has its own switch in *Settings → Audio*. Without virtual devices OpenChatMix sets its apps' volume and the
+  group can play on a device of its own; in virtual device mode it takes a virtual cable of its own, with its
+  own equalizer (Sonar's Aux presets) and plugins. A mute hotkey and the Aux equalizer in app profiles come
+  with it. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in
+  [#8](https://github.com/Swiftlyx/OpenChatMix/issues/8).
+
 ## 2.6.2 — 2026-10-25
 
 - Arctis Nova Elite: the microphone equalizer gets GG's other presets, Broadcast Low Pitch, Clarity Low Pitch

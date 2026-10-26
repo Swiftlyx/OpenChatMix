@@ -55,7 +55,7 @@ Any headset, speakers or an unsupported SteelSeries model:
 - The balance is set in the panel, with hotkeys or with the mouse wheel while a key combination is
   held, and applies to the default output device, whose name the panel shows. A single key works as
   a hotkey, so a keyboard's volume knob can act as a ChatMix wheel.
-- Game, Chat and Media groups, ducking, app profiles and the popup work the same way.
+- Game, Chat, Media and Aux groups, ducking, app profiles and the popup work the same way.
 - The [microphone chain](#microphone) and, in virtual device mode, the equalizer work with any device.
 
 ## SteelSeries Arctis: one app instead of SteelSeries GG
@@ -87,10 +87,11 @@ native settings, so GG and Sonar can stay closed:
   volume you set for an app yourself keeps working on top of the balance. In virtual device mode the
   taskbar slider and the volume keys work too, while recordings of the Game and Chat devices (for
   example in OBS) keep the full level.
-- **Game / Chat / Media groups.** Unknown apps follow the Game side, Discord and the Xbox party chat
-  start in Chat (they appear in the group once installed), and Media apps (music, videos) are never
-  touched by ChatMix — like Sonar's Media channel — but have a volume slider of their own. The Media
-  group is off until you turn it on in *Settings → Audio*.
+- **Game / Chat / Media / Aux groups.** Unknown apps follow the Game side, Discord and the Xbox party
+  chat start in Chat (they appear in the group once installed), and Media apps (music, videos) are never
+  touched by ChatMix — like Sonar's Media channel — but have a volume slider of their own. Aux is a
+  second group like it, as Sonar's Aux channel. Both are off until you turn them on in
+  *Settings → Audio*.
 - **A device per group, no virtual cables needed.** *Settings → Audio → Audio routing* lets each group
   play on its own device, for example Game and Chat on the headset and Media on the speakers. Windows
   sends the group's apps there (its per-app device, which OpenChatMix clears again when it exits), and
@@ -155,7 +156,7 @@ native settings, so GG and Sonar can stay closed:
   impulse responses, crossfeed or a loudness plugin, and DeepFilterNet on Chat removes noise from the
   voices of others. It is off until you turn it on in *Settings → Audio*.
 - **Hotkeys with an on-screen popup** (`Ctrl + Alt + ← / → / ↓` by default), plus optional hotkeys
-  to mute game, chat or media, to send the sound to the next output device or feed the microphone chain
+  to mute game, chat, media or aux, to send the sound to the next output device or feed the microphone chain
   from the next microphone (virtual cables are skipped), and one that turns the GameDAC screensaver on
   and off. A single key works as well, so a keyboard's volume knob can become a ChatMix wheel. Hotkeys
   also work without a SteelSeries headset: the balance is then applied to the default output device.
@@ -170,7 +171,7 @@ native settings, so GG and Sonar can stay closed:
   per side, so the app and the GameDAC always agree. Without one, the slider and the arrow keys move
   it by single percents; the mouse wheel and the hotkeys by 10%.
 - **Optional extras**, each with its own switch: lower the game while someone talks in chat
-  (ducking), app profiles that set the balance and the Game, Chat, Media and headset equalizers while
+  (ducking), app profiles that set the balance and the Game, Chat, Media, Aux and headset equalizers while
   an app or a game runs, popups for the ChatMix wheel and for the knob of a GameDAC or base station
   (the balance, or the volume in volume mode) in the screen corner you choose, a popup when noise
   control is switched with the headset's button (on the Nova Pro Wireless also on the base station
@@ -268,12 +269,12 @@ positives to your antivirus vendor; for Microsoft Defender use the
   (`↓` centers), the slider on the *Mixer* tab, or the mouse wheel with a key combination
   (*Settings → Hotkeys → Mouse wheel*).
 - **Tell it which apps are chat.** *Mixer → Groups → Chat → Add*, then pick Discord, Telegram or any
-  other app. Everything else follows Game. Music and videos that should never change go into *Media* (turn
-  the group on in *Settings → Audio*).
+  other app. Everything else follows Game. Music and videos that should never change go into *Media*,
+  anything else you want apart into *Aux* (turn the groups on in *Settings → Audio*).
   The trash icon next to an app takes it out of its group again; in Game it leaves the app out of
   ChatMix until you add it again.
 - **Set each side's volume.** The sliders under *Game* and *Chat* on the *Mixer* tab, and under *Media*
-  once that group is on. Windows volumes stay at 100%.
+  and *Aux* once those groups are on. Windows volumes stay at 100%.
 - **Headset settings (Arctis).** The *Headset* tab: equalizer presets and your own curve, microphone,
   sidetone, gain, display and screensaver. They are stored in the headset itself.
 - **Mix like Sonar, with an equalizer (optional).** Install two virtual cables and turn on *Settings →
@@ -291,10 +292,10 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | | *Mixer* tab: drag the slider, scroll over it, or use ← / →. Double-click centers it. |
 | | Hotkeys: `Ctrl + Alt + ←` more game, `Ctrl + Alt + →` more chat, `Ctrl + Alt + ↓` balanced. |
 | | Mouse wheel with the key combination held, once turned on in *Settings* → *Hotkeys* → *Mouse wheel*. |
-| Volume of Game, Chat or Media | *Mixer* → the slider under *Game*, *Chat* or *Media*. Its darker fill shows what plays; Windows volumes stay at 100%. |
-| Move an app between groups | *Mixer* → *Groups* → open a group → *Game / Chat / Media* next to the app. |
+| Volume of Game, Chat, Media or Aux | *Mixer* → the slider under *Game*, *Chat*, *Media* or *Aux*. Its darker fill shows what plays; Windows volumes stay at 100%. |
+| Move an app between groups | *Mixer* → *Groups* → open a group → *Game / Chat / Media / Aux* next to the app. |
 | Add an app manually | Open a group → *Add* → pick a running app or *Browse .exe*. |
-| Remove an app from a group | Open the group → the trash icon next to the app. From Chat or Media it follows Game again; from Game it is left out of ChatMix (its own volume, no group) until *Add* brings it back. A closed app leaves the list. |
+| Remove an app from a group | Open the group → the trash icon next to the app. From Chat, Media or Aux it follows Game again; from Game it is left out of ChatMix (its own volume, no group) until *Add* brings it back. A closed app leaves the list. |
 | Theme, contrast, Game and Chat colors, battery color, background, tray icon | *Settings* → *Appearance*. |
 | Use the panel from the keyboard | `Tab` / `Shift + Tab` move between controls, `Enter` (or `Space`) presses, the arrows change sliders and values, `Esc` goes back. |
 | Undo an equalizer change | *Equalizer* or *Headset* tab: `Ctrl + Z`; `Ctrl + Y` or `Ctrl + Shift + Z` redoes it. Up to 100 steps; in a number field the typing comes first. |
@@ -308,10 +309,10 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Save, import or back up EQ presets | *Headset* tab → *Save* / *Import* / *Folder*. Presets live in `%APPDATA%\OpenChatMix\Presets`. |
 | Screensaver on the GameDAC | *Headset* tab → *Screensaver* → pick an animation and the delay; the *Screensaver on/off* hotkey keeps it on until pressed again. |
 | Line out: speakers or a stream mix | *Headset* tab → *Line out* (GameDAC); in *Streaming* set the main sound, aux input and microphone levels. |
-| Virtual device mode, Media group, equalizer, ducking | *Settings* → *Audio*. |
+| Virtual device mode, Media and Aux groups, equalizer, ducking | *Settings* → *Audio*. |
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode), once turned on in *Settings* → *Audio*. |
 | Microphone processing and VST plugins | *Settings* → *Microphone*; its equalizer is the *Mic* channel of the *Equalizer* tab. |
-| VST plugins on Game, Chat or Media | *Equalizer* tab (virtual device mode) → the channel → *Plugins*. |
+| VST plugins on Game, Chat, Media or Aux | *Equalizer* tab (virtual device mode) → the channel → *Plugins*. |
 | Order of output devices, switching on disconnect | *Settings* → *Output devices*; drag a device to its place. |
 | Never switch to a device | *Settings* → *Output devices* → the ⦸ button next to it; ↶ under *Never switch to* brings it back. |
 | Reorder the microphone effects or plugins | *Settings* → *Microphone* → drag a step or a plugin by its handle. |
@@ -355,7 +356,7 @@ custom curve. If the current custom curve is not saved yet, it is first kept und
    [process the microphone](#microphone), keep the basic VB-CABLE for that.
 
    Then *Settings → Audio → Audio routing* → enable *Virtual device mode*. Each channel (*Game*,
-   *Chat* and, with the Media group on, *Media*) has a row; open it to choose its virtual device and
+   *Chat* and, with their groups on, *Media* and *Aux*) has a row; open it to choose its virtual device and
    where it plays (*Same as the output* by default, or any other playback device). VB-Audio Hi-Fi
    Cable, Virtual Audio Cable and VB-CABLE A–D are recognized and assigned on their own, also when they
    are installed while OpenChatMix runs. The output defaults to the connected headset.
@@ -377,12 +378,12 @@ custom curve. If the current custom curve is not saved yet, it is first kept und
    *Default*. When the mode is turned off or OpenChatMix exits, these apps return to the default
    device. Turn the option off to choose devices yourself.
 
-**Media** needs a virtual cable of its own in this mode, for example a third VB-Audio or Virtual Audio
-Cable; which one is up to you, and it must not be the cable your microphone plays into. Media apps are
-then sent to it, ChatMix never changes it, its own Windows volume does, and it can play on another
-output, such as speakers, while Game and Chat stay on the headset. It gets a channel of its own on the
-*Equalizer* tab. Without a Media device, Media apps play on the Game side. Apps that play straight to
-the headset are not affected.
+**Media** and **Aux** each need a virtual cable of their own in this mode, for example a third and a
+fourth VB-Audio or Virtual Audio Cable; which ones is up to you, and neither may be the cable your
+microphone plays into. Their apps are then sent to them, ChatMix never changes them, their own Windows
+volume does, and they can play on another output, such as speakers, while Game and Chat stay on the
+headset. Each gets a channel of its own on the *Equalizer* tab. Without its device, a group's apps play
+on the Game side. Apps that play straight to the headset are not affected.
 
 OpenChatMix captures what is played on the two devices (WASAPI loopback) and plays it on the output
 with the ChatMix balance applied, adding about 40 ms of latency. The panel shows what the bridge adds;
@@ -390,7 +391,8 @@ the device's own delay comes on top (a few milliseconds over USB, far more over 
 
 The Windows volume and mute of the Game device apply to every channel that plays on the same output as
 Game, so the taskbar slider and the volume keys work as usual while it is the default output. The
-volume of the Chat device applies to the Chat side only, and that of the Media device to Media. A
+volume of the Chat device applies to the Chat side only, and those of the Media and Aux devices to
+Media and Aux. A
 level above 0 dB, such as the +12 dB of Virtual Audio Cable at 100%, plays at the original level. Apps
 that record the Game or Chat device themselves, such as OBS, get the sound before ChatMix and the
 device volume, at full level.
@@ -433,7 +435,7 @@ Presets come from three places:
 The preset menus filter as you type. In an app profile, the *Game equalizer* menu starts with GG's
 presets made for that game, under *For this game*.
 
-**Plugins.** Below the effects, Game, Chat and Media each have a *Plugins* list like the microphone's:
+**Plugins.** Below the effects, Game, Chat, Media and Aux each have a *Plugins* list like the microphone's:
 any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder and click one to open
 its window. A convolver with impulse responses, crossfeed, a loudness or a bass plugin you own shapes
 the sound like a system-wide effects suite, without installing a driver. Plugins run in stereo at the
@@ -582,7 +584,7 @@ well, so the lower of the two is the app's own sound. Virtual device mode switch
 `IPolicyConfig` interface that the Windows sound settings use, and sends apps to the Game or Chat
 device through `IAudioPolicyConfigFactory`, the interface behind the per-app device choice in the
 Windows volume mixer; neither needs administrator rights. The equalizer is a chain of biquad filters
-computed in double precision. Plugins on Game, Chat and Media run on the bridge's own MMCSS thread, in
+computed in double precision. Plugins on Game, Chat, Media and Aux run on the bridge's own MMCSS thread, in
 blocks of up to 20 ms; the plugin list reaches it without a lock the audio thread could wait on.
 
 **Microphone.** A WASAPI capture stream of the microphone and a render stream into the cable, both
