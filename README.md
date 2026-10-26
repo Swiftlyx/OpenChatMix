@@ -192,7 +192,7 @@ native settings, so GG and Sonar can stay closed:
   (USB, 2.4 GHz, Bluetooth, 3.5 mm, HDMI or S/PDIF).
 - **Export and import of all settings** in one ZIP file, to move them to another PC or keep a copy.
   An import keeps the previous settings as a backup first.
-- **English and Ukrainian** interface.
+- **English, Ukrainian and Turkish** interface.
 - **A short tour** on the first start shows what is where; *Settings → General → Show the tour*
   opens it again.
 - Starts with Windows, reconnects after sleep, unplugging or SteelSeries GG releasing the headset.
@@ -231,6 +231,7 @@ works with any headset.
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
 | Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial, battery, settings and output switching work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its own equalizers work, the main one, the Bluetooth one and the microphone's, reported by [@Lasfecas](https://github.com/Lasfecas) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) |
+| Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, the auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -569,6 +570,7 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | PC → device | `01 38 on level` · `01 39 on level` | Sidetone of the boom and the built-in microphone |
 | | PC → device | `01 80` | Query the display: dimming (byte 2), brightness (3), home screen (5); `01 B0` also holds Bluetooth at power-on (2), during calls (3), transparency (8), noise control (10), mute LED (11), auto-off (12), ANC level (16) |
 | Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (as on the Nova Elite), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
+| Arctis 7 (interface 5) | PC → device | `06 24` · `06 18` · `06 51 mm` · `06 09` | Experimental, from HeadsetControl: the dial's position (the cut of game and chat as signed steps, about −64 silent), the battery in percent, the auto power-off in minutes (0–90), save; 31-byte reports, the dial polled every 250 ms |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback
 device, so there is no extra audio path and no added latency. `IAudioSessionManager2` lists the apps

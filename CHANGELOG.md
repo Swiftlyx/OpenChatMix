@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.7.1 — 2026-10-26
+
+- Arctis 7 of 2017 and 2019 (experimental). Its ChatMix dial mixes the headset's own Game and Chat devices, so
+  OpenChatMix now sends Game apps to Arctis 7 Game and Chat apps to Arctis 7 Chat on its own, with or without
+  virtual device mode, and adds no balance of its own on top. The mixer shows where the dial stands; the
+  *Headset* tab shows the battery and sets the auto power-off. From HeadsetControl's description of the
+  protocol; asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9).
+- Turkish interface, translated with Claude Opus 5.5; asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#10](https://github.com/Swiftlyx/OpenChatMix/issues/10).
+- Without virtual devices, back from a group's output picker returns to *Settings → Audio* instead of a channel
+  page, and the group rows there show their icons.
+
 ## 2.7.0 — 2026-10-26
 
 - Aux group: a second group like Media, as the Aux channel of SteelSeries Sonar, so the mixer can have all four
