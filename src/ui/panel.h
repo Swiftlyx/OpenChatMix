@@ -615,13 +615,6 @@ private:
     float DrawPlugins(float top, EqChannel channel);
     void DrawOutputs();
     bool MicSlot() const { return pickSlot_ == RoutingSlot::MicInput || pickSlot_ == RoutingSlot::MicOutput; }
-    // The picker chooses for one channel's page rather than for the Audio page.
-    bool ChannelSlot() const {
-        return pickSlot_ == RoutingSlot::Game || pickSlot_ == RoutingSlot::Chat || pickSlot_ == RoutingSlot::Media ||
-               pickSlot_ == RoutingSlot::Aux || pickSlot_ == RoutingSlot::GameOutput ||
-               pickSlot_ == RoutingSlot::ChatOutput || pickSlot_ == RoutingSlot::MediaOutput ||
-               pickSlot_ == RoutingSlot::AuxOutput;
-    }
     GameProfile* EditedProfile();
     std::wstring HotkeyHint() const;
 
@@ -685,6 +678,7 @@ private:
     UpdateView update_;
     std::vector<AudioEndpoint> endpoints_;
     RoutingSlot pickSlot_ = RoutingSlot::Game;
+    Page pickFrom_ = Page::Audio;  // The page the device picker goes back to.
     int routingChannel_ = 0;  // Page::RoutingChannel: 0 Game, 1 Chat, 2 Media, 3 Aux.
     std::vector<UserPreset> userPresets_;
 

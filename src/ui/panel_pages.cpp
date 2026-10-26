@@ -118,6 +118,10 @@ void Panel::SetIdleScreen(const IdleScreenView& idle) {
 
 void Panel::OpenPicker(RoutingSlot slot) {
     pickSlot_ = slot;
+    // The same slot is picked from a channel's page in virtual device mode and from the Audio page without it.
+    if (page_ != Page::PickDevice) {
+        pickFrom_ = page_;
+    }
     GoTo(Page::PickDevice);
 }
 
@@ -820,6 +824,8 @@ float Panel::DrawRoutingSettings(float y) {
     if (settings_.auxGroup) {
         shown.push_back(3);
     }
+    const D2D1_COLOR_F colors[] = {p.primary, p.tertiary, p.onSurfaceVariant, p.secondary};
+    const wchar_t glyphs[] = {kGlyphGame, kGlyphChat, kGlyphVolume, kGlyphApps};
     std::vector<CardRow> rows{
         SwitchItem(kIdRoutingToggle, T(Text::RoutingMode), on, [this] { host_.OnRoutingEnabled(!routing_.enabled); },
                    T(Text::RoutingModeHint)),
@@ -834,8 +840,6 @@ float Panel::DrawRoutingSettings(float y) {
         constexpr RoutingSlot kOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput, RoutingSlot::MediaOutput,
                                             RoutingSlot::AuxOutput};
         constexpr Text kNone[] = {Text::NotSelected, Text::NotSelected, Text::RoutingMediaNone, Text::RoutingAuxNone};
-        const D2D1_COLOR_F colors[] = {p.primary, p.tertiary, p.onSurfaceVariant, p.secondary};
-        const wchar_t glyphs[] = {kGlyphGame, kGlyphChat, kGlyphVolume, kGlyphApps};
         for (const int channel : shown) {
             // The device, and where it plays when that is not the shared output.
             const std::wstring& device = routing_.names[static_cast<int>(kDevices[channel])];
@@ -872,8 +876,8 @@ float Panel::DrawRoutingSettings(float y) {
                                             RoutingSlot::AuxOutput};
         for (const int group : shown) {
             const RoutingSlot output = kOutputs[group];
-            rows.push_back(ValueItem(kIdRoutingRow + 16 + group, T(kGroupNames[group]),
-                                     routing_.names[static_cast<int>(output)], [this, output] { OpenPicker(output); }));
+            rows.push_back(NavItem(kIdRoutingRow + 16 + group, glyphs[group], colors[group], T(kGroupNames[group]),
+                                   routing_.names[static_cast<int>(output)], [this, output] { OpenPicker(output); }));
         }
         rows.push_back(HintItem(T(Text::GroupOutputsHint)));
     }

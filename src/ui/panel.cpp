@@ -608,12 +608,8 @@ void Panel::GoBack() {
         GoTo(addTarget_ == AddTarget::Profile ? Page::Profiles : Page::Group);
         return;
     }
-    if (page_ == Page::PickDevice && MicSlot()) {
-        GoTo(Page::Microphone);
-        return;
-    }
-    if (page_ == Page::PickDevice && ChannelSlot()) {
-        GoTo(Page::RoutingChannel);
+    if (page_ == Page::PickDevice) {
+        GoTo(pickFrom_);
         return;
     }
     GoTo(ParentOf(page_));
