@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.8.0 — 2026-10-27
+
+- Each headset and microphone keeps its own sound settings. The equalizers and plugins of Game, Chat, Media and
+  Aux belong to the headset or speakers they play on (the output of virtual device mode), and the noise
+  suppression, equalizer, compressor, order and plugins of the microphone chain to the microphone. When another
+  device takes over, its own settings come back, or none if it is new, and the plugins of the previous one close.
+  The same headset in another USB port counts as the same one. The settings you have now stay with the devices in
+  use. Follows [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13) by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+- The Arctis models from before the Nova (experimental), with what HeadsetControl and the Linux kernel's driver
+  describe of them:
+  - Arctis 7: sidetone and earcup lights; the 2019 model also tells whether the headset is on.
+  - Arctis Pro and Arctis Pro + GameDAC: sidetone, lights and the dial, with Game and Chat on their own devices as
+    on the Arctis 7.
+  - Arctis 9: the battery and whether it charges, sidetone, auto power-off and the dial, with Game and Chat on its
+    own devices.
+  - Arctis Pro Wireless: the battery, whether the headset is on, sidetone and auto power-off; the base station's
+    knob mixes Game and Chat itself.
+  - Arctis 1 Wireless, Arctis 1 Xbox, Arctis 7X and Arctis 7P: the battery, whether the headset is on, sidetone and
+    auto power-off.
+
 ## 2.7.5 — 2026-10-27
 
 - Arctis 7: virtual device mode no longer needs virtual cables for Game and Chat, as the headset has Game and
