@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.7.5 — 2026-10-27
+
+- Arctis 7: virtual device mode no longer needs virtual cables for Game and Chat, as the headset has Game and
+  Chat devices of its own. By default both channels play straight on them, mixed by the dial, while Media and
+  Aux take cables of their own; a channel's page offers *Headset's own device* next to the cables. A channel
+  with a cable gets the equalizer and plugins, one on the headset's own device plays without them. Follows
+  [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+
 ## 2.7.4 — 2026-10-27
 
 - The mixer shows every group without scrolling: when they don't fit at full size, such as all four groups,
