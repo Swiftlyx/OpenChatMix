@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.4 — 2026-10-27
+
+- The mixer shows every group without scrolling: when they don't fit at full size, such as all four groups,
+  they take compact rows, with the apps beside the group's name and the volume slider right below it. The
+  window keeps its height; the virtual device mode card under the groups can still be scrolled to. Asked for
+  by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#12](https://github.com/Swiftlyx/OpenChatMix/issues/12).
+
 ## 2.7.3 — 2026-10-26
 
 - Portable mode as a switch: *Settings → General → Keep settings next to the app* moves the settings, presets and
