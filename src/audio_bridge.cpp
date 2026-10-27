@@ -455,21 +455,28 @@ void AudioBridge::Run() {
 }
 
 bool AudioRouter::Start(const RoutingPlan& plan, HWND notifyWindow) {
+    gameRouted_ = !plan.game.empty();
+    chatRouted_ = !plan.chat.empty();
     mediaRouted_ = !plan.media.empty();
     auxRouted_ = !plan.aux.empty();
     chatWithGame_ = plan.chatOutput == plan.gameOutput;
     mediaWithGame_ = plan.mediaOutput == plan.gameOutput;
     auxWithGame_ = plan.auxOutput == plan.gameOutput;
-    const bool game = game_.Start(plan.game, plan.gameOutput, notifyWindow);
-    const bool chat = chat_.Start(plan.chat, plan.chatOutput, notifyWindow);
+    const bool game = !gameRouted_ || game_.Start(plan.game, plan.gameOutput, notifyWindow);
+    const bool chat = !chatRouted_ || chat_.Start(plan.chat, plan.chatOutput, notifyWindow);
     const bool media = !mediaRouted_ || media_.Start(plan.media, plan.mediaOutput, notifyWindow);
     const bool aux = !auxRouted_ || aux_.Start(plan.aux, plan.auxOutput, notifyWindow);
     if (!game || !chat || !media || !aux) {
         Stop();
         return false;
     }
-    WatchVolume(plan.game, notifyWindow, gameVolume_);
-    WatchVolume(plan.chat, notifyWindow, chatVolume_);
+    // A channel without a bridge plays on a real device, whose volume Windows applies itself.
+    if (gameRouted_) {
+        WatchVolume(plan.game, notifyWindow, gameVolume_);
+    }
+    if (chatRouted_) {
+        WatchVolume(plan.chat, notifyWindow, chatVolume_);
+    }
     if (mediaRouted_) {
         WatchVolume(plan.media, notifyWindow, mediaVolume_);
     }
@@ -477,12 +484,26 @@ bool AudioRouter::Start(const RoutingPlan& plan, HWND notifyWindow) {
         WatchVolume(plan.aux, notifyWindow, auxVolume_);
     }
     UpdateDeviceVolumes();
-    Log("routing device gains: game %.3f, chat %.3f%s%s", gameVolume_.gain, chatVolume_.gain,
-        mediaRouted_ ? ", media routed" : "", auxRouted_ ? ", aux routed" : "");
+    Log("routing device gains: game %.3f, chat %.3f%s%s%s%s", gameVolume_.gain, chatVolume_.gain,
+        mediaRouted_ ? ", media routed" : "", auxRouted_ ? ", aux routed" : "", gameRouted_ ? "" : ", game direct",
+        chatRouted_ ? "" : ", chat direct");
+    started_ = true;
     return true;
 }
 
+bool AudioRouter::Routes(EqChannel channel) const {
+    switch (channel) {
+    case EqChannel::Game: return gameRouted_;
+    case EqChannel::Chat: return chatRouted_;
+    case EqChannel::Media: return mediaRouted_;
+    case EqChannel::Aux: return auxRouted_;
+    case EqChannel::Mic: break;
+    }
+    return false;
+}
+
 void AudioRouter::Stop() {
+    started_ = false;
     for (DeviceVolume* volume : {&gameVolume_, &chatVolume_, &mediaVolume_, &auxVolume_}) {
         if (volume->control && volume->callback) {
             volume->control->UnregisterControlChangeNotify(volume->callback.Get());
@@ -569,8 +590,8 @@ void AudioRouter::SetPlugins(EqChannel channel, PluginList plugins, UINT32 rate)
 
 UINT32 AudioRouter::Rate(EqChannel channel) const {
     switch (channel) {
-    case EqChannel::Game: return game_.Rate();
-    case EqChannel::Chat: return chat_.Rate();
+    case EqChannel::Game: return gameRouted_ ? game_.Rate() : 0;
+    case EqChannel::Chat: return chatRouted_ ? chat_.Rate() : 0;
     case EqChannel::Media: return mediaRouted_ ? media_.Rate() : 0;
     case EqChannel::Aux: return auxRouted_ ? aux_.Rate() : 0;
     case EqChannel::Mic: break;
@@ -587,6 +608,6 @@ void AudioRouter::SetEqualizers(std::shared_ptr<const ParametricEq> game, std::s
 }
 
 int AudioRouter::LatencyMs() const {
-    return std::max({game_.LatencyMs(), chat_.LatencyMs(), mediaRouted_ ? media_.LatencyMs() : 0,
-                     auxRouted_ ? aux_.LatencyMs() : 0});
+    return std::max({gameRouted_ ? game_.LatencyMs() : 0, chatRouted_ ? chat_.LatencyMs() : 0,
+                     mediaRouted_ ? media_.LatencyMs() : 0, auxRouted_ ? aux_.LatencyMs() : 0});
 }

@@ -370,8 +370,17 @@ void PushRouting() {
         const std::wstring name = EndpointName(id, endpoints);
         return name.empty() ? std::wstring(fallback) : name;
     };
-    set(ui::RoutingSlot::Game, routing.game, named(routing.game, L"CABLE-A Input (VB-Audio Cable A)"));
-    set(ui::RoutingSlot::Chat, routing.chat, named(routing.chat, L"CABLE-B Input (VB-Audio Cable B)"));
+    // The Arctis 7 has Game and Chat devices of its own: without a virtual device a channel plays straight on them.
+    view.ownDevices = Current().steelSeries && Current().family == DeviceFamily::Arctis7;
+    if (view.ownDevices) {
+        set(ui::RoutingSlot::Game, routing.game, routing.game.empty() ? L"" : named(routing.game, L""));
+        set(ui::RoutingSlot::Chat, routing.chat, routing.chat.empty() ? L"" : named(routing.chat, L""));
+        view.directNames[0] = routing.game.empty() ? L"Headphones (Arctis 7 Game)" : L"";
+        view.directNames[1] = routing.chat.empty() ? L"Headset Earphone (Arctis 7 Chat)" : L"";
+    } else {
+        set(ui::RoutingSlot::Game, routing.game, named(routing.game, L"CABLE-A Input (VB-Audio Cable A)"));
+        set(ui::RoutingSlot::Chat, routing.chat, named(routing.chat, L"CABLE-B Input (VB-Audio Cable B)"));
+    }
     set(ui::RoutingSlot::Media, routing.media, routing.media.empty() ? L"" : named(routing.media, L""));
     set(ui::RoutingSlot::Aux, routing.aux, routing.aux.empty() ? L"" : named(routing.aux, L""));
     set(ui::RoutingSlot::Output, routing.output,

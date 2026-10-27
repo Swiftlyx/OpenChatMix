@@ -127,7 +127,13 @@ std::optional<float> ParseTyped(std::wstring text) {
 std::vector<EqChannel> Panel::EqChannels() const {
     std::vector<EqChannel> channels;
     if (routing_.enabled) {
-        channels = {EqChannel::Game, EqChannel::Chat};
+        // Game and Chat playing straight on a headset's own devices pass nothing through OpenChatMix.
+        if (!routing_.ownDevices || !routing_.ids[static_cast<int>(RoutingSlot::Game)].empty()) {
+            channels.push_back(EqChannel::Game);
+        }
+        if (!routing_.ownDevices || !routing_.ids[static_cast<int>(RoutingSlot::Chat)].empty()) {
+            channels.push_back(EqChannel::Chat);
+        }
         if (routing_.mediaRouted) {
             channels.push_back(EqChannel::Media);
         }
@@ -294,7 +300,7 @@ void Panel::DrawEqualizerPage() {
         DrawTitle(T(Text::Equalizers));
         const D2D1_RECT_F card = Card(kHeaderHeight, 172.0f);
         canvas_.Glyph(kGlyphEqualizer, {kWidth / 2.0f, card.top + 34.0f}, 24.0f, p.primary);
-        canvas_.Text(T(Text::EqNeedsRouting),
+        canvas_.Text(T(routing_.enabled && routing_.ownDevices ? Text::EqNeedsDevice : Text::EqNeedsRouting),
                      {card.left + 24.0f, card.top + 56.0f, card.right - 24.0f, card.top + 120.0f},
                      TextStyle::BodyMedium, p.onSurfaceVariant, TextAlign::Center, true);
         TextButton(kIdEqOpenAudio,

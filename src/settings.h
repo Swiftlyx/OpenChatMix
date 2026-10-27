@@ -52,6 +52,9 @@ struct RoutingSettings {
     bool autoRoute = true;
     // Executables that got a per-app device from OpenChatMix; cleared again when the mode stops.
     std::vector<std::wstring> routedApps;
+    // Game and Chat without a device play on the own devices of a headset that mixes by its dial; while this holds,
+    // no virtual devices are assigned to them on their own, also while that headset is away.
+    bool headsetDevices = false;
 };
 
 // Playback devices in the order they are preferred, and whether OpenChatMix follows that order.

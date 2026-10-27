@@ -375,7 +375,9 @@ void Panel::DrawGroup() {
     constexpr float kAddWidth = 112.0f;
     std::wstring subtitle;
     if (routing_.enabled && (group_ == AppGroup::Game || group_ == AppGroup::Chat)) {
-        const std::wstring& device = routing_.names[group_ == AppGroup::Chat ? 1 : 0];
+        const int side = group_ == AppGroup::Chat ? 1 : 0;
+        // Without a virtual device the group plays straight on the headset's own device.
+        const std::wstring& device = routing_.directNames[side].empty() ? routing_.names[side] : routing_.directNames[side];
         const std::wstring playsOn = std::wstring(T(Text::PlaysOn)) + L" ";
         subtitle = playsOn + (device.empty() ? T(Text::NotSelected) : device.c_str());
         // A device name ends with its driver's in parentheses; without room for it the endpoint's own name

@@ -546,6 +546,9 @@ enum class Text {
     PortableMode,
     PortableModeHint,
     PortableFailed,
+    RoutingOwnDevice,
+    RoutingOwnDeviceHint,
+    EqNeedsDevice,
     Count,
 };
 

@@ -231,7 +231,7 @@ works with any headset.
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
 | Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial, battery, settings and output switching work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its own equalizers work, the main one, the Bluetooth one and the microphone's, reported by [@Lasfecas](https://github.com/Lasfecas) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) |
-| Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, the auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
+| Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, the auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices, also in virtual device mode without cables. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
 
 Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
 **Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
@@ -386,6 +386,11 @@ microphone plays into. Their apps are then sent to them, ChatMix never changes t
 volume does, and they can play on another output, such as speakers, while Game and Chat stay on the
 headset. Each gets a channel of its own on the *Equalizer* tab. Without its device, a group's apps play
 on the Game side. Apps that play straight to the headset are not affected.
+
+The **Arctis 7** (2017, 2019) has Game and Chat devices of its own, mixed by its dial, so here Game and
+Chat need no virtual cable: by default they play straight on *Arctis 7 Game* and *Arctis 7 Chat*, and only
+Media and Aux take cables. Choose a cable on a channel's page to give that channel the equalizer and
+plugins; *Headset's own device* plays it without them.
 
 OpenChatMix captures what is played on the two devices (WASAPI loopback) and plays it on the output
 with the ChatMix balance applied, adding about 40 ms of latency. The panel shows what the bridge adds;

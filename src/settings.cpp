@@ -811,6 +811,7 @@ Settings LoadSettings(const std::wstring& path) {
     settings.routing.savedCommunications = ReadString(path, kRoutingSection, L"SavedCommunications", L"");
     settings.routing.autoRoute = GetPrivateProfileIntW(kRoutingSection, L"AutoRoute", 1, path.c_str()) != 0;
     settings.routing.routedApps = SplitList(ReadString(path, kRoutingSection, L"RoutedApps", L""));
+    settings.routing.headsetDevices = GetPrivateProfileIntW(kRoutingSection, L"HeadsetDevices", 0, path.c_str()) != 0;
     for (const std::wstring& exe : SplitList(ReadString(path, kMainSection, L"IgnoredApps", L""))) {
         settings.ignoredApps.insert(exe);
     }
@@ -936,6 +937,8 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WritePrivateProfileStringW(kRoutingSection, L"SavedCommunications", settings.routing.savedCommunications.c_str(),
                                path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"AutoRoute", settings.routing.autoRoute ? L"1" : L"0", path.c_str());
+    WritePrivateProfileStringW(kRoutingSection, L"HeadsetDevices", settings.routing.headsetDevices ? L"1" : L"0",
+                               path.c_str());
     std::wstring routed;
     for (const auto& exe : settings.routing.routedApps) {
         routed += (routed.empty() ? L"" : std::wstring(1, kPathSeparator)) + exe;

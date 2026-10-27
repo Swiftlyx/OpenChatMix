@@ -63,6 +63,10 @@ struct RoutingView {
     bool running = false;
     bool manageDevices = true;
     bool cablesMissing = false;  // No Game and Chat devices are chosen and none were found on their own.
+    // The headset has Game and Chat devices of its own: Game and Chat may go without a virtual device and play
+    // straight on them, with no equalizer or plugins.
+    bool ownDevices = false;
+    std::wstring directNames[2];  // Where Game and Chat play without a virtual device; empty while they have one.
 };
 
 // A connected playback device in the order of preference.

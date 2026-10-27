@@ -941,6 +941,12 @@ HeadsetSides DefaultHeadsetSides(const std::vector<AudioEndpoint>& endpoints) {
     return !sides.game.empty() && (current == sides.game || current == sides.chat) ? sides : HeadsetSides{};
 }
 
+// Such a headset's Game and Chat need no virtual device in virtual device mode: a channel without one plays straight
+// on the headset's own device for it, with no equalizer or plugins.
+bool DirectChannelsAllowed() {
+    return HeadsetMixes() && !MixingHeadsetSides(ListRenderEndpoints()).game.empty();
+}
+
 std::wstring RoutingOutputId(const std::vector<AudioEndpoint>& endpoints) {
     if (!g_app.settings.routing.output.empty()) {
         return g_app.settings.routing.output;
@@ -1060,15 +1066,16 @@ RoutingPlan CurrentRoutingPlan() {
     return plan;
 }
 
-// Why a plan cannot run, or nothing: every device chosen, the sources apart from each other, and no
-// channel playing into a source.
+// Why a plan cannot run, or nothing: every device chosen (Game and Chat may do without one, see
+// DirectChannelsAllowed), the sources apart from each other, and no channel playing into a source.
 std::optional<Text> RoutingProblem(const RoutingPlan& plan) {
-    if (plan.game.empty() || plan.chat.empty() || plan.gameOutput.empty() || plan.chatOutput.empty() ||
-        (!plan.media.empty() && plan.mediaOutput.empty()) || (!plan.aux.empty() && plan.auxOutput.empty())) {
+    if (((plan.game.empty() || plan.chat.empty()) && !DirectChannelsAllowed()) || plan.gameOutput.empty() ||
+        plan.chatOutput.empty() || (!plan.media.empty() && plan.mediaOutput.empty()) ||
+        (!plan.aux.empty() && plan.auxOutput.empty())) {
         return Text::RoutingNeedsDevices;
     }
-    std::vector<std::wstring> sources{plan.game, plan.chat};
-    for (const std::wstring* source : {&plan.media, &plan.aux}) {
+    std::vector<std::wstring> sources;
+    for (const std::wstring* source : {&plan.game, &plan.chat, &plan.media, &plan.aux}) {
         if (!source->empty()) {
             sources.push_back(*source);
         }
@@ -1090,11 +1097,15 @@ std::optional<Text> RoutingProblem(const RoutingPlan& plan) {
 
 // With device management the Game and Chat devices are enabled and become the default output and
 // communications device while the mode runs. Afterwards they are disabled again, so apps fall back
-// to the headset instead of playing into devices nobody listens to.
+// to the headset instead of playing into devices nobody listens to. A channel without a virtual device hands
+// its role to the headset's own device it plays on.
 void AcquireRoutingDevices() {
     RoutingSettings& routing = g_app.settings.routing;
-    if (g_app.routingDevicesAcquired || !routing.enabled || !routing.manageDevices || routing.game.empty() ||
-        routing.chat.empty() || routing.game == routing.chat) {
+    const RoutingPlan plan = CurrentRoutingPlan();
+    const std::wstring game = routing.game.empty() ? plan.gameOutput : routing.game;
+    const std::wstring chat = routing.chat.empty() ? plan.chatOutput : routing.chat;
+    if (g_app.routingDevicesAcquired || !routing.enabled || !routing.manageDevices || game.empty() || chat.empty() ||
+        game == chat || ((routing.game.empty() || routing.chat.empty()) && !DirectChannelsAllowed())) {
         return;
     }
     // Saved before the devices are enabled: Windows may make a device that comes back the default at
@@ -1105,17 +1116,17 @@ void AcquireRoutingDevices() {
     if (const std::wstring current = DefaultRenderEndpoint(eCommunications); !IsRoutingDevice(current)) {
         routing.savedCommunications = current;
     }
-    bool ok = SetEndpointEnabled(routing.game, true);
-    ok = SetEndpointEnabled(routing.chat, true) && ok;
+    bool ok = routing.game.empty() || SetEndpointEnabled(routing.game, true);
+    ok = (routing.chat.empty() || SetEndpointEnabled(routing.chat, true)) && ok;
     if (MediaRouted() && routing.media != routing.game && routing.media != routing.chat) {
         ok = SetEndpointEnabled(routing.media, true) && ok;
     }
     if (AuxRouted() && routing.aux != routing.game && routing.aux != routing.chat && routing.aux != routing.media) {
         ok = SetEndpointEnabled(routing.aux, true) && ok;
     }
-    ok = SetDefaultRenderEndpoint(routing.game, eConsole) && ok;
-    ok = SetDefaultRenderEndpoint(routing.game, eMultimedia) && ok;
-    ok = SetDefaultRenderEndpoint(routing.chat, eCommunications) && ok;
+    ok = SetDefaultRenderEndpoint(game, eConsole) && ok;
+    ok = SetDefaultRenderEndpoint(game, eMultimedia) && ok;
+    ok = SetDefaultRenderEndpoint(chat, eCommunications) && ok;
     g_app.routingDevicesAcquired = true;
     g_app.routingDeviceError = !ok;
     Log("routing devices switched on%s", ok ? "" : " with errors");
@@ -1203,9 +1214,18 @@ void DropSonarDevices() {
 }
 
 // Chooses the Game and Chat devices on its own when none are selected, see FindVirtualDevices().
+// A headset with Game and Chat devices of its own gets none: virtual devices are chosen for it by hand, for the
+// equalizer and plugins, and none are chosen while it is away either.
 void AssignVirtualDevices() {
     RoutingSettings& routing = g_app.settings.routing;
     if (!routing.game.empty() || !routing.chat.empty()) {
+        return;
+    }
+    if (!routing.headsetDevices && DirectChannelsAllowed()) {
+        routing.headsetDevices = true;
+        Save();
+    }
+    if (routing.headsetDevices) {
         return;
     }
     const std::optional<VirtualDevicePair> pair = FindVirtualDevices(ListRenderEndpoints(true));
@@ -1256,7 +1276,14 @@ void UpdateRouting() {
     view.mediaRouted = MediaRouted();
     view.auxRouted = AuxRouted();
     view.manageDevices = routing.manageDevices;
-    view.cablesMissing = (routing.game.empty() || routing.chat.empty()) && !FindVirtualDevices(endpoints);
+    view.ownDevices = DirectChannelsAllowed();
+    if (view.ownDevices) {
+        const RoutingPlan plan = CurrentRoutingPlan();
+        view.directNames[0] = routing.game.empty() ? nameOf(plan.gameOutput) : L"";
+        view.directNames[1] = routing.chat.empty() ? nameOf(plan.chatOutput) : L"";
+    }
+    view.cablesMissing =
+        !view.ownDevices && (routing.game.empty() || routing.chat.empty()) && !FindVirtualDevices(endpoints);
     if (routing.enabled) {
         if (g_app.router.IsRunning()) {
             view.status = T(Text::RoutingRunning);
@@ -1278,6 +1305,7 @@ void UpdateRouting() {
 }
 
 Levels EffectiveLevels();
+void ApplyLevels();
 std::vector<AudioEndpoint> PreferredOutputs();
 std::wstring CurrentOutput();
 void MaybeCheckForUpdate();
@@ -1304,9 +1332,10 @@ void StartRouting() {
         UpdateMixerEndpoints();
         const RoutingPlan plan = CurrentRoutingPlan();
         if (!RoutingProblem(plan) && g_app.router.Start(plan, g_app.window)) {
-            // App volumes may carry the balance from the time the streams were not running.
+            // App volumes may carry the balance from the time the streams were not running; a channel without a
+            // bridge gets it back on its apps.
             g_app.mixer.ResetVolumes();
-            g_app.router.SetLevels(EffectiveLevels());
+            ApplyLevels();
             PushEqualizers();
             Log("routing started");
         } else {
@@ -1638,7 +1667,8 @@ void StartMic() {
     PushMic();
 }
 
-// Apps on the Game and Chat devices are listed (and routed) in virtual device mode.
+// Apps on the Game and Chat devices are listed (and routed) in virtual device mode, and those on the device a
+// channel without one plays on.
 void UpdateMixerEndpoints() {
     const RoutingSettings& routing = g_app.settings.routing;
     std::vector<std::wstring> extra;
@@ -1646,6 +1676,15 @@ void UpdateMixerEndpoints() {
         for (const std::wstring* id : {&routing.game, &routing.chat, &routing.media, &routing.aux}) {
             if (!id->empty()) {
                 extra.push_back(*id);
+            }
+        }
+        if ((routing.game.empty() || routing.chat.empty()) && DirectChannelsAllowed()) {
+            const RoutingPlan plan = CurrentRoutingPlan();
+            if (routing.game.empty()) {
+                extra.push_back(plan.gameOutput);
+            }
+            if (routing.chat.empty()) {
+                extra.push_back(plan.chatOutput);
             }
         }
         g_app.mixer.SetExtraEndpoints(std::move(extra));
@@ -1702,17 +1741,20 @@ void RememberRouted(const std::wstring& exe, bool routed) {
 
 // Chat apps play on the Chat device and Media apps on the Media device when it has one; the others follow
 // the default device, which is the Game device while devices are managed, or get the Game device
-// explicitly otherwise.
+// explicitly otherwise. Game or Chat without a device plays on the headset's own device instead.
 void RouteApps() {
     const RoutingSettings& routing = g_app.settings.routing;
     const bool direct = DirectGroupOutputs();
-    if (!g_app.appRouting.Available() ||
-        (!direct && (!routing.enabled || !routing.autoRoute || routing.game.empty() || routing.chat.empty()))) {
+    const bool channels = (!routing.game.empty() && !routing.chat.empty()) || DirectChannelsAllowed();
+    if (!g_app.appRouting.Available() || (!direct && (!routing.enabled || !routing.autoRoute || !channels))) {
         return;
     }
     const std::vector<AudioEndpoint> connected = direct ? ListRenderEndpoints() : std::vector<AudioEndpoint>{};
+    const RoutingPlan plan = direct ? RoutingPlan{} : CurrentRoutingPlan();
+    const std::wstring& gameDevice = routing.game.empty() ? plan.gameOutput : routing.game;
+    const std::wstring& chatDevice = routing.chat.empty() ? plan.chatOutput : routing.chat;
     // Apps left out of ChatMix play where the mix goes, past the virtual devices; without them, on the default.
-    const std::wstring outside = direct ? L"" : CurrentRoutingPlan().gameOutput;
+    const std::wstring& outside = plan.gameOutput;
     bool changed = false;
     for (const auto& app : g_app.mixer.ActiveApps()) {
         if (app.pid == 0) {
@@ -1725,10 +1767,10 @@ void RouteApps() {
         const bool aux = !ignored && group == AppGroup::Aux && (direct || AuxRouted());
         const std::wstring target = ignored ? outside
                                     : direct ? DirectTarget(group, connected)
-                                    : chat   ? routing.chat
+                                    : chat   ? chatDevice
                                     : media  ? routing.media
                                     : aux    ? routing.aux
-                                             : (routing.manageDevices ? L"" : routing.game);
+                                             : (routing.manageDevices ? L"" : gameDevice);
         const auto now = g_app.routedNow.find(app.exe);
         const bool listed = std::any_of(routing.routedApps.begin(), routing.routedApps.end(), [&](const std::wstring& exe) {
             return _wcsicmp(exe.c_str(), app.exe.c_str()) == 0;
@@ -1882,6 +1924,13 @@ void ApplyLevels() {
         g_app.router.SetLevels(levels);
         g_app.router.SetMediaLevel(media);
         g_app.router.SetAuxLevel(aux);
+        // Game or Chat without a bridge plays straight on the headset, so its apps get its level; the bridged
+        // channels' apps keep full volume.
+        const bool game = g_app.router.Routes(EqChannel::Game);
+        const bool chat = g_app.router.Routes(EqChannel::Chat);
+        if (!game || !chat) {
+            g_app.mixer.Apply({game ? 100 : levels.game, chat ? 100 : levels.chat}, g_app.settings);
+        }
         return;
     }
     g_app.mixer.Apply(levels, g_app.settings, media, aux);
@@ -1900,7 +1949,8 @@ void UpdateDucking() {
 }
 
 void TickDucking() {
-    const bool bridged = g_app.settings.routing.enabled && g_app.router.IsRunning();
+    const bool bridged =
+        g_app.settings.routing.enabled && g_app.router.IsRunning() && g_app.router.Routes(EqChannel::Chat);
     const float peak = bridged ? g_app.router.TakeChatPeak() : g_app.mixer.GroupPeak(g_app.settings, AppGroup::Chat);
     const ULONGLONG now = GetTickCount64();
     if (peak > kChatActivePeak && !g_app.chatMuted) {
@@ -2533,9 +2583,16 @@ void ConnectDevice() {
     PushHeadset();
     RefreshApps();
     NotifyGg();
-    if (g_app.settings.routing.enabled && g_app.settings.routing.output.empty()) {
+    // In virtual device mode the headset may be the output, and may give Game and Chat devices of its own. A headset
+    // without them gets virtual devices on its own again.
+    RoutingSettings& routing = g_app.settings.routing;
+    if (g_app.device.IsOpen() && !HeadsetMixes() && routing.headsetDevices) {
+        routing.headsetDevices = false;
+        Save();
+    }
+    if (routing.enabled && (routing.output.empty() || routing.game.empty() || routing.chat.empty())) {
         StartRouting();
-    } else if (!g_app.settings.routing.enabled) {
+    } else if (!routing.enabled) {
         // Apps that already play move to the devices of a headset that mixes by its dial.
         SyncAppRouting();
     }
@@ -3099,6 +3156,10 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
         // The previous device is handed back before the new one is taken over.
         g_app.router.Stop();
         ReleaseRoutingDevices(true);
+    }
+    // The headset's own device chosen for Game or Chat stays, also while the headset is away.
+    if ((slot == ui::RoutingSlot::Game || slot == ui::RoutingSlot::Chat) && id.empty() && DirectChannelsAllowed()) {
+        routing.headsetDevices = true;
     }
     switch (slot) {
     case ui::RoutingSlot::Game: routing.game = id; break;
@@ -3766,11 +3827,13 @@ void Host::OnOpenReleasePage() {
 
 ui::Meters Host::ReadMeters() {
     // As heard: after ChatMix and each side's volume. In virtual device mode the bridges know it;
-    // otherwise the loudest app session of each group.
+    // otherwise, and for Game or Chat without a bridge, the loudest app session of each group.
     ui::Meters meters;
     if (g_app.settings.routing.enabled && g_app.router.IsRunning()) {
-        meters.game = g_app.router.TakeGameMeter();
-        meters.chat = g_app.router.TakeChatMeter();
+        meters.game = g_app.router.Routes(EqChannel::Game) ? g_app.router.TakeGameMeter()
+                                                            : g_app.mixer.GroupPeak(g_app.settings, AppGroup::Game, true);
+        meters.chat = g_app.router.Routes(EqChannel::Chat) ? g_app.router.TakeChatMeter()
+                                                            : g_app.mixer.GroupPeak(g_app.settings, AppGroup::Chat, true);
         meters.media = g_app.router.TakeMediaMeter();
         meters.aux = g_app.router.TakeAuxMeter();
     } else {

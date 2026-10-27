@@ -77,7 +77,8 @@ private:
 };
 
 // The devices of virtual device mode: where Game, Chat and optionally Media and Aux come from and where
-// each plays. Every output is resolved, never empty; media and aux are empty without a device of their own.
+// each plays. Every output is resolved, never empty; media and aux are empty without a device of their own,
+// game and chat when the channel plays straight on its output (a headset with Game and Chat devices of its own).
 struct RoutingPlan {
     std::wstring game;
     std::wstring chat;
@@ -89,7 +90,7 @@ struct RoutingPlan {
     std::wstring auxOutput;
 };
 
-// Bridges that implement ChatMix with virtual devices: Game and Chat, and Media and Aux when they have a device,
+// Bridges that implement ChatMix with virtual devices: Game, Chat, Media and Aux when they have a device,
 // each played into its output. Loopback capture takes the sound before the Windows volume of a
 // device, so the router applies it: each device scales its own channel, and the Game device (the
 // default output, so the taskbar slider and volume keys) also scales the channels that play on the
@@ -101,9 +102,11 @@ public:
     bool Start(const RoutingPlan& plan, HWND notifyWindow);
     void Stop();
     bool IsRunning() const {
-        return game_.IsRunning() && chat_.IsRunning() && (!mediaRouted_ || media_.IsRunning()) &&
-               (!auxRouted_ || aux_.IsRunning());
+        return started_ && (!gameRouted_ || game_.IsRunning()) && (!chatRouted_ || chat_.IsRunning()) &&
+               (!mediaRouted_ || media_.IsRunning()) && (!auxRouted_ || aux_.IsRunning());
     }
+    // Whether the channel has a bridge in the running plan; without one its apps play straight on its output.
+    bool Routes(EqChannel channel) const;
     BridgeError Error() const;
     void SetLevels(Levels levels);
     // The Media and Aux channels follow no balance; 0 mutes them.
@@ -118,10 +121,10 @@ public:
     // The rate the channel's bridge plays at; 0 while it does not run.
     UINT32 Rate(EqChannel channel) const;
     // Largest Chat output sample since the last call.
-    float TakeChatPeak() { return chat_.TakePeak(); }
+    float TakeChatPeak() { return chatRouted_ ? chat_.TakePeak() : 0.0f; }
     // Largest Game, Chat, Media and Aux output samples since the last call, for the level meters.
-    float TakeGameMeter() { return game_.TakeMeterPeak(); }
-    float TakeChatMeter() { return chat_.TakeMeterPeak(); }
+    float TakeGameMeter() { return gameRouted_ ? game_.TakeMeterPeak() : 0.0f; }
+    float TakeChatMeter() { return chatRouted_ ? chat_.TakeMeterPeak() : 0.0f; }
     float TakeMediaMeter() { return mediaRouted_ ? media_.TakeMeterPeak() : 0.0f; }
     float TakeAuxMeter() { return auxRouted_ ? aux_.TakeMeterPeak() : 0.0f; }
     int LatencyMs() const;
@@ -145,6 +148,9 @@ private:
     DeviceVolume chatVolume_;
     DeviceVolume mediaVolume_;
     DeviceVolume auxVolume_;
+    bool started_ = false;  // Between a successful Start and Stop, even with no bridge in the plan.
+    bool gameRouted_ = false;
+    bool chatRouted_ = false;
     bool mediaRouted_ = false;
     bool auxRouted_ = false;
     bool chatWithGame_ = true;   // Chat plays on the Game output, so the Game device's volume applies.

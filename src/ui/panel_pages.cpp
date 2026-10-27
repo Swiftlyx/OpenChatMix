@@ -844,8 +844,11 @@ float Panel::DrawRoutingSettings(float y) {
             // The device, and where it plays when that is not the shared output.
             const std::wstring& device = routing_.names[static_cast<int>(kDevices[channel])];
             const int output = static_cast<int>(kOutputs[channel]);
-            std::wstring subtitle = device.empty() ? std::wstring(T(kNone[channel])) : device;
-            if (!device.empty() && !routing_.ids[output].empty()) {
+            const bool own = channel < 2 && device.empty() && routing_.ownDevices;
+            std::wstring subtitle = own ? std::wstring(T(Text::RoutingOwnDevice))
+                                    : device.empty() ? std::wstring(T(kNone[channel]))
+                                                     : device;
+            if ((own || !device.empty()) && !routing_.ids[output].empty()) {
                 subtitle += L" → " + routing_.names[output];
             }
             rows.push_back(NavItem(kIdRoutingRow + 10 + channel, glyphs[channel], colors[channel], T(kChannels[channel]),
@@ -913,17 +916,24 @@ void Panel::DrawRoutingChannel() {
     const RoutingSlot device = kDevices[channel];
     const RoutingSlot output = kOutputs[channel];
     const std::wstring& deviceName = routing_.names[static_cast<int>(device)];
+    // Game and Chat of a headset with devices of its own play straight on them without a virtual device.
+    const bool own = channel < 2 && routing_.ownDevices;
     std::vector<CardRow> rows{
         ValueItem(kIdRoutingRow + 14, T(Text::RoutingDevice),
-                  deviceName.empty() ? std::wstring(T(kNone[channel])) : deviceName,
+                  !deviceName.empty() ? deviceName
+                  : own               ? std::wstring(T(Text::RoutingOwnDevice))
+                                      : std::wstring(T(kNone[channel])),
                   [this, device] { OpenPicker(device); }),
     };
-    // Where a channel plays matters only once it has a device.
-    if (!routing_.ids[static_cast<int>(device)].empty()) {
+    // Where a channel plays matters only once it has a device, or plays straight on the headset.
+    if (!routing_.ids[static_cast<int>(device)].empty() || own) {
         rows.push_back(ValueItem(kIdRoutingRow + 15, T(Text::RoutingPlaysOn), routing_.names[static_cast<int>(output)],
                                  [this, output] { OpenPicker(output); }));
     }
     y = DrawCard(y, rows);
+    if (own) {
+        y = PageHint(T(Text::RoutingOwnDeviceHint), y + design::kSpace2);
+    }
     if (!routing_.status.empty() && routing_.error) {
         y = PageHint(routing_.status.c_str(), y + design::kSpace2, p.error);
     }
@@ -954,7 +964,11 @@ void Panel::DrawPickDevice() {
         items.push_back({L"", T(routing_.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput), std::nullopt});
         break;
     case RoutingSlot::Game:
-    case RoutingSlot::Chat: break;
+    case RoutingSlot::Chat:
+        if (routing_.ownDevices) {
+            items.push_back({L"", T(Text::RoutingOwnDevice), std::nullopt});
+        }
+        break;
     }
     items.insert(items.end(), endpoints_.begin(), endpoints_.end());
     const std::wstring& current = pickSlot_ == RoutingSlot::MicInput    ? settings_.mic.input

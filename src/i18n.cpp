@@ -548,6 +548,9 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Keep settings next to the app",  // PortableMode
     L"Portable mode: settings, presets and plugin states live in the folder of OpenChatMix.exe instead of %APPDATA%, so they travel with it. Switching moves them and restarts OpenChatMix.",  // PortableModeHint
     L"The settings could not be moved. The app's folder may be read-only, such as Program Files; move OpenChatMix.exe to a folder you can write to.",  // PortableFailed
+    L"Headset's own device",  // RoutingOwnDevice
+    L"This headset has Game and Chat devices of its own, so a virtual device is optional here. Without one, the channel plays straight on the headset, with no equalizer or plugins.",  // RoutingOwnDeviceHint
+    L"The equalizer works on channels that have a virtual device, and on the processed microphone.",  // EqNeedsDevice
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1090,6 +1093,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Зберігати налаштування біля програми",
     L"Портативний режим: налаштування, пресети й стани плагінів лежать у теці OpenChatMix.exe, а не в %APPDATA%, тож переносяться разом із програмою. Перемикання переносить їх і перезапускає OpenChatMix.",
     L"Не вдалося перенести налаштування. Тека програми може бути лише для читання, як-от Program Files; перенесіть OpenChatMix.exe у теку, куди можна записувати.",
+    L"Власний пристрій гарнітури",
+    L"Ця гарнітура має власні пристрої для гри й чату, тож віртуальний пристрій тут необов'язковий. Без нього канал грає просто на гарнітуру, без еквалайзера й плагінів.",
+    L"Еквалайзер працює на каналах із віртуальним пристроєм, а також на обробленому мікрофоні.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1632,6 +1638,9 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Ayarları uygulamanın yanında tut",
     L"Taşınabilir mod: ayarlar, ön ayarlar ve eklenti durumları %APPDATA% yerine OpenChatMix.exe'nin klasöründe durur, böylece uygulamayla birlikte taşınır. Değiştirmek bunları taşır ve OpenChatMix'i yeniden başlatır.",
     L"Ayarlar taşınamadı. Uygulamanın klasörü Program Files gibi salt okunur olabilir; OpenChatMix.exe'yi yazılabilir bir klasöre taşıyın.",
+    L"Kulaklığın kendi cihazı",
+    L"Bu kulaklığın kendi Oyun ve Sohbet cihazları var, bu yüzden burada sanal cihaz isteğe bağlıdır. Sanal cihaz olmadan kanal doğrudan kulaklıkta çalar; ekolayzer ve eklentiler kullanılmaz.",
+    L"Ekolayzer, sanal cihazı olan kanallarda ve işlenen mikrofonda çalışır.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {
