@@ -20,6 +20,10 @@ constexpr float kAppRowHeight = 56.0f;  // App rows: a 32 DIP icon beside two li
 constexpr float kGroupVolumeRowHeight = 100.0f;  // A group on the mixer with its volume slider below.
 constexpr float kGroupSliderY = 77.0f;           // The slider's center from the top of the row.
 constexpr float kGroupPercentWidth = 56.0f;      // The volume beside the chevron.
+// The compact group row, for groups that would not fit otherwise: the apps beside the group's name on one line.
+constexpr float kGroupCompactRowHeight = 76.0f;
+constexpr float kGroupCompactLineHeight = 40.0f;  // The line with the name; it opens the group.
+constexpr float kGroupCompactSliderY = 54.0f;
 
 // The text cut to fit maxWidth with an ellipsis, and the width it takes; the ellipsis follows the last
 // character that fits, so nothing after it leaves a gap.
@@ -65,6 +69,23 @@ wchar_t GroupGlyph(AppGroup group) {
     case AppGroup::Game: break;
     }
     return kGlyphGame;
+}
+
+// As many app names as fit in width, then how many more the group holds; a first name too long for it is cut.
+std::wstring AppNames(Canvas& canvas, const std::vector<AppItem>& members, float width) {
+    std::wstring names;
+    for (size_t index = 0; index < members.size(); ++index) {
+        const std::wstring candidate = names.empty() ? members[index].name : names + L", " + members[index].name;
+        const size_t rest = members.size() - index - 1;
+        const std::wstring more = rest ? L" +" + std::to_wstring(rest) : L"";
+        if (!names.empty() && canvas.Measure(candidate + more, TextStyle::BodySmall) > width) {
+            names += L" +" + std::to_wstring(members.size() - index);
+            break;
+        }
+        names = candidate;
+    }
+    float shown = 0.0f;
+    return Elide(canvas, names, TextStyle::BodySmall, width, shown);
 }
 
 // The group an app is shown in: Media and Aux apps are with Game while their group is not in use.
@@ -187,24 +208,25 @@ void Panel::DrawMixer() {
 
     // The ChatMix card stays in place; the groups below it scroll when they don't fit.
     const float scrollTop = kHeaderHeight + 148.0f;
-    float y = SectionTitle(T(Text::Groups), BeginScroll(Page::Mixer, scrollTop) - 4.0f + design::kSectionGap);
+    const float start = BeginScroll(Page::Mixer, scrollTop);
+    float y = SectionTitle(T(Text::Groups), start - 4.0f + design::kSectionGap);
+    const std::vector<AppGroup> groups = AvailableGroups();
+    // Groups that would run past the bottom of the page take compact rows, so all of them show without scrolling;
+    // the virtual device mode card below them may still need it. The page ends kSpace3 below its content.
+    const float groupsTop = scrollTop + 4.0f + (y - start);
+    const float rowGaps = design::kSegmentGap * static_cast<float>(groups.size() - 1);
+    const bool compact =
+        groupsTop + kGroupVolumeRowHeight * static_cast<float>(groups.size()) + rowGaps + design::kSpace3 > ContentBottom();
+    // The text of a row ends before the volume, which sits on the chevron's line, beside it.
+    const float percentRight = design::kTrailingIconCenter - design::kSpace4;
+    const float namesRight = percentRight - kGroupPercentWidth - design::kSpace3;
     std::vector<CardRow> rows;
-    for (const AppGroup group : AvailableGroups()) {
-        const std::vector<AppItem> members = AppsInGroup(group);
-        // As many names as fit beside the volume, then how many more the group holds.
-        const float namesWidth = design::kTrailingIconCenter - design::kSpace4 - design::kLeadingTextInset -
-                                 kGroupPercentWidth - design::kSpace3;
-        std::wstring names;
-        for (size_t index = 0; index < members.size(); ++index) {
-            const std::wstring candidate = names.empty() ? members[index].name : names + L", " + members[index].name;
-            const size_t rest = members.size() - index - 1;
-            const std::wstring more = rest ? L" +" + std::to_wstring(rest) : L"";
-            if (!names.empty() && canvas_.Measure(candidate + more, TextStyle::BodySmall) > namesWidth) {
-                names += L" +" + std::to_wstring(members.size() - index);
-                break;
-            }
-            names = candidate;
-        }
+    for (const AppGroup group : groups) {
+        // A compact row has the names beside the group's name, a regular one below it.
+        const float namesLeft =
+            design::kLeadingTextInset +
+            (compact ? std::ceil(canvas_.Measure(GroupName(group), TextStyle::BodyLarge)) + design::kSpace2 : 0.0f);
+        const std::wstring names = AppNames(canvas_, AppsInGroup(group), std::max(0.0f, namesRight - namesLeft));
         const D2D1_COLOR_F color = group == AppGroup::Chat    ? p.tertiary
                                    : group == AppGroup::Media ? p.onSurfaceVariant
                                    : group == AppGroup::Aux   ? p.secondary
@@ -212,8 +234,9 @@ void Panel::DrawMixer() {
         const uint32_t id = HashId(kKindGroup, std::wstring(L"group") + GroupName(group));
         const std::wstring subtitle = names.empty() ? std::wstring(T(Text::GroupEmpty)) : names;
         // Each group carries its own volume, with what plays in it shown inside the slider.
-        rows.push_back({kGroupVolumeRowHeight,
-                        [this, &p, group, id, color, subtitle](float top) {
+        rows.push_back({compact ? kGroupCompactRowHeight : kGroupVolumeRowHeight,
+                        [this, &p, group, id, color, subtitle, compact, namesLeft, percentRight,
+                         namesRight](float top) {
                             const bool chat = group == AppGroup::Chat;
                             const bool media = group == AppGroup::Media;
                             const bool aux = group == AppGroup::Aux;
@@ -221,19 +244,33 @@ void Panel::DrawMixer() {
                                                : media ? settings_.mediaVolume
                                                : chat  ? settings_.chatVolume
                                                        : settings_.gameVolume;
-                            DrawNavRow(id, top, GroupGlyph(group), color, GroupName(group), subtitle,
-                                       [this, group] { OpenGroup(group); }, kGroupPercentWidth + design::kSpace3);
-                            // The percent sits on the chevron's line, beside it.
-                            const float percentRight = design::kTrailingIconCenter - design::kSpace4;
+                            const float lineHeight = compact ? kGroupCompactLineHeight : design::kTwoLineRowHeight;
+                            if (compact) {
+                                const float middle = top + lineHeight / 2.0f;
+                                canvas_.Glyph(GroupGlyph(group), {design::kLeadingIconCenter, middle},
+                                              design::kIconSize - 2.0f, color);
+                                canvas_.Text(GroupName(group), {design::kLeadingTextInset, middle - 11.0f, namesLeft,
+                                                                middle + 11.0f},
+                                             TextStyle::BodyLarge, p.onSurface);
+                                // One DIP lower, so the smaller text shares the name's baseline.
+                                canvas_.Text(subtitle, {namesLeft, middle - 9.0f, namesRight, middle + 11.0f},
+                                             TextStyle::BodySmall, p.onSurfaceVariant);
+                                canvas_.Glyph(kGlyphChevronRight, {design::kTrailingIconCenter, middle},
+                                              design::kSmallIconSize, p.onSurfaceVariant);
+                                AddHit({TileRect(top, lineHeight), id, [this, group] { OpenGroup(group); }});
+                            } else {
+                                DrawNavRow(id, top, GroupGlyph(group), color, GroupName(group), subtitle,
+                                           [this, group] { OpenGroup(group); }, kGroupPercentWidth + design::kSpace3);
+                            }
                             canvas_.Text(Percent(volume),
-                                         {percentRight - kGroupPercentWidth, top, percentRight,
-                                          top + design::kTwoLineRowHeight},
+                                         {percentRight - kGroupPercentWidth, top, percentRight, top + lineHeight},
                                          TextStyle::LabelLarge, p.onSurfaceVariant, TextAlign::Trailing);
                             DrawVolumeSlider(aux     ? kIdAuxVolume
                                              : media ? kIdMediaVolume
                                              : chat  ? kIdChatVolume
                                                      : kIdGameVolume,
-                                             design::kLeadingTextInset, kWidth - kInset, top + kGroupSliderY, volume,
+                                             design::kLeadingTextInset, kWidth - kInset,
+                                             top + (compact ? kGroupCompactSliderY : kGroupSliderY), volume,
                                              aux     ? meters_.aux
                                              : media ? meters_.media
                                              : chat  ? meters_.chat
