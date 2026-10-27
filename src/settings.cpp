@@ -35,6 +35,11 @@ constexpr wchar_t kChatPluginsSection[] = L"Plugins.Chat";
 constexpr wchar_t kMediaPluginsSection[] = L"Plugins.Media";
 constexpr wchar_t kAuxPluginsSection[] = L"Plugins.Aux";
 constexpr wchar_t kOutputsSection[] = L"Outputs";
+// [SoundDevices] the devices the sound settings in use belong to; the two lists name the devices that keep theirs
+// apart, in sections such as [Equalizer.Game@usb-1038-12cb] and [Microphone@usb-...].
+constexpr wchar_t kSoundDevicesSection[] = L"SoundDevices";
+constexpr wchar_t kOutputDevicesSection[] = L"SoundDevices.Outputs";
+constexpr wchar_t kMicDevicesSection[] = L"SoundDevices.Microphones";
 constexpr const wchar_t* kNoiseNames[] = {L"off", L"standard", L"strong"};
 constexpr const wchar_t* kCompressorNames[] = {L"off", L"light", L"medium", L"strong"};
 constexpr const wchar_t* kMicStageNames[] = {L"noise", L"eq", L"compressor", L"plugins"};  // Indexed by MicStage.
@@ -121,26 +126,49 @@ void LoadEqChannel(const std::wstring& path, const wchar_t* section, EqChannelSe
     effects.smartVolume = ParseSmartVolume(ReadString(path, section, L"SmartVolume", L"off"));
 }
 
+// The section is written whole, in one write instead of one per key.
 void SaveEqChannel(const std::wstring& path, const wchar_t* section, const EqChannelSettings& channel) {
-    WriteSectionString(path, section, L"Enabled", channel.enabled ? L"1" : L"0");
-    WriteSectionString(path, section, L"Preset", channel.preset);
+    std::wstring text;
+    auto add = [&](const std::wstring& key, const std::wstring& value) {
+        text += key + L"=" + value;
+        text += L'\0';
+    };
+    add(L"Enabled", channel.enabled ? L"1" : L"0");
+    add(L"Preset", channel.preset);
     wchar_t preamp[32];
     swprintf_s(preamp, L"%.2f", channel.eq.preamp);
-    WriteSectionString(path, section, L"Preamp", preamp);
+    add(L"Preamp", preamp);
     for (int i = 0; i < kParametricBands; ++i) {
-        const std::wstring key = L"Band" + std::to_wstring(i + 1);
-        WriteSectionString(path, section, key.c_str(), FormatBand(channel.eq.bands[i]));
+        add(L"Band" + std::to_wstring(i + 1), FormatBand(channel.eq.bands[i]));
     }
     auto effect = [&](const wchar_t* key, float value) {
-        wchar_t text[16];
-        swprintf_s(text, L"%.1f", value);
-        WriteSectionString(path, section, key, text);
+        wchar_t number[16];
+        swprintf_s(number, L"%.1f", value);
+        add(key, number);
     };
     const EqEffects& effects = channel.eq.effects;
     effect(L"BassBoost", effects.bassBoost);
     effect(L"TrebleBoost", effects.trebleBoost);
     effect(L"VoiceClarity", effects.voiceClarity);
-    WriteSectionString(path, section, L"SmartVolume", SmartVolumeKey(effects.smartVolume));
+    add(L"SmartVolume", SmartVolumeKey(effects.smartVolume));
+    text += L'\0';
+    WritePrivateProfileSectionW(section, text.c_str(), path.c_str());
+}
+
+// The key=value lines of a section, in order.
+std::vector<std::pair<std::wstring, std::wstring>> ReadEntries(const std::wstring& path, const wchar_t* section) {
+    std::vector<std::pair<std::wstring, std::wstring>> entries;
+    std::vector<wchar_t> buffer(65536, L'\0');
+    const DWORD length = GetPrivateProfileSectionW(section, buffer.data(), static_cast<DWORD>(buffer.size()), path.c_str());
+    for (size_t offset = 0; offset < length;) {
+        const std::wstring entry(buffer.data() + offset);
+        offset += entry.size() + 1;
+        const size_t equals = entry.find(L'=');
+        if (equals != std::wstring::npos) {
+            entries.emplace_back(Trim(entry.substr(0, equals)), entry.substr(equals + 1));
+        }
+    }
+    return entries;
 }
 
 // [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq|auxEq; an empty field leaves that unchanged.
@@ -242,18 +270,8 @@ void SavePlugins(const std::wstring& path, const wchar_t* section, const std::ve
     WritePrivateProfileSectionW(section, text.c_str(), path.c_str());
 }
 
-// [Microphone] Plugin1=enabled|id|path
-void LoadMic(const std::wstring& path, MicSettings& mic) {
-    mic.enabled = ReadSectionInt(path, kMicSection, L"Enabled", 0) != 0;
-    mic.input = ReadString(path, kMicSection, L"Input", L"");
-    mic.output = ReadString(path, kMicSection, L"Output", L"");
-    mic.keepLevels = ReadSectionInt(path, kMicSection, L"KeepLevels", 1) != 0;
-    mic.noise = ParseName(ReadString(path, kMicSection, L"NoiseSuppression", L"standard"), kNoiseNames,
-                          NoiseSuppression::Standard);
-    mic.compressor = ParseName(ReadString(path, kMicSection, L"Compressor", L"off"), kCompressorNames, MicCompressor::Off);
-    mic.monitor = ReadSectionInt(path, kMicSection, L"Monitor", 0) != 0;
-    // "noise,eq,compressor,plugins"; anything but each step exactly once keeps the default order.
-    const std::wstring order = ReadString(path, kMicSection, L"Order", L"");
+// "noise,eq,compressor,plugins"; anything but each step exactly once gives the default order.
+MicStageOrder ParseMicOrder(const std::wstring& order) {
     MicStageOrder parsed{};
     int count = 0;
     bool seen[kMicStageCount] = {};
@@ -268,9 +286,28 @@ void LoadMic(const std::wstring& path, MicSettings& mic) {
         }
         start = end + 1;
     }
-    if (count == kMicStageCount) {
-        mic.order = parsed;
+    return count == kMicStageCount ? parsed : kDefaultMicOrder;
+}
+
+std::wstring FormatMicOrder(const MicStageOrder& order) {
+    std::wstring text;
+    for (const MicStage stage : order) {
+        text += (text.empty() ? L"" : L",") + std::wstring(kMicStageNames[static_cast<int>(stage)]);
     }
+    return text;
+}
+
+// [Microphone] Plugin1=enabled|id|path
+void LoadMic(const std::wstring& path, MicSettings& mic) {
+    mic.enabled = ReadSectionInt(path, kMicSection, L"Enabled", 0) != 0;
+    mic.input = ReadString(path, kMicSection, L"Input", L"");
+    mic.output = ReadString(path, kMicSection, L"Output", L"");
+    mic.keepLevels = ReadSectionInt(path, kMicSection, L"KeepLevels", 1) != 0;
+    mic.noise = ParseName(ReadString(path, kMicSection, L"NoiseSuppression", L"standard"), kNoiseNames,
+                          NoiseSuppression::Standard);
+    mic.compressor = ParseName(ReadString(path, kMicSection, L"Compressor", L"off"), kCompressorNames, MicCompressor::Off);
+    mic.monitor = ReadSectionInt(path, kMicSection, L"Monitor", 0) != 0;
+    mic.order = ParseMicOrder(ReadString(path, kMicSection, L"Order", L""));
     LoadPlugins(path, kMicSection, mic.plugins);
 }
 
@@ -288,14 +325,143 @@ void SaveMic(const std::wstring& path, const MicSettings& mic) {
     add(L"NoiseSuppression", kNoiseNames[static_cast<int>(mic.noise)]);
     add(L"Compressor", kCompressorNames[static_cast<int>(mic.compressor)]);
     add(L"Monitor", mic.monitor ? L"1" : L"0");
-    std::wstring order;
-    for (const MicStage stage : mic.order) {
-        order += (order.empty() ? L"" : L",") + std::wstring(kMicStageNames[static_cast<int>(stage)]);
-    }
-    add(L"Order", order);
+    add(L"Order", FormatMicOrder(mic.order));
     AddPlugins(section, mic.plugins);
     section += L'\0';
     WritePrivateProfileSectionW(kMicSection, section.c_str(), path.c_str());
+}
+
+// ---- Sound settings kept by devices not in use ----
+
+std::wstring KeptSection(const wchar_t* section, const std::wstring& key) {
+    return std::wstring(section) + L"@" + key;
+}
+
+constexpr const wchar_t* kOutputEqSections[] = {kGameEqSection, kChatEqSection, kMediaEqSection, kAuxEqSection};
+constexpr const wchar_t* kOutputPluginSections[] = {kGamePluginsSection, kChatPluginsSection, kMediaPluginsSection,
+                                                    kAuxPluginsSection};
+
+// In the order of the section lists above.
+std::array<EqChannelSettings*, 4> EqualizersOf(OutputSound& sound) {
+    return {&sound.gameEq, &sound.chatEq, &sound.mediaEq, &sound.auxEq};
+}
+std::array<std::vector<ChainPlugin>*, 4> PluginListsOf(OutputSound& sound) {
+    return {&sound.gamePlugins, &sound.chatPlugins, &sound.mediaPlugins, &sound.auxPlugins};
+}
+
+void LoadOutputSound(const std::wstring& path, const std::wstring& key, OutputSound& sound) {
+    const auto equalizers = EqualizersOf(sound);
+    const auto plugins = PluginListsOf(sound);
+    for (size_t index = 0; index < equalizers.size(); ++index) {
+        LoadEqChannel(path, KeptSection(kOutputEqSections[index], key).c_str(), *equalizers[index]);
+        LoadPlugins(path, KeptSection(kOutputPluginSections[index], key).c_str(), *plugins[index]);
+    }
+}
+
+void SaveOutputSound(const std::wstring& path, const std::wstring& key, OutputSound sound) {
+    const auto equalizers = EqualizersOf(sound);
+    const auto plugins = PluginListsOf(sound);
+    for (size_t index = 0; index < equalizers.size(); ++index) {
+        SaveEqChannel(path, KeptSection(kOutputEqSections[index], key).c_str(), *equalizers[index]);
+        SavePlugins(path, KeptSection(kOutputPluginSections[index], key).c_str(), *plugins[index]);
+    }
+}
+
+void DeleteOutputSound(const std::wstring& path, const std::wstring& key) {
+    for (size_t index = 0; index < std::size(kOutputEqSections); ++index) {
+        WritePrivateProfileStringW(KeptSection(kOutputEqSections[index], key).c_str(), nullptr, nullptr, path.c_str());
+        WritePrivateProfileStringW(KeptSection(kOutputPluginSections[index], key).c_str(), nullptr, nullptr, path.c_str());
+    }
+}
+
+void LoadMicSound(const std::wstring& path, const std::wstring& key, MicSound& sound) {
+    const std::wstring section = KeptSection(kMicSection, key);
+    sound.noise = ParseName(ReadString(path, section.c_str(), L"NoiseSuppression", L"standard"), kNoiseNames,
+                            NoiseSuppression::Standard);
+    sound.compressor =
+        ParseName(ReadString(path, section.c_str(), L"Compressor", L"off"), kCompressorNames, MicCompressor::Off);
+    sound.order = ParseMicOrder(ReadString(path, section.c_str(), L"Order", L""));
+    LoadPlugins(path, section.c_str(), sound.plugins);
+    LoadEqChannel(path, KeptSection(kMicEqSection, key).c_str(), sound.eq);
+}
+
+void SaveMicSound(const std::wstring& path, const std::wstring& key, const MicSound& sound) {
+    std::wstring text;
+    auto add = [&](const std::wstring& name, const std::wstring& value) {
+        text += name + L"=" + value;
+        text += L'\0';
+    };
+    add(L"NoiseSuppression", kNoiseNames[static_cast<int>(sound.noise)]);
+    add(L"Compressor", kCompressorNames[static_cast<int>(sound.compressor)]);
+    add(L"Order", FormatMicOrder(sound.order));
+    AddPlugins(text, sound.plugins);
+    text += L'\0';
+    WritePrivateProfileSectionW(KeptSection(kMicSection, key).c_str(), text.c_str(), path.c_str());
+    SaveEqChannel(path, KeptSection(kMicEqSection, key).c_str(), sound.eq);
+}
+
+void DeleteMicSound(const std::wstring& path, const std::wstring& key) {
+    WritePrivateProfileStringW(KeptSection(kMicSection, key).c_str(), nullptr, nullptr, path.c_str());
+    WritePrivateProfileStringW(KeptSection(kMicEqSection, key).c_str(), nullptr, nullptr, path.c_str());
+}
+
+void LoadSoundDevices(const std::wstring& path, Settings& settings) {
+    settings.outputDevice = ReadString(path, kSoundDevicesSection, L"Output", L"");
+    settings.outputDeviceName = ReadString(path, kSoundDevicesSection, L"OutputName", L"");
+    settings.micDevice = ReadString(path, kSoundDevicesSection, L"Microphone", L"");
+    settings.micDeviceName = ReadString(path, kSoundDevicesSection, L"MicrophoneName", L"");
+    for (const auto& [key, name] : ReadEntries(path, kOutputDevicesSection)) {
+        if (!key.empty() && key != settings.outputDevice) {
+            KeptSound<OutputSound>& kept = settings.otherOutputs[key];
+            kept.name = name;
+            LoadOutputSound(path, key, kept.sound);
+        }
+    }
+    for (const auto& [key, name] : ReadEntries(path, kMicDevicesSection)) {
+        if (!key.empty() && key != settings.micDevice) {
+            KeptSound<MicSound>& kept = settings.otherMics[key];
+            kept.name = name;
+            LoadMicSound(path, key, kept.sound);
+        }
+    }
+}
+
+// A device back in use has its settings in the main sections, so its own sections go.
+void SaveSoundDevices(const std::wstring& path, const Settings& settings) {
+    WriteSectionString(path, kSoundDevicesSection, L"Output", settings.outputDevice);
+    WriteSectionString(path, kSoundDevicesSection, L"OutputName", settings.outputDeviceName);
+    WriteSectionString(path, kSoundDevicesSection, L"Microphone", settings.micDevice);
+    WriteSectionString(path, kSoundDevicesSection, L"MicrophoneName", settings.micDeviceName);
+    for (const auto& [key, name] : ReadEntries(path, kOutputDevicesSection)) {
+        if (!settings.otherOutputs.contains(key)) {
+            DeleteOutputSound(path, key);
+        }
+    }
+    for (const auto& [key, name] : ReadEntries(path, kMicDevicesSection)) {
+        if (!settings.otherMics.contains(key)) {
+            DeleteMicSound(path, key);
+        }
+    }
+    std::wstring outputs;
+    for (const auto& [key, kept] : settings.otherOutputs) {
+        outputs += key + L"=" + kept.name;
+        outputs += L'\0';
+        SaveOutputSound(path, key, kept.sound);
+    }
+    std::wstring mics;
+    for (const auto& [key, kept] : settings.otherMics) {
+        mics += key + L"=" + kept.name;
+        mics += L'\0';
+        SaveMicSound(path, key, kept.sound);
+    }
+    for (auto [section, text] : {std::pair{kOutputDevicesSection, &outputs}, std::pair{kMicDevicesSection, &mics}}) {
+        if (text->empty()) {
+            WritePrivateProfileStringW(section, nullptr, nullptr, path.c_str());
+        } else {
+            *text += L'\0';
+            WritePrivateProfileSectionW(section, text->c_str(), path.c_str());
+        }
+    }
 }
 
 std::vector<std::wstring> SplitList(const std::wstring& text) {
@@ -656,6 +822,34 @@ const std::vector<ChainPlugin>& PluginsOf(const Settings& settings, EqChannel ch
     return PluginsOf(const_cast<Settings&>(settings), channel);
 }
 
+OutputSound TakeOutputSound(const Settings& settings) {
+    return {settings.gameEq,      settings.chatEq,      settings.mediaEq,      settings.auxEq,
+            settings.gamePlugins, settings.chatPlugins, settings.mediaPlugins, settings.auxPlugins};
+}
+
+void PutOutputSound(Settings& settings, const OutputSound& sound) {
+    settings.gameEq = sound.gameEq;
+    settings.chatEq = sound.chatEq;
+    settings.mediaEq = sound.mediaEq;
+    settings.auxEq = sound.auxEq;
+    settings.gamePlugins = sound.gamePlugins;
+    settings.chatPlugins = sound.chatPlugins;
+    settings.mediaPlugins = sound.mediaPlugins;
+    settings.auxPlugins = sound.auxPlugins;
+}
+
+MicSound TakeMicSound(const Settings& settings) {
+    return {settings.micEq, settings.mic.noise, settings.mic.compressor, settings.mic.order, settings.mic.plugins};
+}
+
+void PutMicSound(Settings& settings, const MicSound& sound) {
+    settings.micEq = sound.eq;
+    settings.mic.noise = sound.noise;
+    settings.mic.compressor = sound.compressor;
+    settings.mic.order = sound.order;
+    settings.mic.plugins = sound.plugins;
+}
+
 std::wstring ExePath() {
     std::wstring path(MAX_PATH, L'\0');
     for (;;) {
@@ -796,6 +990,7 @@ Settings LoadSettings(const std::wstring& path) {
     LoadPlugins(path, kAuxPluginsSection, settings.auxPlugins);
     LoadMic(path, settings.mic);
     LoadProfiles(path, settings);
+    LoadSoundDevices(path, settings);
     settings.routing.enabled = GetPrivateProfileIntW(kRoutingSection, L"Enabled", 0, path.c_str()) != 0;
     settings.routing.game = ReadString(path, kRoutingSection, L"Game", L"");
     settings.routing.chat = ReadString(path, kRoutingSection, L"Chat", L"");
@@ -921,6 +1116,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     SavePlugins(path, kAuxPluginsSection, settings.auxPlugins);
     SaveMic(path, settings.mic);
     SaveProfiles(path, settings);
+    SaveSoundDevices(path, settings);
     WritePrivateProfileStringW(kRoutingSection, L"Enabled", settings.routing.enabled ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Game", settings.routing.game.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Chat", settings.routing.chat.c_str(), path.c_str());

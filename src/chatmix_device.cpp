@@ -26,10 +26,12 @@ constexpr uint8_t kNovaProBatteryEvent = 0xB7;   // Headset or spare battery lev
 constexpr uint8_t kNovaStatusRequest = 0xB0;
 constexpr uint8_t kNovaStatusLinkEvent = 0xB9;   // Dongles: the 2.4 GHz link to the headset changed.
 constexpr uint8_t kArctis7DialRequest = 0x24;    // Arctis 7: answered with 06 24 [game] [chat].
+constexpr uint8_t kArctis9StatusRequest = 0x20;  // Arctis 9: answered with the status, the dial included.
+constexpr USHORT kArctis1UsagePage = 0xFF43;
 
 constexpr DWORD kCommandGapMs = 10;
 constexpr DWORD kStatusPollMs = 100;
-constexpr DWORD kArctis7PollMs = 250;  // The dial only shows in the panel, so a slower poll will do.
+constexpr DWORD kLegacyPollMs = 250;  // Arctis 7 and 9: the dial only shows in the panel, so a slower poll will do.
 constexpr ULONGLONG kBatteryPollMs = 30000;
 constexpr DWORD kReaderStopTimeoutMs = 2000;
 
@@ -38,6 +40,8 @@ struct ProtocolLayout {
     uint8_t reportId;
     int listenInterfaces[2];
     bool polled;
+    USHORT commandPage = kCommandUsagePage;  // The collection preferred for commands.
+    bool anyPage = false;  // Interface 0 of the older Arctis: the pages of its collections are not known.
 };
 
 constexpr ProtocolLayout kNovaProLayout{4, 0x06, {4, -1}, false};
@@ -45,12 +49,18 @@ constexpr ProtocolLayout kNovaStatusLayout{3, 0x00, {3, 5}, true};
 // Commands and their replies on page FFC0, events on page FF00, both on interface 3.
 constexpr ProtocolLayout kEliteLayout{3, 0x01, {3, -1}, false};
 constexpr ProtocolLayout kArctis7Layout{5, 0x06, {5, -1}, true};
+constexpr ProtocolLayout kArctis1Layout{3, 0x06, {3, -1}, false, kArctis1UsagePage};
+constexpr ProtocolLayout kArctis9Layout{0, 0x00, {0, -1}, true, kCommandUsagePage, true};
+constexpr ProtocolLayout kProWirelessLayout{0, 0x00, {0, -1}, false, kCommandUsagePage, true};
 
 const ProtocolLayout& LayoutFor(const DeviceModel& model) {
     switch (model.protocol) {
     case DeviceProtocol::NovaPro: return kNovaProLayout;
     case DeviceProtocol::Elite: return kEliteLayout;
     case DeviceProtocol::ArctisLegacy: return kArctis7Layout;
+    case DeviceProtocol::Arctis1Legacy: return kArctis1Layout;
+    case DeviceProtocol::Arctis9Legacy: return kArctis9Layout;
+    case DeviceProtocol::ProWirelessLegacy: return kProWirelessLayout;
     case DeviceProtocol::NovaStatus: break;
     }
     return kNovaStatusLayout;
@@ -58,7 +68,23 @@ const ProtocolLayout& LayoutFor(const DeviceModel& model) {
 
 // What a polled device is asked for every poll.
 uint8_t PollRequest(const DeviceModel& model) {
-    return model.protocol == DeviceProtocol::ArctisLegacy ? kArctis7DialRequest : kNovaStatusRequest;
+    switch (model.protocol) {
+    case DeviceProtocol::ArctisLegacy: return kArctis7DialRequest;
+    case DeviceProtocol::Arctis9Legacy: return kArctis9StatusRequest;
+    default: return kNovaStatusRequest;
+    }
+}
+
+// Experimental models log all they send, so a log shows what their reports hold.
+bool LogsInFull(const DeviceModel& model) {
+    switch (model.protocol) {
+    case DeviceProtocol::Elite:
+    case DeviceProtocol::ArctisLegacy:
+    case DeviceProtocol::Arctis1Legacy:
+    case DeviceProtocol::Arctis9Legacy:
+    case DeviceProtocol::ProWirelessLegacy: return true;
+    default: return false;
+    }
 }
 
 // Base stations that push 07 events: the dial, the knob and the menu, as on the GameDAC.
@@ -114,7 +140,7 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
             hid.outputLength == 0) {
             continue;
         }
-        if (!command || hid.usagePage == kCommandUsagePage) {
+        if (!command || hid.usagePage == layout.commandPage) {
             command = &hid;
         }
     }
@@ -136,7 +162,7 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
     for (const auto& hid : interfaces) {
         const bool listened = std::find(std::begin(layout.listenInterfaces), std::end(layout.listenInterfaces),
                                         hid.interfaceNumber) != std::end(layout.listenInterfaces);
-        if (hid.productId != model->productId || !listened || hid.usagePage < kVendorUsagePageMin ||
+        if (hid.productId != model->productId || !listened || (!layout.anyPage && hid.usagePage < kVendorUsagePageMin) ||
             hid.inputLength == 0) {
             continue;
         }
@@ -164,6 +190,7 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
     levelsPending_ = false;
     pushEventsSeen_ = false;
     pollFailing_ = false;
+    lastQuery_ = 0;
     dialMode_ = DialMode::Unknown;
     lastEventTick_ = 0;
     stopEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -221,17 +248,43 @@ void ChatMixDevice::Start(Levels levels) {
         Send({kNovaProChatMixIcon, 1});
         Sleep(kCommandGapMs);
         Send({kNovaProChatMixEnable, 1});
-    } else {
+    } else if (LayoutFor(*model_).polled) {
         Send({PollRequest(*model_)});
     }
     // Read-only queries; their answers arrive as headset updates.
     const HeadsetFeatures& features = FeaturesFor(model_->family);
-    for (const uint8_t query : {features.stateQuery, features.batteryQuery}) {
-        // The dongles' battery comes with the status request sent above.
-        if (query && !(model_->protocol == DeviceProtocol::NovaStatus && query == kNovaStatusRequest)) {
-            Sleep(kCommandGapMs);
-            Send({query});
+    if (features.stateQuery) {
+        Sleep(kCommandGapMs);
+        SendQuery(features.stateQuery);
+    }
+    // The battery of the dongles and the Arctis 9 comes with the status request sent above.
+    const bool polledBattery = LayoutFor(*model_).polled && features.batteryQuery == PollRequest(*model_);
+    if (!polledBattery) {
+        Sleep(kCommandGapMs);
+        QueryBattery();
+    }
+}
+
+bool ChatMixDevice::SendQuery(uint8_t query) {
+    const uint8_t argument = model_ ? FeaturesFor(model_->family).queryArgument : 0;
+    lastQuery_ = query;
+    return argument ? Send({query, argument}) : Send({query});
+}
+
+void ChatMixDevice::QueryBattery() {
+    if (!model_) {
+        return;
+    }
+    const HeadsetFeatures& features = FeaturesFor(model_->family);
+    if (features.linkQuery) {
+        SendQuery(features.linkQuery);
+        if (features.batteryAfterLink || !features.batteryQuery) {
+            return;
         }
+        Sleep(kCommandGapMs);
+    }
+    if (features.batteryQuery) {
+        SendQuery(features.batteryQuery);
     }
 }
 
@@ -258,7 +311,7 @@ bool ChatMixDevice::SendFeature(std::span<const uint8_t> payload) {
 void ChatMixDevice::QueryState() {
     if (model_) {
         if (const uint8_t query = FeaturesFor(model_->family).stateQuery) {
-            Send({query});
+            SendQuery(query);
         }
     }
 }
@@ -365,7 +418,7 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
     // Settings replies are logged in full, other reports by their first bytes; everything from an experimental
     // model in full, so its log shows what it sends.
     const bool state = model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[1] == 0x20;
-    const bool full = state || model_->protocol == DeviceProtocol::Elite || model_->protocol == DeviceProtocol::ArctisLegacy;
+    const bool full = state || LogsInFull(*model_);
     const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, full ? 32 : 8));
     if (current != channel.last) {
         Log("rx %s", HexBytes(current.data(), current.size()).c_str());
@@ -389,16 +442,25 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         }
     }
 
-    QueueHeadsetUpdates(ParseHeadsetReport(*model_, data, size));
+    const HeadsetFeatures& features = FeaturesFor(model_->family);
+    std::vector<HeadsetUpdate> updates = ParseHeadsetReport(*model_, data, size, lastQuery_);
+    // A headset found on is asked for its battery next where the two replies cannot be told apart.
+    const bool headsetOn = std::any_of(updates.begin(), updates.end(), [](const HeadsetUpdate& update) {
+        return update.kind == HeadsetUpdate::Kind::Link && !update.headsetOff;
+    });
+    QueueHeadsetUpdates(std::move(updates));
+    if (headsetOn && features.batteryAfterLink) {
+        SendQuery(features.batteryQuery);
+    }
 
     // The headset was switched on or off: its status is asked for at once instead of at the next battery poll,
     // so the output can follow within a moment.
-    const uint8_t batteryQuery = FeaturesFor(model_->family).batteryQuery;
     const bool linkChanged = PushesEvents(*model_)
                                  ? size >= 2 && data[0] == kNovaProEventReportId && data[1] == kNovaProLinkEvent
-                                 : size >= 1 && data[0] == kNovaStatusLinkEvent;
-    if (batteryQuery && linkChanged) {
-        Send({batteryQuery});
+                                 : model_->protocol == DeviceProtocol::NovaStatus && size >= 1 &&
+                                       data[0] == kNovaStatusLinkEvent;
+    if (features.batteryQuery && linkChanged) {
+        SendQuery(features.batteryQuery);
     }
 
     bool pushed = false;
@@ -440,10 +502,13 @@ void ChatMixDevice::ReadLoop() {
         }
     }
 
-    const uint8_t batteryQuery = FeaturesFor(model_->family).batteryQuery;
+    const HeadsetFeatures& features = FeaturesFor(model_->family);
+    const bool batteryQuery = features.batteryQuery || features.linkQuery;
     ULONGLONG nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
     while (!lost) {
-        const DWORD pollMs = model_->protocol == DeviceProtocol::ArctisLegacy ? kArctis7PollMs : kStatusPollMs;
+        const bool legacy = model_->protocol == DeviceProtocol::ArctisLegacy ||
+                            model_->protocol == DeviceProtocol::Arctis9Legacy;
+        const DWORD pollMs = legacy ? kLegacyPollMs : kStatusPollMs;
         DWORD timeout = polled && !pushEventsSeen_ ? pollMs : INFINITE;
         if (batteryQuery) {
             const ULONGLONG now = GetTickCount64();
@@ -452,7 +517,7 @@ void ChatMixDevice::ReadLoop() {
         const DWORD wait = WaitForMultipleObjects(static_cast<DWORD>(waits.size()), waits.data(), FALSE, timeout);
         if (wait == WAIT_TIMEOUT) {
             if (batteryQuery && GetTickCount64() >= nextBatteryPoll) {
-                Send({batteryQuery});
+                QueryBattery();
                 nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
             }
             if (polled && !pushEventsSeen_) {

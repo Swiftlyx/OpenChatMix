@@ -51,6 +51,14 @@ void Panel::RecordUndo(UndoStep before) {
     }
 }
 
+void Panel::ForgetEqualizerUndo(bool microphone) {
+    for (std::vector<UndoStep>* steps : {&undo_, &redo_}) {
+        std::erase_if(*steps, [microphone](const UndoStep& step) {
+            return !step.headset && (step.channel == EqChannel::Mic) == microphone;
+        });
+    }
+}
+
 bool Panel::UndoEqualizer(bool redo) {
     const bool headset = page_ == Page::Headset;
     if (!headset && page_ != Page::Equalizer) {

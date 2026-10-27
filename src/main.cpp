@@ -81,6 +81,7 @@ constexpr UINT_PTR kTimerTrayCard = 16;
 constexpr UINT_PTR kTimerAddOnScreen = 17;
 constexpr UINT_PTR kTimerOutputBattery = 18;
 constexpr UINT_PTR kTimerSendEqualizer = 19;
+constexpr UINT_PTR kTimerOutputSound = 20;
 constexpr UINT kTrayFrameMs = 15;  // About one frame of a 60 Hz display; the tray needs no more.
 constexpr UINT kMicRetryMs = 3000;
 constexpr UINT kSavePluginsMs = 60 * 1000;  // Plugin settings are kept safe while their windows are used.
@@ -117,6 +118,9 @@ constexpr UINT kRebindDelayMs = 500;      // Coalesces bursts of endpoint notifi
 constexpr UINT kGgWatchMs = 5000;
 constexpr UINT kIdleCheckMs = 250;
 constexpr UINT kOutputBatteryPollMs = 60000;  // A Bluetooth output's battery, as Windows reports it.
+// Another output brings its own sound settings once it has stayed this long, so a headset that drops out for a moment
+// keeps its plugins loaded.
+constexpr UINT kOutputSoundDelayMs = 3000;
 constexpr ULONGLONG kIdlePreviewMs = 8000;  // A newly chosen animation shows right away for this long.
 constexpr float kSilencePeak = 0.0001f;     // About -80 dBFS.
 // SteelSeries GG's apps draw on the same display; the screensaver holds still while they show something, for as
@@ -674,7 +678,8 @@ void RemoveTray() {
 // Windows tells it for other devices. Empty while that is unknown or a wireless headset is off.
 std::wstring ConnectionText() {
     if (g_app.device.IsOpen()) {
-        if (g_app.device.Model()->family == DeviceFamily::NovaProWired) {
+        const DeviceFamily family = g_app.device.Model()->family;
+        if (family == DeviceFamily::NovaProWired || family == DeviceFamily::ArctisPro) {
             return L"USB";
         }
         if (g_app.headset.headsetOff) {
@@ -719,6 +724,11 @@ void UpdateStatus() {
             break;
         case DialMode::Unknown:
             break;
+        }
+        // A headset without a dial (Arctis 1, 7X, 7P) takes the balance from the hotkeys and the panel.
+        const DeviceModel& model = *g_app.device.Model();
+        if (!MixesInHeadset(model) && !ReportsDial(model)) {
+            detail = T(Text::HotkeysOnly);
         }
     }
     // Other headsets and speakers have no dial: their name shows with the hint that hotkeys drive the balance.
@@ -1004,6 +1014,9 @@ void RefreshOutputName() {
         }
     }
     RefreshOutputBattery();
+    if (!g_app.outputId.empty() && SoundDeviceKey(g_app.outputId) != g_app.settings.outputDevice) {
+        SetTimer(g_app.window, kTimerOutputSound, kOutputSoundDelayMs, nullptr);
+    }
 }
 
 bool IsRoutingDevice(const std::wstring& id) {
@@ -1624,6 +1637,42 @@ void SyncOutputPlugins() {
     }
 }
 
+// The processing belongs to the microphone: another one brings its own, or starts with none. The first microphone seen
+// takes the processing as it is.
+void FollowMicSound() {
+    Settings& settings = g_app.settings;
+    const std::wstring key = SoundDeviceKey(g_app.micInputId);
+    if (key.empty() || key == settings.micDevice) {
+        return;
+    }
+    std::wstring name;
+    for (const auto& endpoint : ListCaptureEndpoints()) {
+        if (endpoint.id == g_app.micInputId) {
+            name = endpoint.name;
+        }
+    }
+    if (!settings.micDevice.empty()) {
+        // The previous microphone's plugins close, their settings saved.
+        UnloadPlugins(EqChannel::Mic);
+        settings.otherMics[settings.micDevice] = {settings.micDeviceName, TakeMicSound(settings)};
+        const auto kept = settings.otherMics.find(key);
+        const bool known = kept != settings.otherMics.end();
+        Log("microphone processing: %s for %s", known ? "kept" : "new", Utf8(key).c_str());
+        PutMicSound(settings, known ? kept->second.sound : MicSound{});
+        if (known) {
+            settings.otherMics.erase(kept);
+        }
+        g_app.panel->ForgetEqualizerUndo(true);
+    }
+    if (settings.micDevice.empty()) {
+        Log("microphone processing belongs to %s", Utf8(key).c_str());
+    }
+    settings.micDevice = key;
+    settings.micDeviceName = name;
+    Save();
+    PushSettings();
+}
+
 void StartMic() {
     g_app.mic.Stop();
     g_app.micLevels.Stop();
@@ -1634,8 +1683,9 @@ void StartMic() {
         PushMic();
         return;
     }
-    LoadPlugins(EqChannel::Mic, MicProcessor::kRate);
     g_app.micInputId = settings.input.empty() ? DefaultCaptureEndpoint(eCommunications) : settings.input;
+    FollowMicSound();
+    LoadPlugins(EqChannel::Mic, MicProcessor::kRate);
     const std::vector<AudioEndpoint> renders = ListRenderEndpoints();
     const std::wstring output = MicOutputId(renders);
     g_app.mic.SetSettings(MicDsp());
@@ -1884,7 +1934,7 @@ void RefreshApps() {
 // A connected headset has a ChatMix dial; the balance then keeps to its positions, otherwise any
 // percent is possible.
 bool HasBalanceDial() {
-    return g_app.device.IsOpen();
+    return g_app.device.IsOpen() && ReportsDial(*g_app.device.Model());
 }
 
 int BalanceGrid() {
@@ -2566,7 +2616,8 @@ void ConnectDevice() {
         g_app.headset = HeadsetState();
         LoadHeadsetState(g_app.iniPath, model.productId, *g_app.features, g_app.headset);
         g_app.mixer.SetTarget(model.productId);
-        g_app.levels = DialLevels(g_app.levels);
+        // A knob that mixes in the headset and is not read leaves the panel at the middle.
+        g_app.levels = MixesInHeadset(model) && !ReportsDial(model) ? Levels{} : DialLevels(g_app.levels);
         g_app.panel->SetLevels(g_app.levels);
         g_app.device.Start(g_app.levels);
         StartIdleScreen(false);
@@ -2649,11 +2700,9 @@ std::optional<NamedEq> FindEqPreset(const std::wstring& name, EqChannel channel)
     return std::nullopt;
 }
 
-void RestoreProfile() {
+// The equalizers as they were before the game profile in effect set its presets; false when it set none.
+bool RestoreProfileEqualizers() {
     App::ProfileRestore& restore = g_app.profileRestore;
-    if (restore.levels) {
-        SetLevels(*restore.levels, false);
-    }
     bool equalizers = false;
     for (auto [saved, state] : {std::pair{&restore.gameEq, &g_app.settings.gameEq},
                                 std::pair{&restore.chatEq, &g_app.settings.chatEq},
@@ -2661,10 +2710,19 @@ void RestoreProfile() {
                                 std::pair{&restore.auxEq, &g_app.settings.auxEq}}) {
         if (*saved) {
             *state = **saved;
+            saved->reset();
             equalizers = true;
         }
     }
-    if (equalizers) {
+    return equalizers;
+}
+
+void RestoreProfile() {
+    App::ProfileRestore& restore = g_app.profileRestore;
+    if (restore.levels) {
+        SetLevels(*restore.levels, false);
+    }
+    if (RestoreProfileEqualizers()) {
         ScheduleSave();
         PushEqualizers();
     }
@@ -2760,6 +2818,53 @@ void CheckProfiles(const ProcessSet& processes, bool reapply = false) {
         const GameProfile profile = *match;
         ApplyProfile(profile);
     }
+}
+
+// The equalizers and plugins of the virtual device channels belong to the output they play on: another headset or pair
+// of speakers brings its own, or starts with none. The first output seen takes them as they are.
+void FollowOutputSound() {
+    Settings& settings = g_app.settings;
+    const std::wstring key = SoundDeviceKey(g_app.outputId);
+    if (key.empty() || key == settings.outputDevice) {
+        return;
+    }
+    if (!settings.outputDevice.empty()) {
+        // A game profile's presets go back first, so each device keeps its own; they apply again afterwards.
+        std::optional<GameProfile> profile;
+        for (const auto& candidate : settings.profiles) {
+            if (!g_app.activeProfile.empty() && _wcsicmp(candidate.exe.c_str(), g_app.activeProfile.c_str()) == 0) {
+                profile = candidate;
+            }
+        }
+        if (profile) {
+            RestoreProfileEqualizers();
+        }
+        // The previous device's plugins close, their settings saved.
+        for (const EqChannel channel : kOutputChains) {
+            UnloadPlugins(channel);
+        }
+        settings.otherOutputs[settings.outputDevice] = {settings.outputDeviceName, TakeOutputSound(settings)};
+        const auto kept = settings.otherOutputs.find(key);
+        const bool known = kept != settings.otherOutputs.end();
+        Log("output sound settings: %s for %s", known ? "kept" : "new", Utf8(key).c_str());
+        PutOutputSound(settings, known ? kept->second.sound : OutputSound{});
+        if (known) {
+            settings.otherOutputs.erase(kept);
+        }
+        PushEqualizers();
+        SyncOutputPlugins();
+        if (profile) {
+            ApplyProfile(*profile);
+        }
+        g_app.panel->ForgetEqualizerUndo(false);
+    }
+    if (settings.outputDevice.empty()) {
+        Log("output sound settings belong to %s", Utf8(key).c_str());
+    }
+    settings.outputDevice = key;
+    settings.outputDeviceName = g_app.outputName;
+    Save();
+    PushSettings();
 }
 
 void WatchGg() {
@@ -4209,6 +4314,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             Save();
         } else if (wParam == kTimerSendLevels) {
             SendDeviceLevels();
+        } else if (wParam == kTimerOutputSound) {
+            FollowOutputSound();
         } else if (wParam == kTimerSendEqualizer) {
             if (g_app.equalizerPending && g_app.features && g_app.device.IsOpen()) {
                 SendEqualizerFilters(*g_app.equalizerPending, g_app.equalizerPendingPreset);

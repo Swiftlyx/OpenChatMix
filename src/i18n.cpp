@@ -551,6 +551,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Headset's own device",  // RoutingOwnDevice
     L"This headset has Game and Chat devices of its own, so a virtual device is optional here. Without one, the channel plays straight on the headset, with no equalizer or plugins.",  // RoutingOwnDeviceHint
     L"The equalizer works on channels that have a virtual device, and on the processed microphone.",  // EqNeedsDevice
+    L"Lighting",  // Lighting
+    L"Earcup lights",  // EarcupLights
+    L"Saved for",  // SoundDeviceLabel
+    L"Each headset and pair of speakers keeps its own equalizers and plugins; one used for the first time starts without them.",  // OutputSoundHint
+    L"Each microphone keeps its own processing: noise suppression, equalizer, compressor and plugins.",  // MicSoundHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1096,6 +1101,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Власний пристрій гарнітури",
     L"Ця гарнітура має власні пристрої для гри й чату, тож віртуальний пристрій тут необов'язковий. Без нього канал грає просто на гарнітуру, без еквалайзера й плагінів.",
     L"Еквалайзер працює на каналах із віртуальним пристроєм, а також на обробленому мікрофоні.",
+    L"Підсвітка",
+    L"Підсвітка амбушур",
+    L"Збережено для",
+    L"Кожні навушники й колонки мають власні еквалайзери й плагіни; пристрій, підключений уперше, починає без них.",
+    L"Кожен мікрофон має власну обробку: шумодав, еквалайзер, компресор і плагіни.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1641,6 +1651,11 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Kulaklığın kendi cihazı",
     L"Bu kulaklığın kendi Oyun ve Sohbet cihazları var, bu yüzden burada sanal cihaz isteğe bağlıdır. Sanal cihaz olmadan kanal doğrudan kulaklıkta çalar; ekolayzer ve eklentiler kullanılmaz.",
     L"Ekolayzer, sanal cihazı olan kanallarda ve işlenen mikrofonda çalışır.",
+    L"Aydınlatma",
+    L"Kulaklık ışıkları",
+    L"Kaydedildiği cihaz",
+    L"Her kulaklık ve hoparlör kendi ekolayzerlerini ve eklentilerini saklar; ilk kez kullanılan bir cihaz bunlar olmadan başlar.",
+    L"Her mikrofon kendi işlemesini saklar: gürültü engelleme, ekolayzer, kompresör ve eklentiler.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

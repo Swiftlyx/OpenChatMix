@@ -280,6 +280,9 @@ public:
     void SetIdleScreen(const IdleScreenView& idle);
     void SetAddOns(const AddOnsView& addOns);
     void SetMic(const MicView& mic);
+    // Drops the Equalizer tab's undo steps of the microphone, or of the other channels, once another device's
+    // settings took their place.
+    void ForgetEqualizerUndo(bool microphone);
     void SetPlugins(EqChannel channel, const PluginChainView& view);
     void SetOutputs(std::vector<OutputView> outputs);
     void SetUpdate(const UpdateView& update);

@@ -66,7 +66,7 @@ native settings, so GG and Sonar can stay closed:
 - **ChatMix** from the dial on the GameDAC, base station or headset.
 - **Native headset settings** from GG's Engine page: the Engine EQ with its presets and custom
   curve, microphone volume, sidetone, mic mute LED, gain, volume limiter, display brightness and
-  dimming, auto power-off, wireless and Bluetooth options and battery level, depending on the model.
+  dimming, lights, auto power-off, wireless and Bluetooth options and battery level, depending on the model.
   They are stored in the headset itself and stay active while no app runs.
 - **Battery** beside the app's name on the *Mixer* tab, in the tray tooltip, as the tray icon at the
   even balance (in the theme's color, or green to red by its charge) and as a popup when it runs low.
@@ -231,11 +231,15 @@ works with any headset.
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
 | Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
 | Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial, battery, settings and output switching work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its own equalizers work, the main one, the Bluetooth one and the microphone's, reported by [@Lasfecas](https://github.com/Lasfecas) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) |
-| Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, the auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices, also in virtual device mode without cables. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
+| Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, whether the headset is on, sidetone, earcup lights, auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices, also in virtual device mode without cables. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
+| Arctis Pro, Arctis Pro + GameDAC | `1252`, `1280` | Experimental: sidetone, lights and the dial's position, as on the Arctis 7 |
+| Arctis 9 | `12C2`, `12C4` | Experimental: the battery and whether it charges, sidetone, auto power-off and the dial's position; Game and Chat on its two devices, as on the Arctis 7 |
+| Arctis Pro Wireless | `1290` | Experimental: the battery, whether the headset is on, sidetone and auto power-off; the base station's knob mixes Game and Chat but cannot be read, so the panel stays in the middle |
+| Arctis 1 Wireless / 1 Xbox / 7X / 7P | `12B3`, `12B6`, `12D7`, `12D5` | Experimental: the battery, whether the headset is on, sidetone and auto power-off; no dial, so the balance comes from the panel and the hotkeys |
 
-Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The original
-**Arctis 7, 9 and Pro Wireless** mix game and chat in hardware through two playback devices and do
-not need an app.
+Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The Arctis models from
+before the Nova follow what HeadsetControl and the Linux kernel's driver document; of them, only the Arctis 9
+reports whether it charges. A capture of what SteelSeries GG reads (Wireshark with USBPcap) can add more.
 
 Reports for other models are very welcome — see [Troubleshooting](#troubleshooting) for how to
 collect a log.
@@ -454,6 +458,12 @@ plugins; they load with virtual device mode and the equalizer, and their setting
 removes noise from the voices of others: it filters the mix of both sides at 48 kHz and adds about 30 ms.
 NVIDIA's `NVAudioEffects.dll` (see [Microphone](#microphone)) works there too, at 48 kHz.
 
+**Each device keeps its own.** The equalizers and plugins of Game, Chat, Media and Aux belong to the headset or
+speakers they play on (the output of virtual device mode). When another one becomes the output, its own settings
+come back, or none if it is new, and the plugins of the previous one close. The same headset in another USB port
+counts as the same one; Bluetooth headphones are known by the record Windows keeps of them, a sound card's jacks
+by the jack. The hint at the bottom of the tab names the device. Follows [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13) by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+
 ### Microphone
 
 The microphone chain records your microphone, runs it through the effects and plays the result into
@@ -495,6 +505,9 @@ under *Processing order* to change it, for example to run a plugin before the no
   *Strength* appear below the plugin list. The model loads in the background within a few seconds, and
   the sound passes unchanged until then.
 - A limiter at the end keeps the result from clipping.
+
+Each microphone keeps its own noise suppression, equalizer, compressor, order and plugins: another microphone
+brings back what was set for it, or starts with the defaults.
 
 The chain adds about 30–50 ms of latency, depending on the devices. With *Keep levels at 100%* on,
 OpenChatMix sets the microphone and both ends of the cable back to 100% whenever Windows or a call
@@ -576,7 +589,10 @@ GameDAC's own screen for as long as they last; then the screen they covered come
 | | PC → device | `01 38 on level` · `01 39 on level` | Sidetone of the boom and the built-in microphone |
 | | PC → device | `01 80` | Query the display: dimming (byte 2), brightness (3), home screen (5); `01 B0` also holds Bluetooth at power-on (2), during calls (3), transparency (8), noise control (10), mute LED (11), auto-off (12), ANC level (16) |
 | Nova 7 Gen 2 protocol | PC → device | `00 A7 00 01 name` · `00 33 00 f1…f10` · `00 27` | Parametric EQ (experimental): the preset name, ten filters of frequency (u16 big-endian), type (as on the Nova Elite), gain (signed, 0.1 dB) and Q × 1000 (u16 little-endian), then apply; `00 09` saves |
-| Arctis 7 (interface 5) | PC → device | `06 24` · `06 18` · `06 51 mm` · `06 09` | Experimental, from HeadsetControl: the dial's position (the cut of game and chat as signed steps, about −64 silent), the battery in percent, the auto power-off in minutes (0–90), save; 31-byte reports, the dial polled every 250 ms |
+| Arctis 7 (interface 5) | PC → device | `06 24` · `06 18` · `06 14` · `06 35 01 00 nn` · `06 55 01 02` · `06 51 mm` · `06 09` | Experimental, from HeadsetControl and the Linux driver: the dial's position (the cut of game and chat as signed steps, about −64 silent), the battery in percent, whether the headset is on (`03`), sidetone 0–18 (`06 35` alone is off), earcup lights (`00` off), the auto power-off in minutes (0–90), save; 31-byte reports, the dial polled every 250 ms. The Arctis Pro and Pro + GameDAC take the same commands, without battery and power-off |
+| Arctis 1, 7X, 7P (interface 3, page FF43) | PC → device | `06 12` · `06 35 01 00 nn` · `06 53 mm` · `06 09` | Experimental: status (`01` at byte 2 while the headset is off, the battery in percent at 3), sidetone as on the Arctis 7, auto power-off in minutes, save |
+| Arctis 9 (interface 0) | PC → device | `20` · `06 00 nn` · `04 00 ss ss` · `90 00` | Experimental: status, polled every 250 ms (`aa 01` while the headset is on, the battery `64`–`9a` at byte 3, `01` at 4 while it charges, game and chat 0–19 at 9 and 10; `55` or `03` while it is off), sidetone `c0` (off) to `fd`, auto power-off in seconds, save |
+| Arctis Pro Wireless (interface 0) | PC → device | `41 AA` · `40 AA` · `39 AA nn` · `3C AA nn` · `90 AA` | Experimental: whether the headset is on (`02` off, `04` on), the battery 0–4, sidetone 0–9, auto power-off in tens of minutes, save; the replies hold only the value |
 
 **Audio.** The balance is applied with the Windows audio session API on the headset's playback
 device, so there is no extra audio path and no added latency. `IAudioSessionManager2` lists the apps
@@ -713,8 +729,10 @@ protocol details they documented:
   ChatMix enable (`0x49`), ChatMix icon (`0x8D`) and `0x45` report format.
 - [HeadsetControl](https://github.com/Sapd/HeadsetControl) by Sapd and contributors — USB product IDs,
   status report layouts (ChatMix and battery), equalizer formats and the SteelSeries EQ preset curves for
-  the Arctis Nova 7, 7+ and Nova 5 families and the Nova Pro Wireless; the Nova Elite captures in
-  [HeadsetControl #481](https://github.com/Sapd/HeadsetControl/issues/481).
+  the Arctis Nova 7, 7+ and Nova 5 families and the Nova Pro Wireless, and the commands of the Arctis 1, 7, 9,
+  Pro and Pro Wireless; the Nova Elite captures in [HeadsetControl #481](https://github.com/Sapd/HeadsetControl/issues/481).
+- The Linux kernel's [hid-steelseries-arctis](https://github.com/torvalds/linux/blob/master/drivers/hid/hid-steelseries-arctis.c) driver by Christian Mayer, Bastien Nocera and Sriman
+  Achanta — the status replies of the Arctis 1, 7 and 9: whether the headset is on and whether the Arctis 9 charges.
 - [Linux-Arctis-Manager](https://github.com/elegos/Linux-Arctis-Manager) by elegos — device
   definitions and native settings (microphone, sidetone, gain, display, power, wireless, Bluetooth)
   for the Nova Pro, Nova 7, Nova 5 and Arctis 7+, and the Nova 7 Gen 2 parametric equalizer format.

@@ -653,7 +653,7 @@ float Panel::DrawSettingRow(const SettingSpec& spec, float top) {
         const D2D1_RECT_F labelRect{kInset, top + design::kHintBottomGap, kWidth - 110.0f, top + 34.0f};
         const bool fits = canvas_.Measure(T(spec.label), TextStyle::BodyLarge) <= labelRect.right - labelRect.left;
         canvas_.Text(T(spec.label), labelRect, fits ? TextStyle::BodyLarge : TextStyle::BodyMedium, p.onSurface);
-        const bool off = value == 0 && spec.wire == SettingWire::SwitchedLevel;
+        const bool off = value == 0 && (spec.wire == SettingWire::SwitchedLevel || spec.wire == SettingWire::PaddedLevel);
         canvas_.Text(value < 0 ? L"—" : off ? std::wstring(T(Text::OptOff)) : std::to_wstring(value),
                      {kWidth - 110.0f, labelRect.top, kWidth - kInset, labelRect.bottom}, TextStyle::LabelLarge,
                      p.onSurfaceVariant, TextAlign::Trailing);

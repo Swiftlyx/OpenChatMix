@@ -74,6 +74,10 @@ const Choice kChoices[] = {
     {DeviceFamily::Nova5X, Other::None, true, L"Arctis Nova 5X"},
     {DeviceFamily::NovaElite, Other::None, true, L"Arctis Nova Elite"},
     {DeviceFamily::Arctis7, Other::None, true, L"Arctis 7"},
+    {DeviceFamily::ArctisPro, Other::None, true, L"Arctis Pro + GameDAC"},
+    {DeviceFamily::Arctis1, Other::None, true, L"Arctis 1 Wireless"},
+    {DeviceFamily::Arctis9, Other::None, true, L"Arctis 9"},
+    {DeviceFamily::ArctisProWireless, Other::None, true, L"Arctis Pro Wireless"},
     {DeviceFamily::NovaProWired, Other::UsbHeadset, false, L"Headset (USB Audio Device)"},
     {DeviceFamily::NovaProWired, Other::BluetoothHeadset, false, L"Headphones (Bluetooth)"},
     {DeviceFamily::NovaProWired, Other::Speakers, false, L"Speakers (High Definition Audio Device)"},
@@ -316,8 +320,8 @@ void PushStatus() {
     std::wstring connection;
     bool connected = true;
     if (choice.steelSeries) {
-        detail = T(Text::DialChatMix);
-        if (choice.family == DeviceFamily::NovaProWired) {
+        detail = T(choice.family == DeviceFamily::Arctis1 ? Text::HotkeysOnly : Text::DialChatMix);
+        if (choice.family == DeviceFamily::NovaProWired || choice.family == DeviceFamily::ArctisPro) {
             connection = L"USB";
         } else if (!g.headsetOff) {
             connection = T(Text::Link24Ghz);
@@ -354,7 +358,8 @@ void PushHeadset() {
     g.headset.bluetooth = features && features->bluetooth ? g.bluetooth : BluetoothState::Unknown;
     const bool visible = features && features->HasSettings();
     g.panel->SetHeadset(Current().steelSeries ? Current().name : L"", visible ? features : nullptr, g.headset);
-    g.panel->SetBalanceDial(Current().steelSeries);
+    g.panel->SetBalanceDial(Current().steelSeries && Current().family != DeviceFamily::Arctis1 &&
+                            Current().family != DeviceFamily::ArctisProWireless);
 }
 
 void PushRouting() {
@@ -370,13 +375,17 @@ void PushRouting() {
         const std::wstring name = EndpointName(id, endpoints);
         return name.empty() ? std::wstring(fallback) : name;
     };
-    // The Arctis 7 has Game and Chat devices of its own: without a virtual device a channel plays straight on them.
-    view.ownDevices = Current().steelSeries && Current().family == DeviceFamily::Arctis7;
+    // The older Arctis that mix by a dial have Game and Chat devices of their own: without a virtual device a channel
+    // plays straight on them.
+    const DeviceFamily family = Current().family;
+    view.ownDevices = Current().steelSeries && (family == DeviceFamily::Arctis7 || family == DeviceFamily::Arctis7Rev2019 ||
+                                                family == DeviceFamily::ArctisPro ||
+                                                family == DeviceFamily::Arctis9 || family == DeviceFamily::ArctisProWireless);
     if (view.ownDevices) {
         set(ui::RoutingSlot::Game, routing.game, routing.game.empty() ? L"" : named(routing.game, L""));
         set(ui::RoutingSlot::Chat, routing.chat, routing.chat.empty() ? L"" : named(routing.chat, L""));
-        view.directNames[0] = routing.game.empty() ? L"Headphones (Arctis 7 Game)" : L"";
-        view.directNames[1] = routing.chat.empty() ? L"Headset Earphone (Arctis 7 Chat)" : L"";
+        view.directNames[0] = routing.game.empty() ? L"Headphones (" + std::wstring(Current().name) + L" Game)" : L"";
+        view.directNames[1] = routing.chat.empty() ? L"Headset Earphone (" + std::wstring(Current().name) + L" Chat)" : L"";
     } else {
         set(ui::RoutingSlot::Game, routing.game, named(routing.game, L"CABLE-A Input (VB-Audio Cable A)"));
         set(ui::RoutingSlot::Chat, routing.chat, named(routing.chat, L"CABLE-B Input (VB-Audio Cable B)"));
@@ -1072,6 +1081,13 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     }
     g.instance = instance;
     g.settings = LoadSettings(g.iniPath);
+    // Settings from before sound settings were kept per device name none; the preview shows plausible ones.
+    if (g.settings.outputDeviceName.empty()) {
+        g.settings.outputDeviceName = L"Headphones (Arctis Nova Pro)";
+    }
+    if (g.settings.micDeviceName.empty()) {
+        g.settings.micDeviceName = L"Microphone (USB Audio Device)";
+    }
     g.levels = g.settings.levels;
     g.autostart = IsAutostartEnabled();
     g.defaultOutput = DefaultRenderEndpoint(eConsole);

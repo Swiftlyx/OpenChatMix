@@ -109,6 +109,12 @@ void Panel::DrawMicrophone() {
                         }),
             }) +
         design::kSectionGap;
+    // Each microphone keeps its own processing; the hint names the one this is for.
+    if (!settings_.micDeviceName.empty()) {
+        const std::wstring hint = std::wstring(T(Text::SoundDeviceLabel)) + L": " + settings_.micDeviceName + L". " +
+                                  T(Text::MicSoundHint);
+        y = PageHint(hint.c_str(), y - design::kSectionGap + design::kSpace2) + design::kSectionGap - design::kPageHintGap;
+    }
 
     // The order of the steps, dragged into place.
     y = SectionTitle(T(Text::ProcessingOrder), y);

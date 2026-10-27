@@ -19,9 +19,19 @@ enum class DeviceProtocol {
     // Nova Elite base station (experimental): like the Nova Pro, but on interface 3 and with report ID 0x01 for
     // commands and their replies; events still arrive as report ID 0x07.
     Elite,
-    // Arctis 7 of 2017 and 2019 (experimental): 31-byte reports with report ID 0x06 on interface 5, answered on the
-    // same interface. Its dial mixes the Game and Chat devices in the headset; 06 24 asks where it stands.
+    // Arctis 7 of 2017 and 2019, Arctis Pro and Arctis Pro + GameDAC (experimental): 31-byte reports with report ID
+    // 0x06 on interface 5, answered on the same interface. The dial mixes the Game and Chat devices in the headset;
+    // 06 24 asks where it stands.
     ArctisLegacy,
+    // Arctis 1 Wireless, Arctis 1 Xbox, Arctis 7X and Arctis 7P (experimental): the same reports on interface 3
+    // (page FF43); no dial.
+    Arctis1Legacy,
+    // Arctis 9 (experimental): unnumbered reports on interface 0. 20 asks for the status: the dial, the battery and
+    // whether it charges. Its dial mixes the Game and Chat devices in the headset.
+    Arctis9Legacy,
+    // Arctis Pro Wireless base station (experimental): unnumbered reports on interface 0, each command followed by
+    // AA, its replies without a header. The base station's knob mixes the Game and Chat devices; it is not read.
+    ProWirelessLegacy,
 };
 
 // Selects the set of native headset settings (see headset.h).
@@ -34,6 +44,11 @@ enum class DeviceFamily {
     Nova5X,
     NovaElite,
     Arctis7,
+    Arctis7Rev2019,  // The Arctis 7 of 2019 also tells whether the headset is on.
+    ArctisPro,       // Arctis Pro and Arctis Pro + GameDAC, wired: no battery.
+    Arctis1,
+    Arctis9,
+    ArctisProWireless,
 };
 
 struct DeviceModel {
@@ -50,6 +65,8 @@ std::span<const DeviceModel> SupportedDevices();
 const DeviceModel* FindDeviceModel(uint16_t productId);
 // The headset mixes Game and Chat itself by its dial, so the app adds no balance of its own.
 bool MixesInHeadset(const DeviceModel& model);
+// The position of that dial can be read; the Arctis Pro Wireless keeps its knob to itself.
+bool ReportsDial(const DeviceModel& model);
 
 // Parses "vid_1038&pid_xxxx" and "&mi_xx" from a device path or hardware ID (case-insensitive).
 std::optional<uint16_t> ParseSteelSeriesProductId(std::wstring_view path);

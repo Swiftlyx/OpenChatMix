@@ -42,15 +42,33 @@ constexpr DeviceModel kModels[] = {
     // Experimental: from HeadsetControl issue #481 (captures of a real base station) and Linux-Arctis-Manager.
     {0x2244, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
     {0x2270, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
-    // Experimental: the protocol as HeadsetControl documents it.
+    // Experimental: the protocols as HeadsetControl and the Linux hid-steelseries-arctis driver document them.
     {0x1260, L"Arctis 7", ArctisLegacy, Arctis7, 0, 0},
-    {0x12AD, L"Arctis 7 (2019)", ArctisLegacy, Arctis7, 0, 0},
+    {0x12AD, L"Arctis 7 (2019)", ArctisLegacy, Arctis7Rev2019, 0, 0},
+    {0x1252, L"Arctis Pro", ArctisLegacy, ArctisPro, 0, 0},
+    {0x1280, L"Arctis Pro + GameDAC", ArctisLegacy, ArctisPro, 0, 0},
+    {0x12B3, L"Arctis 1 Wireless", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12B6, L"Arctis 1 Wireless Xbox", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12D7, L"Arctis 7X", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12D5, L"Arctis 7P", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12C2, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
+    {0x12C4, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
+    {0x1290, L"Arctis Pro Wireless", ProWirelessLegacy, ArctisProWireless, 0, 0},
 };
 
 // The Arctis 7 reports each side's cut by its dial as a signed step count: 0 is full, about -64 silent.
 int Arctis7Level(uint8_t value) {
     const int steps = -static_cast<int8_t>(value);
     return std::clamp(100 - steps * 100 / 64, 0, 100);
+}
+
+// The Arctis 9 reports each side's level by its dial in steps of 0-19.
+constexpr int kArctis9DialSteps = 19;
+constexpr size_t kArctis9GameOffset = 9;
+constexpr size_t kArctis9ChatOffset = 10;
+
+int Arctis9Level(uint8_t value) {
+    return std::min<int>(value, kArctis9DialSteps) * 100 / kArctis9DialSteps;
 }
 
 std::optional<unsigned> ParseHexAfter(std::wstring_view path, std::wstring_view marker, size_t digits) {
@@ -132,10 +150,23 @@ std::optional<Levels> ParseChatMixReport(const DeviceModel& model, const uint8_t
             return Levels{Arctis7Level(data[2]), Arctis7Level(data[3])};
         }
         break;
+    case Arctis9Legacy:
+        // aa 01 ... [game] [chat] at 9 and 10 while the headset is on.
+        if (size > kArctis9ChatOffset && data[0] == 0xAA && data[1] == 0x01) {
+            return Levels{Arctis9Level(data[kArctis9GameOffset]), Arctis9Level(data[kArctis9ChatOffset])};
+        }
+        break;
+    case Arctis1Legacy:
+    case ProWirelessLegacy:
+        break;
     }
     return std::nullopt;
 }
 
 bool MixesInHeadset(const DeviceModel& model) {
-    return model.protocol == ArctisLegacy;
+    return model.protocol == ArctisLegacy || model.protocol == Arctis9Legacy || model.protocol == ProWirelessLegacy;
+}
+
+bool ReportsDial(const DeviceModel& model) {
+    return model.protocol != Arctis1Legacy && model.protocol != ProWirelessLegacy;
 }

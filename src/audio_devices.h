@@ -31,6 +31,12 @@ EndpointLink EndpointLinkOf(const std::wstring& endpointId);
 // devices or while the device reports none. Requires COM on the calling thread.
 std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId);
 
+// Names the device behind a playback or recording endpoint so that it stays the same in any port: "usb-1038-12cb"
+// for a USB device (with "-<serial>" when it has a serial number), "dev-<container>" for a Bluetooth or other external
+// device, "ep-<endpoint>" for a sound card or virtual device, whose jacks Windows cannot tell apart by what is
+// plugged in. Empty while the endpoint is not present.
+std::wstring SoundDeviceKey(const std::wstring& endpointId);
+
 // Active playback devices, and disabled ones on request. Requires COM on the calling thread.
 std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled = false);
 // Active recording devices.

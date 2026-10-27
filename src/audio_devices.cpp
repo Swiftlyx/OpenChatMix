@@ -1,5 +1,6 @@
 #include "audio_devices.h"
 
+#include <cfgmgr32.h>
 #include <devicetopology.h>
 #include <devpropdef.h>
 #include <setupapi.h>
@@ -259,6 +260,77 @@ std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId) {
         }
     }
     return std::nullopt;
+}
+
+namespace {
+
+// The container of the computer itself, which its sound cards and virtual devices belong to.
+constexpr GUID kComputerContainer = {0x00000000, 0x0000, 0x0000, {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}};
+
+std::wstring LowerInstanceId(DEVINST node) {
+    wchar_t id[MAX_DEVICE_ID_LEN] = {};
+    if (CM_Get_Device_IDW(node, id, MAX_DEVICE_ID_LEN, 0) != CR_SUCCESS) {
+        return {};
+    }
+    std::wstring text = id;
+    CharLowerBuffW(text.data(), static_cast<DWORD>(text.size()));
+    return text;
+}
+
+std::wstring GuidText(const GUID& guid) {
+    wchar_t text[64] = {};
+    StringFromGUID2(guid, text, ARRAYSIZE(text));
+    std::wstring lower = text;
+    CharLowerBuffW(lower.data(), static_cast<DWORD>(lower.size()));
+    return lower.size() > 2 ? lower.substr(1, lower.size() - 2) : lower;
+}
+
+}  // namespace
+
+std::wstring SoundDeviceKey(const std::wstring& endpointId) {
+    std::wstring instance = L"SWD\\MMDEVAPI\\" + endpointId;
+    DEVINST endpoint = 0;
+    if (endpointId.empty() || CM_Locate_DevNodeW(&endpoint, instance.data(), CM_LOCATE_DEVNODE_NORMAL) != CR_SUCCESS) {
+        return {};
+    }
+    // A USB device by its IDs: the endpoint's parent is the device, or one interface of it ("&mi_xx").
+    DEVINST parent = 0;
+    if (CM_Get_Parent(&parent, endpoint, 0) == CR_SUCCESS) {
+        std::wstring id = LowerInstanceId(parent);
+        if (id.rfind(L"usb\\", 0) == 0 && id.find(L"&mi_") != std::wstring::npos &&
+            CM_Get_Parent(&parent, parent, 0) == CR_SUCCESS) {
+            id = LowerInstanceId(parent);
+        }
+        // usb\vid_xxxx&pid_xxxx\<serial number, or an ID from the port that holds '&'>
+        constexpr size_t kVid = 8;
+        constexpr size_t kPid = 17;
+        constexpr size_t kInstance = 22;
+        if (id.rfind(L"usb\\vid_", 0) == 0 && id.size() > kInstance && id.compare(kPid - 5, 5, L"&pid_") == 0) {
+            std::wstring key = L"usb-" + id.substr(kVid, 4) + L"-" + id.substr(kPid, 4);
+            const std::wstring serial = id.substr(kInstance);
+            if (serial.find(L'&') == std::wstring::npos) {
+                key += L"-" + serial;
+            }
+            return key;
+        }
+    }
+    // Other devices outside the computer, such as Bluetooth headphones, keep their container.
+    GUID container{};
+    DEVPROPTYPE type = DEVPROP_TYPE_EMPTY;
+    ULONG size = sizeof(container);
+    if (CM_Get_DevNode_PropertyW(endpoint, &kDeviceContainerIdKey, &type, reinterpret_cast<PBYTE>(&container), &size, 0) ==
+            CR_SUCCESS &&
+        type == DEVPROP_TYPE_GUID && !IsEqualGUID(container, kComputerContainer) && !IsEqualGUID(container, GUID{})) {
+        return L"dev-" + GuidText(container);
+    }
+    // "{0.0.0.00000000}.{guid}": the endpoint itself.
+    const size_t dot = endpointId.rfind(L"}.{");
+    std::wstring own = dot == std::wstring::npos ? endpointId : endpointId.substr(dot + 3);
+    if (!own.empty() && own.back() == L'}') {
+        own.pop_back();
+    }
+    CharLowerBuffW(own.data(), static_cast<DWORD>(own.size()));
+    return L"ep-" + own;
 }
 
 namespace {

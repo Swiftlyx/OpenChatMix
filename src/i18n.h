@@ -549,6 +549,11 @@ enum class Text {
     RoutingOwnDevice,
     RoutingOwnDeviceHint,
     EqNeedsDevice,
+    Lighting,
+    EarcupLights,
+    SoundDeviceLabel,
+    OutputSoundHint,
+    MicSoundHint,
     Count,
 };
 

@@ -127,6 +127,35 @@ struct MicSettings {
     bool operator==(const MicSettings&) const = default;
 };
 
+// The sound settings that belong to the playback device the virtual device channels play on: their equalizers and
+// plugins. Each headset or pair of speakers keeps its own (see Settings::outputDevice).
+struct OutputSound {
+    EqChannelSettings gameEq;
+    EqChannelSettings chatEq;
+    EqChannelSettings mediaEq;
+    EqChannelSettings auxEq;
+    std::vector<ChainPlugin> gamePlugins;
+    std::vector<ChainPlugin> chatPlugins;
+    std::vector<ChainPlugin> mediaPlugins;
+    std::vector<ChainPlugin> auxPlugins;
+};
+
+// The processing that belongs to a microphone; each keeps its own (see Settings::micDevice).
+struct MicSound {
+    EqChannelSettings eq;
+    NoiseSuppression noise = NoiseSuppression::Standard;
+    MicCompressor compressor = MicCompressor::Off;
+    MicStageOrder order = kDefaultMicOrder;
+    std::vector<ChainPlugin> plugins;
+};
+
+// The sound settings a device keeps while another one is in use, with its name as last seen.
+template <class Sound>
+struct KeptSound {
+    std::wstring name;
+    Sound sound;
+};
+
 struct BatteryAlertSettings {
     bool enabled = true;
     int threshold = 15;  // Percent.
@@ -253,6 +282,15 @@ struct Settings {
     DuckingSettings ducking;
     BatteryAlertSettings battery;
     std::vector<GameProfile> profiles;
+    // The device the equalizers and plugins above belong to (SoundDeviceKey) and its name; empty until one is seen.
+    // Other devices keep theirs apart until they are in use again.
+    std::wstring outputDevice;
+    std::wstring outputDeviceName;
+    std::map<std::wstring, KeptSound<OutputSound>> otherOutputs;
+    // The same for the microphone's processing.
+    std::wstring micDevice;
+    std::wstring micDeviceName;
+    std::map<std::wstring, KeptSound<MicSound>> otherMics;
     bool checkUpdates = true;                          // Look for a newer release on GitHub once a day.
     long long lastUpdateCheck = 0;                     // Unix time of the last successful check.
     bool log = false;                                  // Write OpenChatMix.log into the config directory.
@@ -277,6 +315,11 @@ const EqChannelSettings& EqStateOf(const Settings& settings, EqChannel channel);
 // The plugins of a channel; Mic gives the microphone chain's.
 std::vector<ChainPlugin>& PluginsOf(Settings& settings, EqChannel channel);
 const std::vector<ChainPlugin>& PluginsOf(const Settings& settings, EqChannel channel);
+// The sound settings in use, taken out of or put into the settings as a whole.
+OutputSound TakeOutputSound(const Settings& settings);
+void PutOutputSound(Settings& settings, const OutputSound& sound);
+MicSound TakeMicSound(const Settings& settings);
+void PutMicSound(Settings& settings, const MicSound& sound);
 
 std::wstring ExePath();
 std::wstring ExeDirectory();

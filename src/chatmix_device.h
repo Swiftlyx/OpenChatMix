@@ -83,6 +83,10 @@ private:
 
     bool Send(std::initializer_list<uint8_t> payload) { return Send(std::span<const uint8_t>(payload.begin(), payload.size())); }
     bool Send(std::span<const uint8_t> payload);
+    // A query byte with the model's query argument, remembered for replies that do not name it.
+    bool SendQuery(uint8_t query);
+    // The battery, and whether the headset is on where the model tells that apart.
+    void QueryBattery();
     void QueueHeadsetUpdates(std::vector<HeadsetUpdate> updates);
     static DWORD WINAPI ReaderProc(void* self);
     void ReadLoop();
@@ -109,6 +113,7 @@ private:
     std::atomic<DialMode> dialMode_{DialMode::Unknown};
     std::atomic<int> volume_{-1};
     std::atomic<ULONGLONG> lastEventTick_{0};
+    std::atomic<uint8_t> lastQuery_{0};
 
     SRWLOCK updatesLock_ = SRWLOCK_INIT;
     std::vector<HeadsetUpdate> headsetUpdates_;

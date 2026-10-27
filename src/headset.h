@@ -37,6 +37,9 @@ struct SettingOption {
 enum class SettingWire : uint8_t {
     Byte,           // [value]
     SwitchedLevel,  // [on] [level]: 0 is off at the last level, 1..max is on at that level (Nova Elite sidetone).
+    Prefixed,       // [prefix] [value] (the Arctis Pro Wireless' AA, the Arctis 7 lights' 01, the Arctis 9's 00).
+    PaddedLevel,    // [on] 00 [level]: 0 is off (sidetone of the Arctis 7 and Arctis 1).
+    Seconds,        // [prefix] [seconds, 16 bits big-endian] of a value in minutes (Arctis 9 auto-off).
 };
 
 struct SettingSpec {
@@ -49,6 +52,7 @@ struct SettingSpec {
     uint8_t shownWith = 0;  // Non-zero: shown only while that setting has the value below.
     uint8_t shownWithValue = 0;
     SettingWire wire = SettingWire::Byte;
+    uint8_t prefix = 0;  // Prefixed and Seconds: the byte between the command and the value.
 };
 
 // The GameDAC's stream mix is one command for three sliders: 47 [main] 00 [aux] [mic]. The aux and
@@ -130,6 +134,11 @@ struct HeadsetFeatures {
     unsigned saveDelayMs = 0;            // Quiet time after the last change before the save; 0 for the default.
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
     uint8_t batteryQuery = 0;            // Answered with the battery status (Nova Pro Wireless, dongles' b0).
+    uint8_t linkQuery = 0;               // Answered with whether the headset is on, asked with the battery (Arctis 7).
+    uint8_t queryArgument = 0;           // Sent after each query byte (AA on the Arctis Pro Wireless); 0 for none.
+    // The battery is asked for once the link reply says the headset is on, as neither reply names its query
+    // (Arctis Pro Wireless); otherwise both are asked for together.
+    bool batteryAfterLink = false;
     bool oled = false;                   // 128x64 display that accepts drawing reports (06 93).
     bool bluetooth = false;              // The battery reply also tells the base station's Bluetooth.
     bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
@@ -173,7 +182,8 @@ struct HeadsetState {
 struct HeadsetUpdate {
     // ChatMix: the balance the device applied, game in value and chat in chat.
     // Bluetooth: the status reply's Bluetooth mode in value and its link in chat.
-    enum class Kind { Setting, EqPreset, EqCurve, Battery, ChatMix, Bluetooth } kind = Kind::Setting;
+    // Link: whether the headset is on, in headsetOff, from a reply that tells nothing about the battery.
+    enum class Kind { Setting, EqPreset, EqCurve, Battery, ChatMix, Bluetooth, Link } kind = Kind::Setting;
     uint8_t command = 0;
     int value = 0;
     int chat = 0;
@@ -182,11 +192,14 @@ struct HeadsetUpdate {
     bool headsetOff = false;
     int spare = -1;  // Battery: the spare battery's percent, where the base station has one.
     bool fromEvent = false;  // Setting: changed on the headset or base station, not read from a status reply.
+    bool linkKnown = true;   // Battery: headsetOff holds; false when the reply does not tell (Arctis 7).
 };
 
 // Settings and battery reported by the headset, e.g. after a change on the GameDAC menu.
-// Data starts with the report ID as in ParseChatMixReport.
-std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size);
+// Data starts with the report ID as in ParseChatMixReport. lastQuery: the query sent last, for replies that do not
+// repeat it (Arctis Pro Wireless).
+std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size,
+                                              uint8_t lastQuery = 0);
 void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const HeadsetUpdate& update);
 // The noise control command of base stations that have it (off, transparency, ANC).
 inline constexpr uint8_t kNoiseControlCommand = 0xBD;

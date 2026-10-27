@@ -389,8 +389,16 @@ void Panel::DrawEqualizerPage() {
     y = DrawBandEditor(y + design::kSpace2, state.eq, editor);
     y = DrawEqEffects(y, state.eq);
     // The microphone's plugins have their place in its chain, on the Microphone page.
-    if (eqChannel_ != EqChannel::Mic) {
+    const bool microphone = eqChannel_ == EqChannel::Mic;
+    if (!microphone) {
         y = DrawPlugins(y + design::kSectionGap - design::kGroupGap, eqChannel_) + design::kGroupGap;
+    }
+    // Each device keeps its own settings; the hint names the one these are for.
+    const std::wstring& device = microphone ? settings_.micDeviceName : settings_.outputDeviceName;
+    if (!device.empty()) {
+        const std::wstring hint = std::wstring(T(Text::SoundDeviceLabel)) + L": " + device + L". " +
+                                  T(microphone ? Text::MicSoundHint : Text::OutputSoundHint);
+        y = PageHint(hint.c_str(), y - design::kGroupGap + design::kSpace2) + design::kGroupGap - design::kPageHintGap;
     }
     EndScroll(Page::Equalizer, scrollTop, y - design::kGroupGap);
 }

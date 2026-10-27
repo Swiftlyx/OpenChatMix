@@ -518,19 +518,124 @@ const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
     return nullptr;
 }
 
-// Arctis 7 of 2017 and 2019, as HeadsetControl documents it: auto-off 06 51 [minutes, 0-90], the battery in percent
-// in the answer to 06 18, and 06 09 to keep a setting.
+// The Arctis of before the Nova, as HeadsetControl and the Linux hid-steelseries-arctis driver document them; none
+// is confirmed on a headset yet.
+
+// Arctis 7 of 2017 and 2019, Arctis Pro and Arctis Pro + GameDAC: sidetone 06 35 [on] 00 [0-18], lights 06 55 01
+// [02 on / 00 off], auto-off 06 51 [minutes, 0-90], the battery in percent in the answer to 06 18, and 06 09 to keep
+// a setting. The Linux driver also asks the Arctis 7 of 2019 whether the headset is on: 06 14, answered with 03 when
+// it is.
+constexpr SettingSpec kLegacySidetone[] = {
+    {0x35, Sidetone, SettingKind::Slider, 0, 18, {}, 0, 0, SettingWire::PaddedLevel},
+};
+constexpr SettingSpec kLegacyLights[] = {
+    {0x55, EarcupLights, SettingKind::Toggle, 0, 2, {}, 0, 0, SettingWire::Prefixed, 0x01},
+};
 constexpr SettingSpec kArctis7Power[] = {
     {0x51, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts},
 };
 constexpr SettingSection kArctis7Sections[] = {
+    {Microphone, kLegacySidetone},
+    {Lighting, kLegacyLights},
     {Power, kArctis7Power},
 };
+constexpr SettingSection kArctisProSections[] = {
+    {Microphone, kLegacySidetone},
+    {Lighting, kLegacyLights},
+};
 constexpr uint8_t kArctis7Battery = 0x18;
+constexpr uint8_t kArctis7Link = 0x14;
+constexpr uint8_t kArctis7HeadsetOn = 0x03;
 const HeadsetFeatures kArctis7{
     .sections = kArctis7Sections,
     .save = kSaveState,
     .batteryQuery = kArctis7Battery,
+    .experimental = true,
+};
+const HeadsetFeatures kArctis7Rev2019{
+    .sections = kArctis7Sections,
+    .save = kSaveState,
+    .batteryQuery = kArctis7Battery,
+    .linkQuery = kArctis7Link,
+    .experimental = true,
+};
+const HeadsetFeatures kArctisPro{
+    .sections = kArctisProSections,
+    .save = kSaveState,
+    .experimental = true,
+};
+
+// Arctis 1 Wireless, Arctis 1 Xbox, Arctis 7X and Arctis 7P: sidetone as on the Arctis 7, auto-off 06 53 [minutes],
+// 06 12 answered with [01 when the headset is off] [battery in percent].
+constexpr SettingSpec kArctis1Power[] = {
+    {0x53, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts},
+};
+constexpr SettingSection kArctis1Sections[] = {
+    {Microphone, kLegacySidetone},
+    {Power, kArctis1Power},
+};
+constexpr uint8_t kArctis1Battery = 0x12;
+constexpr uint8_t kArctis1HeadsetOff = 0x01;
+const HeadsetFeatures kArctis1{
+    .sections = kArctis1Sections,
+    .save = kSaveState,
+    .batteryQuery = kArctis1Battery,
+    .experimental = true,
+};
+
+// Arctis 9: sidetone 06 00 [c0 off up to fd], auto-off 04 00 [seconds, 16 bits], 90 00 to keep a setting. Its status
+// 20 is answered with aa 01 while the headset is on, the battery as 64-9a at 3, 01 at 4 while it charges and the dial
+// at 9 and 10; 55 or 03 first while it is off.
+constexpr SettingOption kArctis9Sidetone[] = {{0xC0, OptOff}, {0xD4, OptLow}, {0xE8, OptMedium}, {0xFD, OptHigh}};
+constexpr SettingSpec kArctis9Microphone[] = {
+    {0x06, Sidetone, SettingKind::Choice, 0xC0, 0xFD, kArctis9Sidetone, 0, 0, SettingWire::Prefixed, 0x00},
+};
+constexpr SettingSpec kArctis9Power[] = {
+    {0x04, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts, 0, 0, SettingWire::Seconds, 0x00},
+};
+constexpr SettingSection kArctis9Sections[] = {
+    {Microphone, kArctis9Microphone},
+    {Power, kArctis9Power},
+};
+constexpr SaveCommand kArctis9Save[] = {{{0x90, 0x00}, 2}};
+constexpr uint8_t kArctis9Status = 0x20;
+constexpr uint8_t kArctis9BatteryEmpty = 0x64;
+constexpr uint8_t kArctis9BatteryFull = 0x9A;
+const HeadsetFeatures kArctis9{
+    .sections = kArctis9Sections,
+    .save = kArctis9Save,
+    .batteryQuery = kArctis9Status,
+    .experimental = true,
+};
+
+// Arctis Pro Wireless base station: sidetone 39 AA [0-9], auto-off 3c AA [tens of minutes], 90 AA to keep a setting.
+// 41 AA is answered with 02 while the headset is off and 04 while it is on, 40 AA with the battery in steps of 0-4.
+constexpr SettingOption kTenMinuteTimeouts[] = {{0, OptNever},     {1, OptNever, 10}, {2, OptNever, 20},
+                                                {3, OptNever, 30}, {6, OptNever, 60}, {9, OptNever, 90}};
+constexpr SettingSpec kProWirelessMicrophone[] = {
+    {0x39, Sidetone, SettingKind::Slider, 0, 9, {}, 0, 0, SettingWire::Prefixed, 0xAA},
+};
+constexpr SettingSpec kProWirelessPower[] = {
+    {0x3C, AutoOff, SettingKind::Choice, 0, 9, kTenMinuteTimeouts, 0, 0, SettingWire::Prefixed, 0xAA},
+};
+constexpr SettingSection kProWirelessSections[] = {
+    {Microphone, kProWirelessMicrophone},
+    {Power, kProWirelessPower},
+};
+constexpr SaveCommand kProWirelessSave[] = {{{0x90, 0xAA}, 2}};
+constexpr uint8_t kProWirelessArgument = 0xAA;
+constexpr uint8_t kProWirelessStatus = 0x41;
+constexpr uint8_t kProWirelessBattery = 0x40;
+constexpr uint8_t kProWirelessHeadsetOff = 0x02;
+constexpr uint8_t kProWirelessHeadsetOn = 0x04;
+constexpr int kProWirelessBatterySteps = 4;
+const HeadsetFeatures kArctisProWireless{
+    .sections = kProWirelessSections,
+    .save = kProWirelessSave,
+    .batteryQuery = kProWirelessBattery,
+    .linkQuery = kProWirelessStatus,
+    .queryArgument = kProWirelessArgument,
+    .batteryAfterLink = true,
     .experimental = true,
 };
 
@@ -543,35 +648,74 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     case DeviceFamily::Arctis7Plus: return kArctis7Plus;
     case DeviceFamily::NovaElite: return kNovaElite;
     case DeviceFamily::Arctis7: return kArctis7;
+    case DeviceFamily::Arctis7Rev2019: return kArctis7Rev2019;
+    case DeviceFamily::ArctisPro: return kArctisPro;
+    case DeviceFamily::Arctis1: return kArctis1;
+    case DeviceFamily::Arctis9: return kArctis9;
+    case DeviceFamily::ArctisProWireless: return kArctisProWireless;
     case DeviceFamily::Nova5X: break;
     }
     return kNova5X;
 }
 
-std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size) {
+std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size,
+                                              uint8_t lastQuery) {
+    using Kind = HeadsetUpdate::Kind;
     std::vector<HeadsetUpdate> updates;
-    if (model.protocol == DeviceProtocol::Elite) {
+    switch (model.protocol) {
+    case DeviceProtocol::Elite:
         return ParseEliteReport(data, size);
-    }
-    if (model.protocol == DeviceProtocol::NovaStatus) {
+    case DeviceProtocol::NovaStatus:
         if (const auto battery = ParseStatusBattery(model, data, size)) {
             updates.push_back(*battery);
         }
         return updates;
-    }
-    if (model.protocol == DeviceProtocol::ArctisLegacy) {
-        // 06 18 [battery 0-100]; the answer tells nothing about charging.
+    case DeviceProtocol::ArctisLegacy:
+        // 06 18 [battery 0-100] tells nothing about charging or whether the headset is on; 06 14 [03 while it is on]
+        // does the latter.
         if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Battery) {
-            updates.push_back({.kind = HeadsetUpdate::Kind::Battery, .value = std::min<int>(data[2], 100)});
+            updates.push_back({.kind = Kind::Battery, .value = std::min<int>(data[2], 100), .linkKnown = false});
+        } else if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Link) {
+            updates.push_back({.kind = Kind::Link, .headsetOff = data[2] != kArctis7HeadsetOn});
         }
         return updates;
+    case DeviceProtocol::Arctis1Legacy:
+        // 06 12 [01 while the headset is off] [battery 0-100].
+        if (size >= 4 && data[0] == 0x06 && data[1] == kArctis1Battery) {
+            if (data[2] == kArctis1HeadsetOff) {
+                updates.push_back({.kind = Kind::Link, .headsetOff = true});
+            } else {
+                updates.push_back({.kind = Kind::Battery, .value = std::min<int>(data[3], 100)});
+            }
+        }
+        return updates;
+    case DeviceProtocol::Arctis9Legacy:
+        // aa 01 [?] [battery 64-9a] [01 while charging] while the headset is on; 55 or 03 first while it is off.
+        if (size >= 5 && data[0] == 0xAA && data[1] == 0x01) {
+            const int battery = (std::clamp(data[3], kArctis9BatteryEmpty, kArctis9BatteryFull) - kArctis9BatteryEmpty) *
+                                100 / (kArctis9BatteryFull - kArctis9BatteryEmpty);
+            updates.push_back({.kind = Kind::Battery, .value = battery, .charging = data[4] == 0x01});
+        } else if (size >= 1 && (data[0] == 0x55 || data[0] == 0x03)) {
+            updates.push_back({.kind = Kind::Link, .headsetOff = true});
+        }
+        return updates;
+    case DeviceProtocol::ProWirelessLegacy:
+        // The replies hold only the value, so the query sent last tells which one this is.
+        if (size >= 1 && lastQuery == kProWirelessStatus &&
+            (data[0] == kProWirelessHeadsetOff || data[0] == kProWirelessHeadsetOn)) {
+            updates.push_back({.kind = Kind::Link, .headsetOff = data[0] == kProWirelessHeadsetOff});
+        } else if (size >= 1 && lastQuery == kProWirelessBattery && data[0] <= kProWirelessBatterySteps) {
+            updates.push_back({.kind = Kind::Battery, .value = data[0] * 100 / kProWirelessBatterySteps});
+        }
+        return updates;
+    case DeviceProtocol::NovaPro:
+        break;
     }
-    if (model.protocol != DeviceProtocol::NovaPro || size < 3) {
+    if (size < 3) {
         return updates;
     }
     const HeadsetFeatures& features = FeaturesFor(model.family);
     const EqualizerSpec& eq = features.equalizer;
-    using Kind = HeadsetUpdate::Kind;
 
     if (data[0] == kNovaProEventReportId) {
         // Changes made on the GameDAC / base station menu: 07 <command> <value...>.
@@ -660,6 +804,11 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         state.battery = update.value;
         state.spareBattery = update.spare;
         state.charging = update.charging;
+        if (update.linkKnown) {
+            state.headsetOff = update.headsetOff;
+        }
+        break;
+    case Kind::Link:
         state.headsetOff = update.headsetOff;
         break;
     case Kind::Bluetooth:
@@ -675,10 +824,25 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
 
 std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const HeadsetState& state, uint8_t command,
                                     int value) {
-    if (const SettingSpec* spec = features.FindSetting(command); spec && spec->wire == SettingWire::SwitchedLevel) {
-        // Off keeps the last level, so switching it on again restores it.
-        const int last = state.values[command] > 0 ? state.values[command] : 1;
-        return {command, static_cast<uint8_t>(value > 0 ? 1 : 0), static_cast<uint8_t>(value > 0 ? value : last)};
+    if (const SettingSpec* spec = features.FindSetting(command)) {
+        const uint8_t byte = static_cast<uint8_t>(value);
+        switch (spec->wire) {
+        case SettingWire::SwitchedLevel: {
+            // Off keeps the last level, so switching it on again restores it.
+            const int last = state.values[command] > 0 ? state.values[command] : 1;
+            return {command, static_cast<uint8_t>(value > 0 ? 1 : 0), static_cast<uint8_t>(value > 0 ? value : last)};
+        }
+        case SettingWire::Prefixed:
+            return {command, spec->prefix, byte};
+        case SettingWire::PaddedLevel:
+            return {command, static_cast<uint8_t>(value > 0 ? 1 : 0), 0x00, byte};
+        case SettingWire::Seconds: {
+            const int seconds = std::max(value, 0) * 60;
+            return {command, spec->prefix, static_cast<uint8_t>(seconds >> 8), static_cast<uint8_t>(seconds & 0xFF)};
+        }
+        case SettingWire::Byte:
+            break;
+        }
     }
     if (command != kStreamMain && command != kStreamAux && command != kStreamMic) {
         return {command, static_cast<uint8_t>(value)};
