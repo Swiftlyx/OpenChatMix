@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.9.3 — 2026-10-29
+
+- Settings backups: the exported ZIP is named with the time as well as the date, so several backups made on one
+  day no longer replace each other. *Export* and *Import* open the `Backups` folder of the settings, where the copy
+  made before an import already goes (`%APPDATA%\OpenChatMix\Backups`, or next to `OpenChatMix.exe` when the
+  settings are kept there), until you pick another folder; after that they open the folder you used last for
+  settings. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in
+  [#14](https://github.com/Swiftlyx/OpenChatMix/issues/14).
+
 ## 2.9.2 — 2026-10-28
 
 - The panel no longer holds back the mouse wheel, clicks and keys while it animates. When a frame took longer than
