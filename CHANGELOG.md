@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.9.0 — 2026-10-28
+
+- More SteelSeries headsets, all experimental, from the sources the app already follows (HeadsetControl, where it
+  has a model, otherwise SteelSeries' own descriptions as Linux-Arctis-Manager carries them):
+  - **Arctis Nova 7P** and **7P Gen 2** (`220A`, `22A7`, `2298`): as the Nova 7 and Nova 7 Gen 2, without the
+    sidetone; their dial sets the sidetone in the headset, so the app sets the balance.
+  - **Arctis Nova 3P / 3X Wireless** (`2269`, `226D`): the battery, the parametric equalizer, microphone volume,
+    sidetone, volume limiter and auto power-off.
+  - **Arctis Nova 4 / 4X** (`12F2`, `12F6`): the battery, the dial, the equalizer, microphone volume, sidetone, the
+    mute light, volume limiter and auto power-off.
+  - **Arctis Nova 3**, wired (`12EC`): the six-band equalizer, microphone volume, sidetone and the mute light,
+    through feature reports.
+  - **Arctis GameBuds / GameBuds X** (`230A`, `2317`): the battery of the buds out of the case, microphone volume,
+    sidetone, noise control, volume limiter, in-ear detection and the parametric equalizer (peaks only for now).
+  - **Arctis 5** of 2017 and 2019 and its editions (`1250`, `12AA`, `1251`, `12A8`): the five-band equalizer of its
+    chip, which the app works out as SteelSeries' own code does (only while the app runs), and sidetone; its dial
+    mixes Game and Chat in the headset.
+  - **Arctis Nova Pro Omni** (`2290`), with the Nova Elite's protocol; and the new IDs of known models: Nova Pro
+    Wired v2 (`12FA`), Nova Pro Wireless X white (`225D`), Nova 5 (`2232`), Arctis 1 Wireless Cyberpunk 2077
+    (`12D0`, `12D2`).
+- The Nova 5 / 5X get the parametric equalizer HeadsetControl sends them (experimental).
+- The Arctis 9 gets surround sound, the choice of its five equalizer presets (numbered, as no source names them)
+  and its Bluetooth settings (with the headset, during calls), from SteelSeries' description.
+- The GameBuds' charging case (`230C`, `231A`) is read beside the GameBuds: its battery shows where a base station
+  shows its spare one, as *case*. It is not taken for a headset.
+- Both READMEs list what data from which headsets would make their support complete, with how to capture it, and
+  say plainly in the disclaimer that the app comes without warranty and experimental features should be tried at a
+  low volume first.
+- Headsets without a dial are no longer asked for their status ten times a second, only every 5 seconds.
+- Where a description gives no interface number for sure, the app takes the command collection on another
+  interface of the headset.
+
 ## 2.8.5 — 2026-10-28
 
 - Fixed: on the Nova 7 Gen 2 (`22A1`, `227E`), *Bass Boost* and *Smiley* turned the sound into a loud
