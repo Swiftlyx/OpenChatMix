@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.2 — 2026-10-28
+
+- *Settings → General → Let the computer sleep* (off by default). Windows stays awake while an audio stream is open,
+  and virtual device mode and the microphone processing keep theirs open all the time. With the setting on, the
+  bridges close their streams a minute after no app plays into the virtual devices, and the microphone processing a
+  minute after no app records the cable (unless it is listened to); the next app that plays or records opens them
+  again, with the levels, equalizers and plugins still loaded. The panel shows the pause in the mode's status and on
+  the *Microphone* page.
+
 ## 2.8.1 — 2026-10-28
 
 - Two pairs of headphones at once: with Bluetooth headphones connected beside the headset (or beside other
