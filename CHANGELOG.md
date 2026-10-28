@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.8.4 — 2026-10-28
+
+- The original Arctis 7 (2017) counts as switched off when its dongle reports 0% twice in a row: it has no other
+  way to tell, and its dongle stays plugged in. Device and microphone priority then move to the next device, and
+  the first real battery reading counts as on again. Both Arctis 7 models are now asked for their battery and power
+  state every 5 seconds instead of 30, so the sound follows within seconds. The 2017 model is also asked the 2019
+  model's power-state query, only so that a log shows whether it answers. Suggested by
+  [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13).
+
 ## 2.8.3 — 2026-10-28
 
 - App profiles keep presets per device. A *Device* field above a profile's equalizers chooses *All devices* or one
