@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-// Which output to switch to after playback devices came or went, or none to leave it as it is.
+// Which output or microphone to switch to after devices came or went, or none to leave it as it is.
 // connected: the connected devices, most preferred first. known: the devices connected at the last
-// check (empty on the first). last: the output in use at the last check. order: the saved order;
+// check (empty on the first). last: the device in use at the last check. order: the saved order;
 // only a device placed in it counts as preferred when it reconnects.
-inline std::optional<std::wstring> ChooseOutput(const std::vector<std::wstring>& connected,
+inline std::optional<std::wstring> ChooseDevice(const std::vector<std::wstring>& connected,
                                                 const std::set<std::wstring>& known, const std::wstring& last,
                                                 const std::vector<std::wstring>& order, bool switchOnLoss,
                                                 bool returnToPreferred) {

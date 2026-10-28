@@ -262,6 +262,18 @@ std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId) {
     return std::nullopt;
 }
 
+bool IsHeadphonesEndpoint(const std::wstring& endpointId) {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    ComPtr<IMMDevice> device;
+    if (endpointId.empty() ||
+        FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator))) ||
+        FAILED(enumerator->GetDevice(endpointId.c_str(), &device))) {
+        return false;
+    }
+    const std::optional<UINT> formFactor = FormFactorOf(device.Get());
+    return formFactor == static_cast<UINT>(Headphones) || formFactor == static_cast<UINT>(Headset);
+}
+
 namespace {
 
 // The container of the computer itself, which its sound cards and virtual devices belong to.
@@ -489,6 +501,11 @@ std::wstring DefaultRenderEndpoint(ERole role) {
 bool SetDefaultRenderEndpoint(const std::wstring& id, ERole role) {
     const ComPtr<IPolicyConfig> config = PolicyConfig();
     return config && !id.empty() && SUCCEEDED(config->SetDefaultEndpoint(id.c_str(), role));
+}
+
+// The endpoint ID tells the data flow, so the same call serves recording devices.
+bool SetDefaultCaptureEndpoint(const std::wstring& id, ERole role) {
+    return SetDefaultRenderEndpoint(id, role);
 }
 
 bool SetEndpointEnabled(const std::wstring& id, bool enabled) {

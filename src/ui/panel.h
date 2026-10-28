@@ -69,12 +69,25 @@ struct RoutingView {
     std::wstring directNames[2];  // Where Game and Chat play without a virtual device; empty while they have one.
 };
 
-// A connected playback device in the order of preference.
-struct OutputView {
+// The two lists of the Devices page.
+enum class DeviceList { Outputs, Microphones };
+
+// A connected playback device or microphone in the order of preference.
+struct DeviceView {
     std::wstring id;
     std::wstring name;
-    bool current = false;   // The output in use.
+    bool current = false;   // The device in use.
     bool excluded = false;  // Never switched to automatically or by the hotkey.
+};
+
+// A second pair of headphones beside the headset or output the status line names: connected Bluetooth headphones,
+// with their battery when Windows knows it.
+struct CompanionView {
+    std::wstring name;  // Empty while there is none.
+    std::wstring connection;
+    int battery = -1;
+    bool inUse = false;         // The sound plays on them.
+    bool headsetInUse = false;  // The sound plays on the device the status line names.
 };
 
 struct PluginView {
@@ -182,10 +195,10 @@ public:
     virtual void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) = 0;
     virtual void OnPluginNvidiaAfx(EqChannel channel, size_t index, const NvidiaAfxSettings& settings) = 0;
     // Uses the device now.
-    virtual void OnOutputChoose(const std::wstring& id) = 0;
+    virtual void OnDeviceChoose(DeviceList list, const std::wstring& id) = 0;
     // Moves a device from one place to another among the listed ones, in the order of preference.
-    virtual void OnOutputMove(size_t from, size_t to) = 0;
-    virtual void OnOutputExclude(const std::wstring& id, bool excluded) = 0;
+    virtual void OnDeviceMove(DeviceList list, size_t from, size_t to) = 0;
+    virtual void OnDeviceExclude(DeviceList list, const std::wstring& id, bool excluded) = 0;
     virtual void OnCheckForUpdates() = 0;
     virtual void OnInstallUpdate() = 0;
     virtual void OnOpenReleasePage() = 0;
@@ -264,6 +277,8 @@ public:
     // connection: how the headset reaches the computer ("USB", "2.4 GHz"), shown beside its name; may be empty.
     void SetStatus(const std::wstring& device, const std::wstring& detail, const std::wstring& connection, bool connected,
                    const std::wstring& warning);
+    // A second pair of headphones takes a status line of its own, and each line shows its battery.
+    void SetCompanion(const CompanionView& companion);
     void SetApps(std::vector<AppItem> apps);
     void SetHotkeys(const std::array<Hotkey, kHotkeyCount>& hotkeys, const std::array<bool, kHotkeyCount>& failed);
     void SetAutostart(bool enabled);
@@ -284,7 +299,7 @@ public:
     // settings took their place.
     void ForgetEqualizerUndo(bool microphone);
     void SetPlugins(EqChannel channel, const PluginChainView& view);
-    void SetOutputs(std::vector<OutputView> outputs);
+    void SetDevices(DeviceList list, std::vector<DeviceView> devices);
     void SetUpdate(const UpdateView& update);
     // Redraws after the language or theme changed.
     void Refresh();
@@ -622,7 +637,10 @@ private:
     void DrawMicrophone();
     // Plugin list of a chain (panel_plugins.cpp).
     float DrawPlugins(float top, EqChannel channel);
-    void DrawOutputs();
+    void DrawDevices();
+    // The Mixer tab's header: the app's name and the status line, or two status lines with a second pair of
+    // headphones; returns how much taller than kHeaderHeight it is.
+    float DrawMixerHeader();
     bool MicSlot() const { return pickSlot_ == RoutingSlot::MicInput || pickSlot_ == RoutingSlot::MicOutput; }
     GameProfile* EditedProfile();
     std::wstring HotkeyHint() const;
@@ -684,7 +702,9 @@ private:
     MicView mic_;
     std::array<PluginChainView, 5> pluginChains_;  // By EqChannel.
     EqChannel pluginDialog_ = EqChannel::Mic;      // The chain the plugin file dialog adds to.
-    std::vector<OutputView> outputs_;
+    std::array<std::vector<DeviceView>, 2> devices_;  // By DeviceList.
+    DeviceList deviceList_ = DeviceList::Outputs;     // The list the Devices page shows.
+    CompanionView companion_;
     UpdateView update_;
     std::vector<AudioEndpoint> endpoints_;
     RoutingSlot pickSlot_ = RoutingSlot::Game;

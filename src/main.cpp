@@ -195,9 +195,9 @@ public:
     void OnPluginEditor(EqChannel channel, size_t index) override;
     void OnPluginDeepFilter(EqChannel channel, size_t index, const DeepFilterSettings& settings) override;
     void OnPluginNvidiaAfx(EqChannel channel, size_t index, const NvidiaAfxSettings& settings) override;
-    void OnOutputChoose(const std::wstring& id) override;
-    void OnOutputMove(size_t from, size_t to) override;
-    void OnOutputExclude(const std::wstring& id, bool excluded) override;
+    void OnDeviceChoose(ui::DeviceList list, const std::wstring& id) override;
+    void OnDeviceMove(ui::DeviceList list, size_t from, size_t to) override;
+    void OnDeviceExclude(ui::DeviceList list, const std::wstring& id, bool excluded) override;
     void OnCheckForUpdates() override;
     void OnInstallUpdate() override;
     void OnOpenReleasePage() override;
@@ -265,6 +265,14 @@ struct App {
     std::wstring outputName;
     EndpointLink outputLink = EndpointLink::Unknown;
     int outputBattery = -1;  // Percent for a Bluetooth output that reports it; -1 otherwise.
+    // Bluetooth headphones connected beside the device the status names, with their battery (-1 unknown).
+    std::wstring companionId;
+    std::wstring companionName;
+    int companionBattery = -1;
+    bool outputOnHeadset = false;  // The output is a device of the connected SteelSeries headset.
+    // A headset that mixes by its dial plays the sound now, so the app's balance stays out of the way.
+    bool headsetMixing = false;
+    std::optional<Levels> dialLevels;  // Where the headset's dial was last reported.
     OledDisplay display;
     std::shared_ptr<IdleAnimation> idleAnimation;
     MicChain mic;
@@ -275,6 +283,8 @@ struct App {
     std::wstring micMonitorId;  // Where the running chain is listened to; empty when it is not.
     std::set<std::wstring> knownOutputs;  // Connected playback devices at the last check.
     std::wstring lastOutput;              // The output in use at the last check.
+    std::set<std::wstring> knownMics;     // The same for the microphones.
+    std::wstring lastMic;
     ULONGLONG lastSoundTick = 0;
     ULONGLONG lastActivityTick = 0;  // Changes made in OpenChatMix that the headset display shows.
     ULONGLONG idlePreviewStart = 0;
@@ -600,6 +610,15 @@ std::wstring TrayDeviceText() {
     return device;
 }
 
+// A second pair of headphones for the tray, as in "QCY H3 PRO · 80%"; empty while there is none.
+std::wstring CompanionText() {
+    std::wstring text = g_app.companionName;
+    if (!text.empty() && g_app.companionBattery >= 0) {
+        text += L" · " + std::to_wstring(g_app.companionBattery) + L"%";
+    }
+    return text;
+}
+
 RECT TrayIconRect() {
     NOTIFYICONIDENTIFIER id{sizeof(id), g_app.window, kTrayId};
     RECT rect{};
@@ -618,6 +637,7 @@ void ShowTrayCard() {
     }
     ui::TrayFlyout::Card card;
     card.device = TrayDeviceText();
+    card.companion = CompanionText();
     card.game = g_app.levels.game;
     card.chat = g_app.levels.chat;
     card.chatMuted = g_app.chatMuted;
@@ -639,7 +659,8 @@ void UpdateTray(DWORD action) {
     MoveTray(action == NIM_ADD);
     HICON icon = TrayIconNow();
     data.hIcon = icon;
-    const std::wstring device = TrayDeviceText();
+    const std::wstring companion = CompanionText();
+    const std::wstring device = TrayDeviceText() + (companion.empty() ? L"" : L"\n" + companion);
     const std::wstring tip = std::wstring(kAppName) + L"\n" + device + L"\n" + LevelsText();
     wcsncpy_s(data.szTip, tip.c_str(), _TRUNCATE);
 
@@ -740,6 +761,16 @@ void UpdateStatus() {
     const bool warn = g_app.ggRunning && g_app.device.IsOpen() && g_app.settings.warnGg && !g_app.ggDismissed;
     g_app.panel->SetStatus(device, detail, ConnectionText(), g_app.device.IsOpen() || other,
                            warn ? T(Text::GgRunning) : L"");
+    // Bluetooth headphones beside it take a line of their own; the dots tell which of the two plays.
+    ui::CompanionView companion;
+    if ((g_app.device.IsOpen() || other) && !g_app.companionName.empty()) {
+        companion.name = g_app.companionName;
+        companion.connection = L"Bluetooth";
+        companion.battery = g_app.companionBattery;
+        companion.inUse = g_app.outputId == g_app.companionId;
+        companion.headsetInUse = g_app.device.IsOpen() ? g_app.outputOnHeadset : !g_app.outputId.empty();
+    }
+    g_app.panel->SetCompanion(companion);
     UpdateTray(NIM_MODIFY);
 }
 
@@ -916,6 +947,12 @@ bool HeadsetMixes() {
     return g_app.device.IsOpen() && MixesInHeadset(*g_app.device.Model());
 }
 
+// The same while the sound plays on the headset's own devices. On other headphones the app mixes as for any device,
+// and the dial, when the headset reports it, drives the balance there.
+bool HeadsetMixesNow() {
+    return HeadsetMixes() && g_app.headsetMixing;
+}
+
 // The Game and Chat playback devices of a headset that mixes by its dial, such as "Arctis 7 Game" and
 // "Arctis 7 Chat"; both empty while it is not connected or shows only one.
 struct HeadsetSides {
@@ -976,27 +1013,77 @@ std::wstring RoutingOutputId(const std::vector<AudioEndpoint>& endpoints) {
 }
 
 void CheckBattery();
+void ApplyLevels();
 
-// A Bluetooth output's battery while no SteelSeries headset is connected, as Windows reports it; read again every
-// minute while the output is such a device.
+// A Bluetooth output's battery while no SteelSeries headset is connected, and that of Bluetooth headphones beside it,
+// as Windows reports them; read again every minute while there is such a device.
 void RefreshOutputBattery() {
     const bool bluetooth = !g_app.device.IsOpen() && g_app.outputLink == EndpointLink::Bluetooth;
     const int battery = bluetooth ? BluetoothBatteryOf(g_app.outputId).value_or(-1) : -1;
-    if (bluetooth) {
+    const int companion = g_app.companionId.empty() ? -1 : BluetoothBatteryOf(g_app.companionId).value_or(-1);
+    if (bluetooth || !g_app.companionId.empty()) {
         SetTimer(g_app.window, kTimerOutputBattery, kOutputBatteryPollMs, nullptr);
     } else {
         KillTimer(g_app.window, kTimerOutputBattery);
     }
-    if (battery == g_app.outputBattery) {
+    if (battery == g_app.outputBattery && companion == g_app.companionBattery) {
         return;
     }
-    g_app.outputBattery = battery;
-    if (battery >= 0) {
+    if (battery >= 0 && battery != g_app.outputBattery) {
         Log("output battery: %d%%", battery);
     }
+    if (companion >= 0 && companion != g_app.companionBattery) {
+        Log("second headphones battery: %d%%", companion);
+    }
+    g_app.outputBattery = battery;
+    g_app.companionBattery = companion;
     PushHeadset();
     UpdateStatus();
     CheckBattery();
+}
+
+// The headphones' own name from a playback device's, as "QCY H3 PRO" in "Headphones (QCY H3 PRO)".
+std::wstring OwnName(const std::wstring& name) {
+    const size_t open = name.rfind(L'(');
+    if (open == std::wstring::npos || name.empty() || name.back() != L')' || name.size() - open < 3) {
+        return name;
+    }
+    return name.substr(open + 1, name.size() - open - 2);
+}
+
+// Bluetooth headphones connected beside the headset or output the status names: the output itself when it is such
+// headphones, otherwise the first that Windows lists. Another device of the output's own headphones does not count.
+void FindCompanion(const std::vector<AudioEndpoint>& endpoints) {
+    const std::wstring before = g_app.companionId;
+    g_app.companionId.clear();
+    g_app.companionName.clear();
+    const bool headset = g_app.device.IsOpen();
+    const std::wstring outputKey = headset || g_app.outputId.empty() ? L"" : SoundDeviceKey(g_app.outputId);
+    std::vector<const AudioEndpoint*> candidates;
+    for (const auto& endpoint : endpoints) {
+        if (endpoint.steelSeriesProductId || IsVirtualEndpoint(endpoint)) {
+            continue;
+        }
+        if (endpoint.id == g_app.outputId) {
+            if (headset) {
+                candidates.insert(candidates.begin(), &endpoint);
+            }
+            continue;
+        }
+        candidates.push_back(&endpoint);
+    }
+    for (const AudioEndpoint* endpoint : candidates) {
+        if (IsHeadphonesEndpoint(endpoint->id) && EndpointLinkOf(endpoint->id) == EndpointLink::Bluetooth &&
+            (outputKey.empty() || SoundDeviceKey(endpoint->id) != outputKey)) {
+            g_app.companionId = endpoint->id;
+            g_app.companionName = OwnName(endpoint->name);
+            break;
+        }
+    }
+    if (g_app.companionId != before) {
+        Log("second headphones: %s", g_app.companionName.empty() ? "none" : Utf8(g_app.companionName).c_str());
+        g_app.companionBattery = -1;
+    }
 }
 
 // Name of the routing output in virtual device mode, otherwise of the default playback device.
@@ -1006,12 +1093,29 @@ void RefreshOutputName() {
     g_app.outputId.clear();
     g_app.outputName.clear();
     g_app.outputLink = EndpointLink::Unknown;
+    g_app.outputOnHeadset = false;
     for (const auto& endpoint : endpoints) {
         if (endpoint.id == id && !IsVirtualEndpoint(endpoint)) {
             g_app.outputId = endpoint.id;
             g_app.outputName = endpoint.name;
             g_app.outputLink = EndpointLinkOf(endpoint.id);
+            g_app.outputOnHeadset =
+                g_app.device.IsOpen() && endpoint.steelSeriesProductId == g_app.device.Model()->productId;
         }
+    }
+    FindCompanion(endpoints);
+    // A headset that mixes by its dial: the app's balance steps aside while the sound plays on it, and the panel shows
+    // the dial again; elsewhere the balance applies.
+    const bool mixing = HeadsetMixes() && g_app.outputOnHeadset;
+    if (mixing != g_app.headsetMixing) {
+        g_app.headsetMixing = mixing;
+        Log("the headset %s", mixing ? "mixes by its dial" : "does not play, the app mixes");
+        if (mixing) {
+            g_app.levels = ReportsDial(*g_app.device.Model()) ? g_app.dialLevels.value_or(g_app.levels) : Levels{};
+            g_app.panel->SetLevels(g_app.levels);
+        }
+        ApplyLevels();
+        UpdateTray(NIM_MODIFY);
     }
     RefreshOutputBattery();
     if (!g_app.outputId.empty() && SoundDeviceKey(g_app.outputId) != g_app.settings.outputDevice) {
@@ -1320,7 +1424,10 @@ void UpdateRouting() {
 Levels EffectiveLevels();
 void ApplyLevels();
 std::vector<AudioEndpoint> PreferredOutputs();
+std::vector<AudioEndpoint> PreferredMics();
 std::wstring CurrentOutput();
+std::wstring CurrentMic();
+void PushMics();
 void MaybeCheckForUpdate();
 void ShowTrayNotice(const std::wstring& title, const std::wstring& text, DWORD icon);
 void PushEqualizers();
@@ -1746,6 +1853,14 @@ void UpdateMixerEndpoints() {
             extra.push_back(*id);
         }
     }
+    // The mixer works on a SteelSeries headset's own devices; the default output gets the balance as well, for the
+    // sound that plays elsewhere meanwhile, such as on Bluetooth headphones.
+    if (g_app.device.IsOpen()) {
+        if (const std::wstring output = DefaultRenderEndpoint(eConsole);
+            !output.empty() && std::find(extra.begin(), extra.end(), output) == extra.end()) {
+            extra.push_back(output);
+        }
+    }
     g_app.mixer.SetExtraEndpoints(std::move(extra), false);
 }
 
@@ -1948,7 +2063,7 @@ Levels DialLevels(Levels levels) {
 // The balance with chat mute and ducking applied; the dial and the panel keep showing the balance itself.
 Levels EffectiveLevels() {
     // The dial of a headset that mixes by itself is already heard; the app's balance stays out of the way.
-    Levels levels = HeadsetMixes() ? Levels{} : g_app.levels;
+    Levels levels = HeadsetMixesNow() ? Levels{} : g_app.levels;
     // Each side's own volume scales its ChatMix level; Windows volumes stay at 100%.
     levels.game = static_cast<int>(std::lround(levels.game * g_app.settings.gameVolume / 100.0f));
     levels.chat = static_cast<int>(std::lround(levels.chat * g_app.settings.chatVolume / 100.0f));
@@ -2022,9 +2137,12 @@ void TickDucking() {
 // fromDevice: the change came from the headset dial and must not be echoed back to it.
 void SetLevels(Levels levels, bool fromDevice) {
     // Only the dial moves the balance of a headset that mixes by itself; the panel goes back to it.
-    if (!fromDevice && HeadsetMixes()) {
+    if (!fromDevice && HeadsetMixesNow()) {
         g_app.panel->SetLevels(g_app.levels);
         return;
+    }
+    if (fromDevice) {
+        g_app.dialLevels = levels;
     }
     if (levels == g_app.levels) {
         return;
@@ -2614,6 +2732,7 @@ void ConnectDevice() {
         Log("connected: %ls", model.name);
         g_app.features = &FeaturesFor(model.family);
         g_app.headset = HeadsetState();
+        g_app.dialLevels.reset();
         LoadHeadsetState(g_app.iniPath, model.productId, *g_app.features, g_app.headset);
         g_app.mixer.SetTarget(model.productId);
         // A knob that mixes in the headset and is not read leaves the panel at the middle.
@@ -2628,6 +2747,9 @@ void ConnectDevice() {
         ProbeUnsupportedHeadsets();
     }
     g_app.panel->SetBalanceDial(HasBalanceDial());
+    if (!g_app.settings.routing.enabled) {
+        UpdateMixerEndpoints();
+    }
     ApplyLevels();
     RefreshOutputName();
     UpdateStatus();
@@ -2673,6 +2795,9 @@ void HandleDeviceLost() {
     g_app.features = nullptr;
     g_app.mixer.SetTarget(std::nullopt);
     g_app.panel->SetBalanceDial(false);
+    if (!g_app.settings.routing.enabled) {
+        UpdateMixerEndpoints();
+    }
     ApplyLevels();
     RefreshOutputName();
     UpdateStatus();
@@ -3496,15 +3621,21 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
     if (before.equalizer != after.equalizer) {
         SyncOutputPlugins();
     }
-    if (before.outputs.switchOnLoss != after.outputs.switchOnLoss ||
-        before.outputs.returnToPreferred != after.outputs.returnToPreferred) {
-        // The order as shown becomes the order kept, so it holds while devices come and go.
-        std::vector<std::wstring>& order = g_app.settings.outputs.order;
-        for (const auto& endpoint : PreferredOutputs()) {
-            if (std::find(order.begin(), order.end(), endpoint.id) == order.end()) {
-                order.push_back(endpoint.id);
+    // The order as shown becomes the order kept once switching is on, so it holds while devices come and go.
+    auto keepOrder = [](DevicePriority& priority, const std::vector<AudioEndpoint>& shown) {
+        for (const auto& endpoint : shown) {
+            if (std::find(priority.order.begin(), priority.order.end(), endpoint.id) == priority.order.end()) {
+                priority.order.push_back(endpoint.id);
             }
         }
+    };
+    if (before.outputs.switchOnLoss != after.outputs.switchOnLoss ||
+        before.outputs.returnToPreferred != after.outputs.returnToPreferred) {
+        keepOrder(g_app.settings.outputs, PreferredOutputs());
+    }
+    if (before.microphones.switchOnLoss != after.microphones.switchOnLoss ||
+        before.microphones.returnToPreferred != after.microphones.returnToPreferred) {
+        keepOrder(g_app.settings.microphones, PreferredMics());
     }
     if (!(before.addOns == after.addOns)) {
         UpdateAddOns();
@@ -3526,6 +3657,9 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
         before.mic.output != after.mic.output || before.mic.keepLevels != after.mic.keepLevels ||
         before.mic.monitor != after.mic.monitor) {
         StartMic();
+        // The microphone in use may be another one now.
+        g_app.lastMic = CurrentMic();
+        PushMics();
     } else if (before.mic.noise != after.mic.noise || before.mic.compressor != after.mic.compressor ||
                before.mic.order != after.mic.order ||
                !(before.micEq == after.micEq) || before.equalizer != after.equalizer) {
@@ -3602,27 +3736,45 @@ void ToggleAuxMute() {
     }
 }
 
-bool IsExcludedOutput(const std::wstring& id) {
-    const std::vector<std::wstring>& excluded = g_app.settings.outputs.excluded;
-    return std::find(excluded.begin(), excluded.end(), id) != excluded.end();
+DevicePriority& PriorityOf(ui::DeviceList list) {
+    return list == ui::DeviceList::Microphones ? g_app.settings.microphones : g_app.settings.outputs;
 }
 
-// Active playback devices a person listens to (no virtual cables, no Game or Chat device), most
-// preferred first; devices the order does not list follow in the order Windows reports them, and
-// excluded devices come last.
+bool IsExcluded(const DevicePriority& priority, const std::wstring& id) {
+    return std::find(priority.excluded.begin(), priority.excluded.end(), id) != priority.excluded.end();
+}
+
+bool IsExcludedOutput(const std::wstring& id) {
+    return IsExcluded(g_app.settings.outputs, id);
+}
+
+// Most preferred first: devices the order does not list follow in the order Windows reports them, and excluded
+// devices come last.
+void SortByPriority(std::vector<AudioEndpoint>& endpoints, const DevicePriority& priority) {
+    auto rank = [&](const AudioEndpoint& endpoint) {
+        return std::find(priority.order.begin(), priority.order.end(), endpoint.id) - priority.order.begin();
+    };
+    std::stable_sort(endpoints.begin(), endpoints.end(),
+                     [&](const AudioEndpoint& a, const AudioEndpoint& b) { return rank(a) < rank(b); });
+    std::stable_partition(endpoints.begin(), endpoints.end(),
+                          [&](const AudioEndpoint& endpoint) { return !IsExcluded(priority, endpoint.id); });
+}
+
+// Active playback devices a person listens to (no virtual cables, no Game or Chat device), most preferred first.
 std::vector<AudioEndpoint> PreferredOutputs() {
     std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
     std::erase_if(endpoints, [](const AudioEndpoint& endpoint) {
         return IsVirtualEndpoint(endpoint) || IsRoutingDevice(endpoint.id);
     });
-    const std::vector<std::wstring>& order = g_app.settings.outputs.order;
-    auto rank = [&](const AudioEndpoint& endpoint) {
-        return std::find(order.begin(), order.end(), endpoint.id) - order.begin();
-    };
-    std::stable_sort(endpoints.begin(), endpoints.end(),
-                     [&](const AudioEndpoint& a, const AudioEndpoint& b) { return rank(a) < rank(b); });
-    std::stable_partition(endpoints.begin(), endpoints.end(),
-                          [](const AudioEndpoint& endpoint) { return !IsExcludedOutput(endpoint.id); });
+    SortByPriority(endpoints, g_app.settings.outputs);
+    return endpoints;
+}
+
+// Active microphones a person speaks into (no virtual cables), most preferred first.
+std::vector<AudioEndpoint> PreferredMics() {
+    std::vector<AudioEndpoint> endpoints = ListCaptureEndpoints();
+    std::erase_if(endpoints, IsVirtualEndpoint);
+    SortByPriority(endpoints, g_app.settings.microphones);
     return endpoints;
 }
 
@@ -3647,11 +3799,30 @@ std::wstring CurrentOutput() {
 
 void PushOutputs() {
     const std::wstring current = CurrentOutput();
-    std::vector<ui::OutputView> views;
+    std::vector<ui::DeviceView> views;
     for (const auto& endpoint : PreferredOutputs()) {
         views.push_back({endpoint.id, endpoint.name, endpoint.id == current, IsExcludedOutput(endpoint.id)});
     }
-    g_app.panel->SetOutputs(std::move(views));
+    g_app.panel->SetDevices(ui::DeviceList::Outputs, std::move(views));
+}
+
+// The microphone in use: the microphone chain's input while it runs, otherwise the Windows default microphone.
+std::wstring CurrentMic() {
+    const MicSettings& mic = g_app.settings.mic;
+    if (mic.enabled) {
+        return mic.input.empty() ? DefaultCaptureEndpoint(eCommunications) : mic.input;
+    }
+    return DefaultCaptureEndpoint(eConsole);
+}
+
+void PushMics() {
+    const std::wstring current = CurrentMic();
+    std::vector<ui::DeviceView> views;
+    for (const auto& endpoint : PreferredMics()) {
+        views.push_back(
+            {endpoint.id, endpoint.name, endpoint.id == current, IsExcluded(g_app.settings.microphones, endpoint.id)});
+    }
+    g_app.panel->SetDevices(ui::DeviceList::Microphones, std::move(views));
 }
 
 void SwitchOutput(const AudioEndpoint& target, bool popup) {
@@ -3678,6 +3849,34 @@ void SwitchOutput(const AudioEndpoint& target, bool popup) {
     PushOutputs();
 }
 
+// The microphone becomes the Windows default for each role a real microphone holds, and the microphone chain's input
+// when one is chosen there. A role held by a virtual cable stays: apps record the processed microphone from it.
+void SwitchMic(const AudioEndpoint& target, bool popup) {
+    const std::vector<AudioEndpoint> captures = ListCaptureEndpoints();
+    auto isVirtual = [&captures](const std::wstring& id) {
+        return std::any_of(captures.begin(), captures.end(),
+                           [&id](const AudioEndpoint& endpoint) { return endpoint.id == id && IsVirtualEndpoint(endpoint); });
+    };
+    for (const ERole role : {eConsole, eMultimedia, eCommunications}) {
+        if (!isVirtual(DefaultCaptureEndpoint(role))) {
+            SetDefaultCaptureEndpoint(target.id, role);
+        }
+    }
+    MicSettings& mic = g_app.settings.mic;
+    if (mic.enabled && !mic.input.empty() && mic.input != target.id) {
+        mic.input = target.id;
+        Save();
+        PushSettings();
+        StartMic();
+    }
+    g_app.lastMic = target.id;
+    Log("microphone: %s", Utf8(target.name).c_str());
+    if (popup && g_app.settings.showPopup) {
+        g_app.osd->ShowMessage(kGlyphMicrophone, target.name, T(Text::MicInput));
+    }
+    PushMics();
+}
+
 // The next device in the order of preference after the current one; excluded devices are skipped.
 void NextOutputDevice() {
     std::vector<AudioEndpoint> outputs = AllowedOutputs();
@@ -3695,8 +3894,8 @@ void NextOutputDevice() {
     SwitchOutput(outputs[next], true);
 }
 
-// Feeds the microphone chain from the next connected microphone, in the order Windows lists them. Virtual
-// cables are left out, as in the microphone picker.
+// Feeds the microphone chain from the next connected microphone in the order of preference. Virtual cables and
+// microphones in Never switch to are left out.
 void NextMicrophone() {
     const bool popup = g_app.settings.showPopup;
     if (!g_app.settings.mic.enabled) {
@@ -3705,8 +3904,10 @@ void NextMicrophone() {
         }
         return;
     }
-    std::vector<AudioEndpoint> microphones = g_app.host.RecordingDevices();
-    std::erase_if(microphones, IsVirtualEndpoint);
+    std::vector<AudioEndpoint> microphones = PreferredMics();
+    std::erase_if(microphones, [](const AudioEndpoint& endpoint) {
+        return IsExcluded(g_app.settings.microphones, endpoint.id) || HeadsetSwitchedOff(endpoint);
+    });
     const auto found = std::find_if(microphones.begin(), microphones.end(),
                                     [](const AudioEndpoint& endpoint) { return endpoint.id == g_app.micInputId; });
     const size_t next = found == microphones.end() ? 0 : (found - microphones.begin() + 1) % microphones.size();
@@ -3719,9 +3920,11 @@ void NextMicrophone() {
     const AudioEndpoint& target = microphones[next];
     Log("microphone: %s", Utf8(target.name).c_str());
     g_app.settings.mic.input = target.id;
+    g_app.lastMic = target.id;
     Save();
     PushSettings();
     StartMic();
+    PushMics();
     if (popup) {
         g_app.osd->ShowMessage(kGlyphMicrophone, target.name, T(Text::MicInput));
     }
@@ -3730,7 +3933,7 @@ void NextMicrophone() {
 // After devices came or went: the most preferred device left when the output disconnected, and the
 // most preferred device again when it reconnects. A device the user picks by hand stays otherwise.
 void FollowOutputPriority() {
-    const OutputSettings& settings = g_app.settings.outputs;
+    const DevicePriority& settings = g_app.settings.outputs;
     std::vector<AudioEndpoint> outputs = PreferredOutputs();
     std::erase_if(outputs, HeadsetSwitchedOff);
     std::vector<std::wstring> connected;
@@ -3738,7 +3941,7 @@ void FollowOutputPriority() {
         connected.push_back(endpoint.id);
     }
     const std::wstring current = CurrentOutput();
-    const std::optional<std::wstring> target = ChooseOutput(connected, g_app.knownOutputs, g_app.lastOutput,
+    const std::optional<std::wstring> target = ChooseDevice(connected, g_app.knownOutputs, g_app.lastOutput,
                                                             settings.order, settings.switchOnLoss,
                                                             settings.returnToPreferred);
     g_app.knownOutputs = std::set<std::wstring>(connected.begin(), connected.end());
@@ -3751,29 +3954,62 @@ void FollowOutputPriority() {
     PushOutputs();
 }
 
-void Host::OnOutputChoose(const std::wstring& id) {
-    for (const auto& endpoint : PreferredOutputs()) {
+// The same for the microphones. A headset that is switched off takes its microphone along. A virtual cable in use
+// as the microphone is a setup of the user's own, which is never switched away from.
+void FollowMicPriority() {
+    const DevicePriority& settings = g_app.settings.microphones;
+    std::vector<AudioEndpoint> mics = PreferredMics();
+    std::erase_if(mics, HeadsetSwitchedOff);
+    std::vector<std::wstring> connected;
+    for (const auto& endpoint : mics) {
+        connected.push_back(endpoint.id);
+    }
+    const std::wstring current = CurrentMic();
+    const std::vector<AudioEndpoint> captures = ListCaptureEndpoints();
+    const bool cable = std::any_of(captures.begin(), captures.end(), [&current](const AudioEndpoint& endpoint) {
+        return endpoint.id == current && IsVirtualEndpoint(endpoint);
+    });
+    const std::optional<std::wstring> target = ChooseDevice(connected, g_app.knownMics, g_app.lastMic, settings.order,
+                                                            settings.switchOnLoss, settings.returnToPreferred);
+    g_app.knownMics = std::set<std::wstring>(connected.begin(), connected.end());
+    if (!cable && target && *target != current && !IsExcluded(settings, *target)) {
+        SwitchMic(mics.front(), true);
+        return;
+    }
+    g_app.lastMic = current;
+    PushMics();
+}
+
+void Host::OnDeviceChoose(ui::DeviceList list, const std::wstring& id) {
+    const bool microphones = list == ui::DeviceList::Microphones;
+    for (const auto& endpoint : microphones ? PreferredMics() : PreferredOutputs()) {
         if (endpoint.id == id) {
-            SwitchOutput(endpoint, false);
+            if (microphones) {
+                SwitchMic(endpoint, false);
+            } else {
+                SwitchOutput(endpoint, false);
+            }
         }
     }
 }
 
 // Moves a device among the connected, not excluded ones; the full order keeps the others where they were.
-void Host::OnOutputMove(size_t from, size_t to) {
-    const std::vector<AudioEndpoint> outputs = AllowedOutputs();
-    if (from >= outputs.size() || to >= outputs.size() || from == to) {
+void Host::OnDeviceMove(ui::DeviceList list, size_t from, size_t to) {
+    DevicePriority& priority = PriorityOf(list);
+    std::vector<AudioEndpoint> devices = list == ui::DeviceList::Microphones ? PreferredMics() : PreferredOutputs();
+    std::erase_if(devices, [&priority](const AudioEndpoint& endpoint) { return IsExcluded(priority, endpoint.id); });
+    if (from >= devices.size() || to >= devices.size() || from == to) {
         return;
     }
-    std::vector<std::wstring>& order = g_app.settings.outputs.order;
-    for (const auto& endpoint : outputs) {
+    std::vector<std::wstring>& order = priority.order;
+    for (const auto& endpoint : devices) {
         if (std::find(order.begin(), order.end(), endpoint.id) == order.end()) {
             order.push_back(endpoint.id);
         }
     }
     // The connected devices keep the places they hold in the full order, filled in their new order.
     std::vector<std::wstring> listed;
-    for (const auto& endpoint : outputs) {
+    for (const auto& endpoint : devices) {
         listed.push_back(endpoint.id);
     }
     MoveItem(listed, from, to);
@@ -3786,17 +4022,19 @@ void Host::OnOutputMove(size_t from, size_t to) {
     Save();
     PushSettings();
     PushOutputs();
+    PushMics();
 }
 
-void Host::OnOutputExclude(const std::wstring& id, bool excluded) {
-    std::vector<std::wstring>& list = g_app.settings.outputs.excluded;
-    std::erase(list, id);
+void Host::OnDeviceExclude(ui::DeviceList list, const std::wstring& id, bool excluded) {
+    std::vector<std::wstring>& ids = PriorityOf(list).excluded;
+    std::erase(ids, id);
     if (excluded) {
-        list.push_back(id);
+        ids.push_back(id);
     }
     Save();
     PushSettings();
     PushOutputs();
+    PushMics();
 }
 
 // Warns once when the battery falls to the threshold, in the popup; charging or 5% above re-arms it.
@@ -4177,6 +4415,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             if (g_app.headset.headsetOff != wasOff) {
                 Log("headset switched %s", g_app.headset.headsetOff ? "off" : "on");
                 FollowOutputPriority();
+                FollowMicPriority();
             }
         }
         return 0;
@@ -4284,6 +4523,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         } else if (wParam == kTimerReconnect) {
             ConnectDevice();
         } else if (wParam == kTimerRebindAudio) {
+            // A new default output takes the balance.
+            if (!g_app.settings.routing.enabled) {
+                UpdateMixerEndpoints();
+            }
             g_app.mixer.Rebind();
             ApplyLevels();
             RefreshApps();
@@ -4297,6 +4540,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             FollowOutputPriority();
             RefreshOutputName();
             UpdateStatus();
+            FollowMicPriority();
             // A cable or microphone that came back, or a new default microphone.
             if (g_app.settings.mic.enabled &&
                 (!g_app.mic.IsRunning() ||
@@ -4547,6 +4791,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     UpdateRouting();
     FollowOutputPriority();
     StartMic();
+    FollowMicPriority();
     if (!g_app.settings.routing.enabled) {
         UpdateMixerEndpoints();
     }

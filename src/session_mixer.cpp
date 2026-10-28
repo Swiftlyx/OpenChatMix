@@ -93,8 +93,9 @@ public:
     HRESULT STDMETHODCALLTYPE OnDeviceStateChanged(LPCWSTR, DWORD) override { return Post(WM_APP_ENDPOINTS_CHANGED); }
     HRESULT STDMETHODCALLTYPE OnDeviceAdded(LPCWSTR) override { return Post(WM_APP_ENDPOINTS_CHANGED); }
     HRESULT STDMETHODCALLTYPE OnDeviceRemoved(LPCWSTR) override { return Post(WM_APP_ENDPOINTS_CHANGED); }
+    // The default output, and the default microphone that the microphone list marks and the microphone chain follows.
     HRESULT STDMETHODCALLTYPE OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) override {
-        return flow == eRender && role == eConsole ? Post(WM_APP_ENDPOINTS_CHANGED) : S_OK;
+        return flow == eCapture || (flow == eRender && role == eConsole) ? Post(WM_APP_ENDPOINTS_CHANGED) : S_OK;
     }
     HRESULT STDMETHODCALLTYPE OnPropertyValueChanged(LPCWSTR, const PROPERTYKEY) override { return S_OK; }
 };

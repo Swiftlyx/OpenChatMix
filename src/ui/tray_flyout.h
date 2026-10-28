@@ -17,7 +17,8 @@ namespace ui {
 class TrayFlyout {
 public:
     struct Card {
-        std::wstring device;  // With the battery when the headset reports one.
+        std::wstring device;     // With the battery when the headset reports one.
+        std::wstring companion;  // A second pair of headphones on a line of its own, likewise; may be empty.
         int game = 0;
         int chat = 0;
         bool chatMuted = false;

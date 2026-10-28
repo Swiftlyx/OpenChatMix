@@ -149,7 +149,7 @@ std::wstring Panel::HotkeyHint() const {
     return text;
 }
 
-void Panel::DrawMixer() {
+float Panel::DrawMixerHeader() {
     const Palette& p = P();
 
     // App mark: two pills mirroring the current Game and Chat levels.
@@ -166,9 +166,10 @@ void Panel::DrawMixer() {
     const float textLeft = kInset + 24.0f;
     const float textRight = kWidth - kGutter - design::kIconButtonSize;
     canvas_.Text(kAppName, {textLeft, 9.0f, textRight, 29.0f}, TextStyle::TitleMedium, p.onSurface);
-    // A wireless headset's battery follows the app's name: the icon as in the tray, then the percent.
-    if (headset_.battery >= 0 && !headset_.headsetOff) {
-        constexpr float kBatteryIconWidth = 14.0f;
+    constexpr float kBatteryIconWidth = 14.0f;
+    const bool companion = !companion_.name.empty();
+    // A single wireless headset's battery follows the app's name: the icon as in the tray, then the percent.
+    if (!companion && headset_.battery >= 0 && !headset_.headsetOff) {
         const float iconLeft =
             textLeft + std::ceil(canvas_.Measure(kAppName, TextStyle::TitleMedium)) + design::kSpace3;
         const float charge = headset_.battery / 100.0f;
@@ -177,37 +178,70 @@ void Panel::DrawMixer() {
         canvas_.Text(Percent(headset_.battery), {iconLeft + kBatteryIconWidth + design::kSpace1, 10.0f, textRight, 28.0f},
                      TextStyle::BodySmall, p.onSurfaceVariant);
     }
-    canvas_.FillCircle({textLeft + 3.0f, 38.0f}, 3.0f, deviceConnected_ ? p.primary : p.outline);
-    // The status line: the name, how the headset is connected as an outlined chip, then what the dial does.
-    // When it does not fit, what the dial does gives way first, then the name is cut.
+    // A status line: the dot, the name, how the device is connected as an outlined chip, its battery when two
+    // devices show, then what the dial does. When it does not fit, what the dial does gives way first, then the name
+    // is cut. The dot is lit for a connected device, or with two devices for the one the sound plays on.
     constexpr float kChipPadding = 6.0f;
+    constexpr float kLineHeight = 18.0f;
     const float statusLeft = textLeft + 11.0f;
-    const float chipWidth = connection_.empty()
-                                ? 0.0f
-                                : std::ceil(canvas_.Measure(connection_, TextStyle::LabelSmall)) + 2.0f * kChipPadding;
-    const float chipSpace = chipWidth > 0.0f ? design::kSpace2 + chipWidth : 0.0f;
-    float nameWidth = 0.0f;
-    const std::wstring name =
-        Elide(canvas_, device_, TextStyle::BodySmall, std::max(0.0f, textRight - statusLeft - chipSpace), nameWidth);
-    float statusRight = statusLeft + nameWidth;
-    canvas_.Text(name, {statusLeft, 29.0f, statusRight + 1.0f, 47.0f}, TextStyle::BodySmall, p.onSurfaceVariant);
-    if (chipWidth > 0.0f) {
-        const D2D1_RECT_F chip{statusRight + design::kSpace2, 30.0f, statusRight + chipSpace, 46.0f};
-        canvas_.StrokeRound({chip.left + 0.5f, chip.top + 0.5f, chip.right - 0.5f, chip.bottom - 0.5f}, 7.5f,
-                            p.outlineVariant, 1.0f);
-        canvas_.Text(connection_, chip, TextStyle::LabelSmall, p.onSurfaceVariant, TextAlign::Center);
-        statusRight = chip.right;
-    }
-    const std::wstring detail = deviceDetail_.empty() ? L"" : L" · " + deviceDetail_;
-    if (!detail.empty() && statusRight + canvas_.Measure(detail, TextStyle::BodySmall) <= textRight) {
-        canvas_.Text(detail, {statusRight, 29.0f, textRight, 47.0f}, TextStyle::BodySmall, p.onSurfaceVariant);
+    auto statusLine = [&](float top, const std::wstring& device, const std::wstring& connection, int battery,
+                          bool charging, const std::wstring& detail, bool lit) {
+        canvas_.FillCircle({textLeft + 3.0f, top + kLineHeight / 2.0f}, 3.0f, lit ? p.primary : p.outline);
+        const float chipWidth =
+            connection.empty() ? 0.0f
+                               : std::ceil(canvas_.Measure(connection, TextStyle::LabelSmall)) + 2.0f * kChipPadding;
+        const float chipSpace = chipWidth > 0.0f ? design::kSpace2 + chipWidth : 0.0f;
+        const std::wstring percent = battery >= 0 ? Percent(battery) : L"";
+        const float batteryWidth =
+            battery >= 0
+                ? kBatteryIconWidth + design::kSpace1 + std::ceil(canvas_.Measure(percent, TextStyle::BodySmall))
+                : 0.0f;
+        const float batterySpace = battery >= 0 ? design::kSpace2 + batteryWidth : 0.0f;
+        float nameWidth = 0.0f;
+        const std::wstring name = Elide(canvas_, device, TextStyle::BodySmall,
+                                        std::max(0.0f, textRight - statusLeft - chipSpace - batterySpace), nameWidth);
+        float right = statusLeft + nameWidth;
+        canvas_.Text(name, {statusLeft, top, right + 1.0f, top + kLineHeight}, TextStyle::BodySmall,
+                     p.onSurfaceVariant);
+        if (chipWidth > 0.0f) {
+            const D2D1_RECT_F chip{right + design::kSpace2, top + 1.0f, right + chipSpace, top + kLineHeight - 1.0f};
+            canvas_.StrokeRound({chip.left + 0.5f, chip.top + 0.5f, chip.right - 0.5f, chip.bottom - 0.5f}, 7.5f,
+                                p.outlineVariant, 1.0f);
+            canvas_.Text(connection, chip, TextStyle::LabelSmall, p.onSurfaceVariant, TextAlign::Center);
+            right = chip.right;
+        }
+        if (battery >= 0) {
+            const float iconLeft = right + design::kSpace2;
+            const float charge = battery / 100.0f;
+            DrawBatteryIcon(canvas_, p, {iconLeft + kBatteryIconWidth / 2.0f, top + kLineHeight / 2.0f}, 7.5f, charge,
+                            charging, BatteryTintColor(settings_.appearance.battery, charge));
+            canvas_.Text(percent, {iconLeft + kBatteryIconWidth + design::kSpace1, top, textRight, top + kLineHeight},
+                         TextStyle::BodySmall, p.onSurfaceVariant);
+            right = iconLeft + batteryWidth;
+        }
+        const std::wstring tail = detail.empty() ? L"" : L" · " + detail;
+        if (!tail.empty() && right + canvas_.Measure(tail, TextStyle::BodySmall) <= textRight) {
+            canvas_.Text(tail, {right, top, textRight, top + kLineHeight}, TextStyle::BodySmall, p.onSurfaceVariant);
+        }
+    };
+    const int battery = companion && !headset_.headsetOff ? headset_.battery : -1;
+    statusLine(29.0f, device_, connection_, battery, headset_.charging, deviceDetail_,
+               companion ? companion_.headsetInUse : deviceConnected_);
+    if (companion) {
+        statusLine(29.0f + kLineHeight, companion_.name, companion_.connection, companion_.battery, false, L"",
+                   companion_.inUse);
     }
     DrawPinButton();
+    return companion ? kLineHeight : 0.0f;
+}
 
-    DrawMixCard({kGutter, kHeaderHeight, kWidth - kGutter, kHeaderHeight + 148.0f});
+void Panel::DrawMixer() {
+    const Palette& p = P();
+    const float headerHeight = kHeaderHeight + DrawMixerHeader();
+    DrawMixCard({kGutter, headerHeight, kWidth - kGutter, headerHeight + 148.0f});
 
     // The ChatMix card stays in place; the groups below it scroll when they don't fit.
-    const float scrollTop = kHeaderHeight + 148.0f;
+    const float scrollTop = headerHeight + 148.0f;
     const float start = BeginScroll(Page::Mixer, scrollTop);
     float y = SectionTitle(T(Text::Groups), start - 4.0f + design::kSectionGap);
     const std::vector<AppGroup> groups = AvailableGroups();

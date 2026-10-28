@@ -30,6 +30,8 @@ EndpointLink EndpointLinkOf(const std::wstring& endpointId);
 // Battery of a Bluetooth playback device in percent, as Windows keeps it for the device; nothing for other
 // devices or while the device reports none. Requires COM on the calling thread.
 std::optional<int> BluetoothBatteryOf(const std::wstring& endpointId);
+// Headphones or a headset by the endpoint's form factor. Requires COM on the calling thread.
+bool IsHeadphonesEndpoint(const std::wstring& endpointId);
 
 // Names the device behind a playback or recording endpoint so that it stays the same in any port: "usb-1038-12cb"
 // for a USB device (with "-<serial>" when it has a serial number), "dev-<container>" for a Bluetooth or other external
@@ -48,6 +50,7 @@ std::wstring DefaultCaptureEndpoint(ERole role);
 // Both go through the undocumented IPolicyConfig interface of the Windows sound settings and
 // need no elevation. They return false when Windows rejects the change.
 bool SetDefaultRenderEndpoint(const std::wstring& id, ERole role);
+bool SetDefaultCaptureEndpoint(const std::wstring& id, ERole role);
 bool SetEndpointEnabled(const std::wstring& id, bool enabled);
 
 struct VirtualDevicePair {

@@ -58,13 +58,14 @@ struct RoutingSettings {
 };
 
 // Playback devices in the order they are preferred, and whether OpenChatMix follows that order.
-struct OutputSettings {
+// The order of preference of the playback devices or of the microphones, and switching between them.
+struct DevicePriority {
     std::vector<std::wstring> order;     // Endpoint IDs, most preferred first; unlisted devices come after.
     std::vector<std::wstring> excluded;  // Endpoint IDs never switched to automatically or by the hotkey.
-    bool switchOnLoss = false;        // The output disconnects: take the most preferred device left.
+    bool switchOnLoss = false;        // The device in use disconnects: take the most preferred device left.
     bool returnToPreferred = false;   // A more preferred device connects: switch back to it.
 
-    bool operator==(const OutputSettings&) const = default;
+    bool operator==(const DevicePriority&) const = default;
 };
 
 struct AppearanceSettings {
@@ -265,7 +266,8 @@ struct Settings {
     bool equalizer = false;                            // Equalizer tab and processing in virtual device mode.
     AppearanceSettings appearance;
     RoutingSettings routing;
-    OutputSettings outputs;
+    DevicePriority outputs;
+    DevicePriority microphones;  // Switching sets the Windows default microphone and a chosen microphone chain input.
     IdleScreenSettings idleScreen;
     VisualizerSettings visualizer;
     EqChannelSettings gameEq;

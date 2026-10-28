@@ -35,6 +35,7 @@ constexpr wchar_t kChatPluginsSection[] = L"Plugins.Chat";
 constexpr wchar_t kMediaPluginsSection[] = L"Plugins.Media";
 constexpr wchar_t kAuxPluginsSection[] = L"Plugins.Aux";
 constexpr wchar_t kOutputsSection[] = L"Outputs";
+constexpr wchar_t kMicrophonesSection[] = L"Microphones";
 // [SoundDevices] the devices the sound settings in use belong to; the two lists name the devices that keep theirs
 // apart, in sections such as [Equalizer.Game@usb-1038-12cb] and [Microphone@usb-...].
 constexpr wchar_t kSoundDevicesSection[] = L"SoundDevices";
@@ -477,6 +478,31 @@ std::vector<std::wstring> SplitList(const std::wstring& text) {
         start = end + 1;
     }
     return items;
+}
+
+std::wstring JoinList(const std::vector<std::wstring>& items) {
+    std::wstring text;
+    for (const auto& item : items) {
+        text += (text.empty() ? L"" : std::wstring(1, kPathSeparator)) + item;
+    }
+    return text;
+}
+
+// [Outputs] or [Microphones] Order=id|id, Excluded=id|id, SwitchOnLoss=0|1, ReturnToPreferred=0|1
+DevicePriority LoadDevicePriority(const std::wstring& path, const wchar_t* section) {
+    DevicePriority priority;
+    priority.order = SplitList(ReadString(path, section, L"Order", L""));
+    priority.excluded = SplitList(ReadString(path, section, L"Excluded", L""));
+    priority.switchOnLoss = ReadSectionInt(path, section, L"SwitchOnLoss", 0) != 0;
+    priority.returnToPreferred = ReadSectionInt(path, section, L"ReturnToPreferred", 0) != 0;
+    return priority;
+}
+
+void SaveDevicePriority(const std::wstring& path, const wchar_t* section, const DevicePriority& priority) {
+    WriteSectionString(path, section, L"Order", JoinList(priority.order));
+    WriteSectionString(path, section, L"Excluded", JoinList(priority.excluded));
+    WriteSectionString(path, section, L"SwitchOnLoss", priority.switchOnLoss ? L"1" : L"0");
+    WriteSectionString(path, section, L"ReturnToPreferred", priority.returnToPreferred ? L"1" : L"0");
 }
 
 IdleAnimationKind ParseIdleAnimation(const std::wstring& text) {
@@ -1010,10 +1036,8 @@ Settings LoadSettings(const std::wstring& path) {
     for (const std::wstring& exe : SplitList(ReadString(path, kMainSection, L"IgnoredApps", L""))) {
         settings.ignoredApps.insert(exe);
     }
-    settings.outputs.order = SplitList(ReadString(path, kOutputsSection, L"Order", L""));
-    settings.outputs.excluded = SplitList(ReadString(path, kOutputsSection, L"Excluded", L""));
-    settings.outputs.switchOnLoss = ReadSectionInt(path, kOutputsSection, L"SwitchOnLoss", 0) != 0;
-    settings.outputs.returnToPreferred = ReadSectionInt(path, kOutputsSection, L"ReturnToPreferred", 0) != 0;
+    settings.outputs = LoadDevicePriority(path, kOutputsSection);
+    settings.microphones = LoadDevicePriority(path, kMicrophonesSection);
     settings.idleScreen.animation = ParseIdleAnimation(ReadString(path, kIdleSection, L"Animation", L"off"));
     settings.idleScreen.delaySeconds =
         std::clamp(static_cast<int>(GetPrivateProfileIntW(kIdleSection, L"Delay", 60, path.c_str())), 5, 3600);
@@ -1145,18 +1169,8 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
         ignored += (ignored.empty() ? L"" : std::wstring(1, kPathSeparator)) + exe;
     }
     WriteString(path, L"IgnoredApps", ignored.c_str());
-    std::wstring order;
-    for (const auto& id : settings.outputs.order) {
-        order += (order.empty() ? L"" : std::wstring(1, kPathSeparator)) + id;
-    }
-    WriteSectionString(path, kOutputsSection, L"Order", order);
-    std::wstring excluded;
-    for (const auto& id : settings.outputs.excluded) {
-        excluded += (excluded.empty() ? L"" : std::wstring(1, kPathSeparator)) + id;
-    }
-    WriteSectionString(path, kOutputsSection, L"Excluded", excluded);
-    WriteSectionString(path, kOutputsSection, L"SwitchOnLoss", settings.outputs.switchOnLoss ? L"1" : L"0");
-    WriteSectionString(path, kOutputsSection, L"ReturnToPreferred", settings.outputs.returnToPreferred ? L"1" : L"0");
+    SaveDevicePriority(path, kOutputsSection, settings.outputs);
+    SaveDevicePriority(path, kMicrophonesSection, settings.microphones);
     WritePrivateProfileStringW(kIdleSection, L"Animation",
                                kIdleAnimationNames[static_cast<size_t>(settings.idleScreen.animation)], path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"Delay", std::to_wstring(settings.idleScreen.delaySeconds).c_str(),

@@ -274,7 +274,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Plugins",  // PluginFilter
     L"could not be loaded",  // PluginNotLoaded
     L"Output devices",  // OutputDevices
-    L"Priority, switching on disconnect",  // OutputDevicesSummary
+    L"Outputs and microphones: priority, switching",  // DevicesSummary
     L"Switch when a device disconnects",  // SwitchOnLoss
     L"The sound goes to the highest device below that is still connected.",  // SwitchOnLossHint
     L"Return to a device that reconnects",  // ReturnToPreferred
@@ -556,6 +556,16 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Saved for",  // SoundDeviceLabel
     L"Each headset and pair of speakers keeps its own equalizers and plugins; one used for the first time starts without them.",  // OutputSoundHint
     L"Each microphone keeps its own processing: noise suppression, equalizer, compressor and plugins.",  // MicSoundHint
+    L"Devices",  // DevicesTitle
+    L"Microphones",  // MicrophonesTab
+    L"Switch when a microphone disconnects",  // MicSwitchOnLoss
+    L"The highest microphone below that is still connected takes over.",  // MicSwitchOnLossHint
+    L"Return to a microphone that reconnects",  // MicReturnToPreferred
+    L"When the top microphone of the list connects again, it takes over again.",  // MicReturnToPreferredHint
+    L"Disconnected and disabled microphones are not shown here; virtual cables are left out. The microphone you switch to becomes the Windows default, unless a virtual cable is the default, and the input of the microphone processing when one is chosen there. Click a microphone to use it now; the Next microphone hotkey follows this order.",  // MicPriorityHint
+    L"Switching after a disconnect and the Next microphone hotkey skip these microphones. You can still use one by clicking it.",  // MicNeverSwitchToHint
+    L"Every connected microphone is in Never switch to.",  // AllMicsExcluded
+    L"No microphones found",  // NoMicrophones
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -824,7 +834,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Плагіни",
     L"не вдалося завантажити",
     L"Пристрої виводу",
-    L"Пріоритет, перемикання при відключенні",
+    L"Виводи й мікрофони: пріоритет, перемикання",
     L"Перемикати, коли пристрій відключається",
     L"Звук перейде на перший підключений пристрій зі списку нижче.",
     L"Повертатися на пристрій, коли він підключається",
@@ -1106,6 +1116,16 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Збережено для",
     L"Кожні навушники й колонки мають власні еквалайзери й плагіни; пристрій, підключений уперше, починає без них.",
     L"Кожен мікрофон має власну обробку: шумодав, еквалайзер, компресор і плагіни.",
+    L"Пристрої",
+    L"Мікрофони",
+    L"Перемикати, коли мікрофон відключається",
+    L"Мікрофоном стане перший підключений зі списку нижче.",
+    L"Повертатися на мікрофон, коли він підключається",
+    L"Коли перший мікрофон зі списку знову підключається, програма повертається на нього.",
+    L"Відключені й вимкнені мікрофони тут не показуються; віртуальні кабелі приховано. Мікрофон, на який програма перемикається, стає мікрофоном Windows за замовчуванням (якщо за замовчуванням не віртуальний кабель), а також входом обробки мікрофона, якщо його там вибрано. Натисніть на мікрофон, щоб перемкнутися на нього; гаряча клавіша «Наступний мікрофон» перемикає в цьому порядку.",
+    L"Перемикання після відключення й гаряча клавіша «Наступний мікрофон» оминають ці мікрофони. Перемкнутися на такий мікрофон можна, натиснувши на нього.",
+    L"Усі підключені мікрофони в списку «Не перемикатися на».",
+    L"Мікрофонів не знайдено",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1374,7 +1394,7 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Eklentiler",
     L"yüklenemedi",
     L"Çıkış cihazları",
-    L"Öncelik, bağlantı kopunca geçiş",
+    L"Çıkışlar ve mikrofonlar: öncelik, geçiş",
     L"Bir cihazın bağlantısı kopunca geç",
     L"Ses, aşağıda hâlâ bağlı olan en üstteki cihaza gider.",
     L"Yeniden bağlanan cihaza dön",
@@ -1656,6 +1676,16 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Kaydedildiği cihaz",
     L"Her kulaklık ve hoparlör kendi ekolayzerlerini ve eklentilerini saklar; ilk kez kullanılan bir cihaz bunlar olmadan başlar.",
     L"Her mikrofon kendi işlemesini saklar: gürültü engelleme, ekolayzer, kompresör ve eklentiler.",
+    L"Cihazlar",
+    L"Mikrofonlar",
+    L"Bir mikrofonun bağlantısı kopunca geç",
+    L"Aşağıda hâlâ bağlı olan en üstteki mikrofon devreye girer.",
+    L"Yeniden bağlanan mikrofona dön",
+    L"Listenin en üstündeki mikrofon yeniden bağlandığında yeniden devreye girer.",
+    L"Bağlı olmayan ve devre dışı mikrofonlar burada gösterilmez; sanal kablolar listelenmez. Geçilen mikrofon, varsayılan bir sanal kablo değilse Windows'un varsayılan mikrofonu olur; mikrofon işlemede bir giriş seçildiyse o da olur. Hemen kullanmak için bir mikrofona tıklayın; Sonraki mikrofon kısayolu bu sırayı izler.",
+    L"Bağlantı kopunca geçiş ve Sonraki mikrofon kısayolu bu mikrofonları atlar. Yine de birine tıklayarak kullanabilirsiniz.",
+    L"Bağlı tüm mikrofonlar Asla geçme listesinde.",
+    L"Mikrofon bulunamadı",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

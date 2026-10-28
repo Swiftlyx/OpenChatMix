@@ -131,6 +131,11 @@ void Panel::SetStatus(const std::wstring& device, const std::wstring& detail, co
     Invalidate();
 }
 
+void Panel::SetCompanion(const CompanionView& companion) {
+    companion_ = companion;
+    Invalidate();
+}
+
 void Panel::SetApps(std::vector<AppItem> apps) {
     apps_ = std::move(apps);
     Invalidate();
@@ -456,7 +461,7 @@ void Panel::Render() {
     case Page::Profiles: DrawProfiles(); break;
     case Page::ProfileEdit: DrawProfileEdit(); break;
     case Page::Microphone: DrawMicrophone(); break;
-    case Page::Outputs: DrawOutputs(); break;
+    case Page::Outputs: DrawDevices(); break;
     case Page::General: DrawGeneral(); break;
     case Page::Welcome: DrawWelcome(); break;
     case Page::RoutingChannel: DrawRoutingChannel(); break;

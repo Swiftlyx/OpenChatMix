@@ -22,6 +22,7 @@ constexpr double kAppearMs = 150.0;
 constexpr float kCardWidth = 280.0f;
 constexpr float kCardPadding = 16.0f;
 constexpr float kCardHeight = 108.0f;
+constexpr float kCardLine = 20.0f;  // A second pair of headphones adds a line.
 constexpr float kMenuPadding = 8.0f;
 constexpr float kMenuHeader = 36.0f;
 constexpr float kMenuDivider = 9.0f;
@@ -61,12 +62,16 @@ void TrayFlyout::ShowCard(const RECT& icon, const Card& card) {
         return;
     }
     card_ = card;
+    const float height = kCardHeight + (card.companion.empty() ? 0.0f : kCardLine);
     if (CardVisible()) {
-        Render();
-        return;
+        if (surfaceHeight_ == height) {
+            Render();
+            return;
+        }
+        Close();
     }
     const POINT anchor{(icon.left + icon.right) / 2, (icon.top + icon.bottom) / 2};
-    Open(Kind::Card, icon, anchor, kCardWidth, kCardHeight);
+    Open(Kind::Card, icon, anchor, kCardWidth, height);
 }
 
 void TrayFlyout::HideCard() {
@@ -309,6 +314,10 @@ void TrayFlyout::DrawCard() {
     canvas_.Text(kAppName, {left, y, right, y + 20.0f}, TextStyle::TitleSmall, p.onSurface);
     y += 22.0f;
     canvas_.Text(card_.device, {left, y, right, y + 20.0f}, TextStyle::BodyMedium, p.onSurfaceVariant);
+    if (!card_.companion.empty()) {
+        y += kCardLine;
+        canvas_.Text(card_.companion, {left, y, right, y + 20.0f}, TextStyle::BodyMedium, p.onSurfaceVariant);
+    }
     y += 28.0f;
     const std::wstring game = card_.gameMuted ? std::wstring(T(Text::GameMuted))
                                               : std::wstring(T(Text::Game)) + L" " + Percent(card_.game);

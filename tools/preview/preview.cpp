@@ -9,6 +9,7 @@
 //   --screenshots  keeps the settings already next to the executable and lists a fixed set of apps instead of the
 //                  running ones, so pictures for the README come out the same each time and show nothing private.
 //   --headset N    starts with the N-th headset of the menu (0-based) instead of the Arctis Nova Pro Wireless.
+//   --companion    shows Bluetooth headphones beside the headset, with their battery, as a second status line.
 
 #include <windows.h>
 #include <shellapi.h>
@@ -170,7 +171,9 @@ struct Preview {
     bool autostart = false;
     HeadsetState headset;
     std::wstring defaultOutput;  // The Windows default output, then the device chosen in the preview.
+    std::wstring defaultMic;     // The same for the microphone.
     bool screenshots = false;    // --screenshots
+    bool companion = false;      // --companion
     std::unique_ptr<PreviewHost> host;
     std::unique_ptr<ui::Panel> panel;
 };
@@ -345,6 +348,11 @@ void PushStatus() {
     }
     const bool warn = g.ggRunning && choice.steelSeries && g.settings.warnGg && !g.ggDismissed;
     g.panel->SetStatus(device, detail, connection, connected, warn ? T(Text::GgRunning) : L"");
+    ui::CompanionView companion;
+    if (g.companion && connected) {
+        companion = {L"QCY H3 PRO", L"Bluetooth", 80, false, true};
+    }
+    g.panel->SetCompanion(companion);
 }
 
 void PushHeadset() {
@@ -476,22 +484,44 @@ void PushAddOns() {
     g.panel->SetAddOns(view);
 }
 
-void PushOutputs() {
-    std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
+DevicePriority& PriorityOf(ui::DeviceList list) {
+    return list == ui::DeviceList::Microphones ? g.settings.microphones : g.settings.outputs;
+}
+
+// The connected devices of a list without virtual cables, in the order of preference, excluded ones last.
+std::vector<AudioEndpoint> ListedDevices(ui::DeviceList list) {
+    std::vector<AudioEndpoint> endpoints =
+        list == ui::DeviceList::Microphones ? ListCaptureEndpoints() : ListRenderEndpoints();
     std::erase_if(endpoints, [](const AudioEndpoint& endpoint) { return IsVirtualEndpoint(endpoint); });
-    const std::vector<std::wstring>& order = g.settings.outputs.order;
-    auto rank = [&](const AudioEndpoint& endpoint) { return std::find(order.begin(), order.end(), endpoint.id) - order.begin(); };
+    const DevicePriority& priority = PriorityOf(list);
+    auto rank = [&](const AudioEndpoint& endpoint) {
+        return std::find(priority.order.begin(), priority.order.end(), endpoint.id) - priority.order.begin();
+    };
     std::stable_sort(endpoints.begin(), endpoints.end(),
                      [&](const AudioEndpoint& a, const AudioEndpoint& b) { return rank(a) < rank(b); });
-    const std::vector<std::wstring>& excluded = g.settings.outputs.excluded;
-    auto isExcluded = [&](const std::wstring& id) { return std::find(excluded.begin(), excluded.end(), id) != excluded.end(); };
+    auto isExcluded = [&](const std::wstring& id) {
+        return std::find(priority.excluded.begin(), priority.excluded.end(), id) != priority.excluded.end();
+    };
     std::stable_partition(endpoints.begin(), endpoints.end(),
                           [&](const AudioEndpoint& endpoint) { return !isExcluded(endpoint.id); });
-    std::vector<ui::OutputView> views;
-    for (const AudioEndpoint& endpoint : endpoints) {
-        views.push_back({endpoint.id, endpoint.name, endpoint.id == g.defaultOutput, isExcluded(endpoint.id)});
+    return endpoints;
+}
+
+void PushDevices(ui::DeviceList list) {
+    const DevicePriority& priority = PriorityOf(list);
+    const std::wstring& current = list == ui::DeviceList::Microphones ? g.defaultMic : g.defaultOutput;
+    std::vector<ui::DeviceView> views;
+    for (const AudioEndpoint& endpoint : ListedDevices(list)) {
+        const bool excluded =
+            std::find(priority.excluded.begin(), priority.excluded.end(), endpoint.id) != priority.excluded.end();
+        views.push_back({endpoint.id, endpoint.name, endpoint.id == current, excluded});
     }
-    g.panel->SetOutputs(std::move(views));
+    g.panel->SetDevices(list, std::move(views));
+}
+
+void PushOutputs() {
+    PushDevices(ui::DeviceList::Outputs);
+    PushDevices(ui::DeviceList::Microphones);
 }
 
 void PushApps() {
@@ -802,32 +832,45 @@ public:
         g.nvidiaAfx.status = NvidiaAfxSettings::Status::Ready;
         PushMic();
     }
-    void OnOutputChoose(const std::wstring& id) override {
-        g.defaultOutput = id;
+    void OnDeviceChoose(ui::DeviceList list, const std::wstring& id) override {
+        (list == ui::DeviceList::Microphones ? g.defaultMic : g.defaultOutput) = id;
         PushOutputs();
     }
-    void OnOutputMove(size_t from, size_t to) override {
-        std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
-        std::erase_if(endpoints, [](const AudioEndpoint& endpoint) { return IsVirtualEndpoint(endpoint); });
-        std::vector<std::wstring>& order = g.settings.outputs.order;
-        for (const AudioEndpoint& endpoint : endpoints) {
-            if (std::find(order.begin(), order.end(), endpoint.id) == order.end()) {
-                order.push_back(endpoint.id);
+    // As the app does: the listed devices keep the places they hold in the full order, filled in their new order.
+    void OnDeviceMove(ui::DeviceList list, size_t from, size_t to) override {
+        DevicePriority& priority = PriorityOf(list);
+        std::vector<std::wstring> listed;
+        for (const AudioEndpoint& endpoint : ListedDevices(list)) {
+            if (std::find(priority.excluded.begin(), priority.excluded.end(), endpoint.id) == priority.excluded.end()) {
+                listed.push_back(endpoint.id);
             }
         }
-        if (from < order.size() && to < order.size() && from != to) {
-            const std::wstring moved = order[from];
-            order.erase(order.begin() + static_cast<std::ptrdiff_t>(from));
-            order.insert(order.begin() + static_cast<std::ptrdiff_t>(to), moved);
+        if (from >= listed.size() || to >= listed.size() || from == to) {
+            return;
+        }
+        for (const std::wstring& id : listed) {
+            if (std::find(priority.order.begin(), priority.order.end(), id) == priority.order.end()) {
+                priority.order.push_back(id);
+            }
+        }
+        const std::wstring moved = listed[from];
+        listed.erase(listed.begin() + static_cast<std::ptrdiff_t>(from));
+        listed.insert(listed.begin() + static_cast<std::ptrdiff_t>(to), moved);
+        size_t next = 0;
+        for (std::wstring& id : priority.order) {
+            if (std::find(listed.begin(), listed.end(), id) != listed.end()) {
+                id = listed[next++];
+            }
         }
         Save();
         PushSettings();
         PushOutputs();
     }
-    void OnOutputExclude(const std::wstring& id, bool excluded) override {
-        std::erase(g.settings.outputs.excluded, id);
+    void OnDeviceExclude(ui::DeviceList list, const std::wstring& id, bool excluded) override {
+        std::vector<std::wstring>& ids = PriorityOf(list).excluded;
+        std::erase(ids, id);
         if (excluded) {
-            g.settings.outputs.excluded.push_back(id);
+            ids.push_back(id);
         }
         Save();
         PushSettings();
@@ -1068,6 +1111,8 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
         for (int i = 1; i < argc; ++i) {
             if (wcscmp(argv[i], L"--screenshots") == 0) {
                 g.screenshots = true;
+            } else if (wcscmp(argv[i], L"--companion") == 0) {
+                g.companion = true;
             } else if (wcscmp(argv[i], L"--headset") == 0 && i + 1 < argc) {
                 headset = std::clamp(_wtoi(argv[++i]), 0, static_cast<int>(std::size(kChoices)) - 1);
             }
@@ -1091,6 +1136,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     g.levels = g.settings.levels;
     g.autostart = IsAutostartEnabled();
     g.defaultOutput = DefaultRenderEndpoint(eConsole);
+    g.defaultMic = DefaultCaptureEndpoint(eConsole);
     SetLanguage(g.settings.language);
     const AppearanceSettings& appearance = g.settings.appearance;
     ui::SetTheme(appearance.theme, AccentSeed(), appearance.chatAccent, appearance.contrast);

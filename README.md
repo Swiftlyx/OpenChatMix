@@ -70,7 +70,9 @@ native settings, so GG and Sonar can stay closed:
   They are stored in the headset itself and stay active while no app runs.
 - **Battery** beside the app's name on the *Mixer* tab, in the tray tooltip, as the tray icon at the
   even balance (in the theme's color, or green to red by its charge) and as a popup when it runs low.
-  Bluetooth headphones show theirs too when Windows gets the level from them.
+  Bluetooth headphones show theirs too when Windows gets the level from them. With a second pair connected
+  beside the headset, each gets a line of its own with its connection and battery, and a lit dot marks the
+  one the sound plays on.
 - **Only what your model has.** The panel shows the settings, the battery and the display options
   that the connected model supports, and nothing it does not.
 - **A Sonar-style mode** with two virtual audio devices and a 10-band parametric equalizer, if you
@@ -157,13 +159,18 @@ native settings, so GG and Sonar can stay closed:
   voices of others. It is off until you turn it on in *Settings → Audio*.
 - **Hotkeys with an on-screen popup** (`Ctrl + Alt + ← / → / ↓` by default), plus optional hotkeys
   to mute game, chat, media or aux, to send the sound to the next output device or feed the microphone chain
-  from the next microphone (virtual cables are skipped), and one that turns the GameDAC screensaver on
+  from the next microphone (in the order of the microphone list), and one that turns the GameDAC screensaver on
   and off. A single key works as well, so a keyboard's volume knob can become a ChatMix wheel. Hotkeys
-  also work without a SteelSeries headset: the balance is then applied to the default output device.
-- **Output devices.** Put the connected devices in your order of preference; optionally the sound
+  also work without a SteelSeries headset: the balance is then applied to the default output device. With
+  one, the sound that plays on another output meanwhile, such as Bluetooth headphones, gets the balance too.
+- **Device priority.** Put the connected output devices in your order of preference; optionally the sound
   moves to the next one when the output disconnects and back when the preferred device reconnects.
   The *Next output device* hotkey follows the same order. Disconnected and disabled devices and
   virtual cables are not listed. Devices you never want to switch to go into *Never switch to*.
+- **Microphone priority.** The microphones get a list of their own: when the headset you speak into is
+  switched off or unplugged, the next microphone takes over, and the preferred one comes back with it. The
+  microphone becomes the Windows default (a virtual cable set as the default stays) and, when one is chosen
+  there, the input of the microphone processing. The *Next microphone* hotkey follows this order.
 - **Mouse wheel ChatMix (optional).** Hold `Ctrl + Win`, `Alt + Win` or `Ctrl + Alt + Shift` and
   turn the wheel: up for more chat, down for more game; click the wheel for an even balance. Only
   that exact combination is taken, so zooming with `Ctrl` or `Ctrl + Alt` and the wheel keeps working.
@@ -319,8 +326,8 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode), once turned on in *Settings* → *Audio*. |
 | Microphone processing and VST plugins | *Settings* → *Microphone*; its equalizer is the *Mic* channel of the *Equalizer* tab. |
 | VST plugins on Game, Chat, Media or Aux | *Equalizer* tab (virtual device mode) → the channel → *Plugins*. |
-| Order of output devices, switching on disconnect | *Settings* → *Output devices*; drag a device to its place. |
-| Never switch to a device | *Settings* → *Output devices* → the ⦸ button next to it; ↶ under *Never switch to* brings it back. |
+| Order of output devices or microphones, switching on disconnect | *Settings* → *Devices* → *Output devices* or *Microphones*; drag a device to its place. |
+| Never switch to a device | *Settings* → *Devices* → the ⦸ button next to it; ↶ under *Never switch to* brings it back. |
 | Reorder the microphone effects or plugins | *Settings* → *Microphone* → drag a step or a plugin by its handle. |
 | Type an exact value | Click the value between − and + (EQ frequency, level, Q, preamp, ducking, battery warning), type it (`1.5k` works for 1500 Hz) and press Enter. |
 | Keep the panel open | Pin it with the pin next to the page title; click it again to let the panel hide when it loses focus. |
@@ -394,7 +401,8 @@ on the Game side. Apps that play straight to the headset are not affected.
 The **Arctis 7** (2017, 2019) has Game and Chat devices of its own, mixed by its dial, so here Game and
 Chat need no virtual cable: by default they play straight on *Arctis 7 Game* and *Arctis 7 Chat*, and only
 Media and Aux take cables. Choose a cable on a channel's page to give that channel the equalizer and
-plugins; *Headset's own device* plays it without them.
+plugins; *Headset's own device* plays it without them. While the sound plays on other headphones, such as a
+Bluetooth pair, OpenChatMix mixes Game and Chat there itself, and the headset's dial still drives the balance.
 
 OpenChatMix captures what is played on the two devices (WASAPI loopback) and plays it on the output
 with the ChatMix balance applied, adding about 40 ms of latency. The panel shows what the bridge adds;
