@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.8.3 — 2026-10-28
+
+- App profiles keep presets per device. A *Device* field above a profile's equalizers chooses *All devices* or one
+  of the headsets and speakers the app has seen; a device starts with the settings for all devices, and the first
+  change gives it its own (*Use the settings for all devices* drops them). While the game runs, switching to another
+  device puts on that device's Game, Chat, Media and Aux presets, and a SteelSeries headset gets its own headset
+  equalizer preset, also when it connects after the game started.
+- Fixed: after a game whose profile sets the headset equalizer, a different SteelSeries headset connected in the
+  meantime got the preset the first one had before the game. Each headset now gets back its own, and one that is
+  not connected when the game exits gets it back when it connects again.
+
 ## 2.8.2 — 2026-10-28
 
 - *Settings → General → Let the computer sleep* (off by default). Windows stays awake while an audio stream is open,
