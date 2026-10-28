@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.8.5 — 2026-10-28
+
+- Fixed: on the Nova 7 Gen 2 (`22A1`, `227E`), *Bass Boost* and *Smiley* turned the sound into a loud
+  high-pitched whistle, and so did some filter types on some bands of a custom curve. The headset plays peaks
+  right but not every shelf and pass, so it now gets peaks only: the built-in presets are sent as peaks, as before
+  2.5.6, the *Type* choice is gone from its band editor, and shelves and passes of game presets, preset files and
+  saved filters become peaks. The Nova Elite keeps every type. Reported by [@zer0ed](https://github.com/zer0ed) in
+  [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+- Fixed: the panel became sluggish while a headset save counted down or *Done* faded (Nova 7 Gen 2), as it redrew
+  the whole page at the display's refresh rate; they are now drawn about 15 times a second. Reported by
+  [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+- The equalizer of the Arctis 7 (2017, 2019) and Arctis 1 Wireless (experimental): the six bands SteelSeries
+  Engine had (64 Hz to 11 kHz, ±12 dB), in the sound chip of the dongle. OpenChatMix computes each band's filter
+  and writes it there, as Engine did; the chip keeps nothing, so the equalizer plays only while the app runs, and it
+  is set again whenever the headset connects or turns on. Nothing is sent before you change it. From SteelSeries'
+  own description of the chip, as Linux-Arctis-Manager carries it; not yet tried on a headset.
+- From the same description: the microphone volume and the mute light (steady or breathing) on the Arctis 7, the
+  microphone volume on the Arctis 1 Wireless.
+- The Arctis 7 of 2017 is asked whether the headset is on, as the 2019 model is (`03` on, `01` off): SteelSeries
+  describes both the same way. Until its dongle answers, two 0% battery replies in a row still count as off.
+
 ## 2.8.4 — 2026-10-28
 
 - The original Arctis 7 (2017) counts as switched off when its dongle reports 0% twice in a row: it has no other
