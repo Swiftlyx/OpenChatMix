@@ -172,7 +172,27 @@ std::vector<std::pair<std::wstring, std::wstring>> ReadEntries(const std::wstrin
     return entries;
 }
 
-// [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq|auxEq; an empty field leaves that unchanged.
+// [Profiles] exe=path|balance|gameEq|headsetEq|chatEq|mediaEq|auxEq, then device|gameEq|headsetEq|chatEq|mediaEq|auxEq
+// for each device with settings of its own; an empty field leaves that unchanged.
+constexpr size_t kProfileFields = 7;
+constexpr size_t kProfileDeviceFields = 6;
+
+// Five fields from first on: gameEq|headsetEq|chatEq|mediaEq|auxEq.
+ProfileSound ParseProfileSound(const std::vector<std::wstring>& fields, size_t first) {
+    ProfileSound sound;
+    sound.gameEq = fields[first];
+    sound.headsetEq = fields[first + 1].empty() ? -1 : _wtoi(fields[first + 1].c_str());
+    sound.chatEq = fields[first + 2];
+    sound.mediaEq = fields[first + 3];
+    sound.auxEq = fields[first + 4];
+    return sound;
+}
+
+std::wstring FormatProfileSound(const ProfileSound& sound) {
+    return sound.gameEq + kPathSeparator + (sound.headsetEq >= 0 ? std::to_wstring(sound.headsetEq) : L"") +
+           kPathSeparator + sound.chatEq + kPathSeparator + sound.mediaEq + kPathSeparator + sound.auxEq;
+}
+
 void LoadProfiles(const std::wstring& path, Settings& settings) {
     std::vector<wchar_t> buffer(65536, L'\0');
     const DWORD length = GetPrivateProfileSectionW(kProfilesSection, buffer.data(), static_cast<DWORD>(buffer.size()),
@@ -196,7 +216,9 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
             }
             start = end + 1;
         }
-        fields.resize(7);
+        if (fields.size() < kProfileFields) {
+            fields.resize(kProfileFields);
+        }
         profile.path = fields[0];
         // Percent with a "%" sign; a bare number is a dial step of earlier versions.
         if (!fields[1].empty()) {
@@ -204,11 +226,13 @@ void LoadProfiles(const std::wstring& path, Settings& settings) {
             profile.balance = fields[1].back() == L'%' ? std::clamp(number, -kBalanceRange, kBalanceRange)
                                                        : BalanceAt(number, kBalanceSteps);
         }
-        profile.gameEq = fields[2];
-        profile.headsetEq = fields[3].empty() ? -1 : _wtoi(fields[3].c_str());
-        profile.chatEq = fields[4];
-        profile.mediaEq = fields[5];
-        profile.auxEq = fields[6];
+        profile.sound = ParseProfileSound(fields, 2);
+        for (size_t first = kProfileFields; first + kProfileDeviceFields <= fields.size();
+             first += kProfileDeviceFields) {
+            if (!fields[first].empty()) {
+                profile.devices[fields[first]] = ParseProfileSound(fields, first + 1);
+            }
+        }
         if (!profile.exe.empty()) {
             settings.profiles.push_back(std::move(profile));
         }
@@ -219,9 +243,11 @@ void SaveProfiles(const std::wstring& path, const Settings& settings) {
     std::wstring section;
     for (const auto& profile : settings.profiles) {
         section += profile.exe + L"=" + profile.path + kPathSeparator +
-                   (profile.balance ? std::to_wstring(*profile.balance) + L"%" : L"") + kPathSeparator + profile.gameEq +
-                   kPathSeparator + (profile.headsetEq >= 0 ? std::to_wstring(profile.headsetEq) : L"") +
-                   kPathSeparator + profile.chatEq + kPathSeparator + profile.mediaEq + kPathSeparator + profile.auxEq;
+                   (profile.balance ? std::to_wstring(*profile.balance) + L"%" : L"") + kPathSeparator +
+                   FormatProfileSound(profile.sound);
+        for (const auto& [device, sound] : profile.devices) {
+            section += kPathSeparator + device + kPathSeparator + FormatProfileSound(sound);
+        }
         section += L'\0';
     }
     section += L'\0';

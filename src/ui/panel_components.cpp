@@ -163,13 +163,13 @@ Panel::CardRow Panel::ValueItem(uint32_t id, const wchar_t* label, const std::ws
 
 Panel::CardRow Panel::DropdownItem(uint32_t id, const wchar_t* label, int index, int count,
                                    std::function<std::wstring(int)> labelOf, std::function<void(int)> select,
-                                   const wchar_t* hint) {
+                                   const wchar_t* hint, float fieldWidth) {
     const float hintHeight = hint ? HintHeight(hint) : 0.0f;
     return {hint ? design::kHintTopInRow + hintHeight : kRowHeight,
             [this, id, label, index, count, labelOf = std::move(labelOf), select = std::move(select), hint,
-             hintHeight](float top) {
+             hintHeight, fieldWidth](float top) {
                 const D2D1_RECT_F field = DrawDropdown(
-                    id, kWidth - kInset, top + kRowHeight / 2.0f, labelOf(index), 200.0f,
+                    id, kWidth - kInset, top + kRowHeight / 2.0f, labelOf(index), fieldWidth,
                     [this, index, count, labelOf, select](const D2D1_RECT_F& anchor) {
                         std::vector<MenuItem> items;
                         for (int i = 0; i < count; ++i) {

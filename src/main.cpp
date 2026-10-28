@@ -84,6 +84,7 @@ constexpr UINT_PTR kTimerOutputBattery = 18;
 constexpr UINT_PTR kTimerSendEqualizer = 19;
 constexpr UINT_PTR kTimerOutputSound = 20;
 constexpr UINT_PTR kTimerAudioUse = 21;
+constexpr UINT_PTR kTimerProfileHeadset = 22;
 constexpr UINT kTrayFrameMs = 15;  // About one frame of a 60 Hz display; the tray needs no more.
 constexpr UINT kMicRetryMs = 3000;
 constexpr UINT kSavePluginsMs = 60 * 1000;  // Plugin settings are kept safe while their windows are used.
@@ -123,6 +124,8 @@ constexpr UINT kOutputBatteryPollMs = 60000;  // A Bluetooth output's battery, a
 // Another output brings its own sound settings once it has stayed this long, so a headset that drops out for a moment
 // keeps its plugins loaded.
 constexpr UINT kOutputSoundDelayMs = 3000;
+// A headset that connects while a game runs gets the profile's equalizer preset once its own state has been read.
+constexpr UINT kProfileHeadsetDelayMs = 2000;
 // With Let the computer sleep: how often apps that play or record are looked for, more often while something waits
 // to start again, and how long the streams of virtual device mode and the microphone processing stay open after the
 // last of them stopped.
@@ -353,7 +356,9 @@ struct App {
         std::optional<EqChannelSettings> chatEq;
         std::optional<EqChannelSettings> mediaEq;
         std::optional<EqChannelSettings> auxEq;
-        int headsetEq = -1;
+        // The equalizer preset of each headset model before a profile changed it. A headset that is not connected
+        // when the game exits keeps its entry until it connects again.
+        std::map<uint16_t, int> headsetEq;
     } profileRestore;
     TrayMotion tray;
     Host host;
@@ -2827,6 +2832,7 @@ void ConnectDevice() {
         g_app.device.Start(g_app.levels);
         StartIdleScreen(false);
         UpdateAddOns();
+        SetTimer(g_app.window, kTimerProfileHeadset, kProfileHeadsetDelayMs, nullptr);
     } else {
         Log("no supported headset");
         g_app.mixer.SetTarget(std::nullopt);
@@ -2874,6 +2880,7 @@ void ReconnectDevice() {
 
 void HandleDeviceLost() {
     Log("headset lost");
+    KillTimer(g_app.window, kTimerProfileHeadset);
     SaveHeadset();
     StopIdleScreen();
     g_app.device.Close();
@@ -2928,6 +2935,55 @@ bool RestoreProfileEqualizers() {
     return equalizers;
 }
 
+// A copy of the profile in effect, as ApplyProfile may change the settings that hold it.
+std::optional<GameProfile> ActiveProfile() {
+    if (g_app.activeProfile.empty()) {
+        return std::nullopt;
+    }
+    for (const auto& profile : g_app.settings.profiles) {
+        if (_wcsicmp(profile.exe.c_str(), g_app.activeProfile.c_str()) == 0) {
+            return profile;
+        }
+    }
+    return std::nullopt;
+}
+
+// The headset equalizer preset a profile sets on the connected headset: from the headset's own settings in the
+// profile, otherwise from those for all devices.
+int ProfileHeadsetEq(const GameProfile& profile) {
+    const uint16_t productId = g_app.device.Model()->productId;
+    for (const auto& [device, sound] : profile.devices) {
+        if (SteelSeriesProductOf(device) == productId) {
+            return sound.headsetEq;
+        }
+    }
+    return profile.sound.headsetEq;
+}
+
+// Sets the connected headset's equalizer preset as the profile wants it, or, without a profile or one that leaves
+// it alone, puts back the preset it had before a profile changed it.
+void ApplyProfileHeadsetEq(const GameProfile* profile) {
+    if (!g_app.features || !g_app.device.IsOpen()) {
+        return;
+    }
+    std::map<uint16_t, int>& before = g_app.profileRestore.headsetEq;
+    const uint16_t productId = g_app.device.Model()->productId;
+    const int wanted = profile ? ProfileHeadsetEq(*profile) : -1;
+    const auto saved = before.find(productId);
+    if (wanted >= 0) {
+        if (g_app.headset.eqPreset != wanted) {
+            if (saved == before.end()) {
+                before[productId] = g_app.headset.eqPreset;
+            }
+            g_app.host.OnEqualizerPreset(wanted);
+        }
+    } else if (saved != before.end()) {
+        Log("headset equalizer preset %d back", saved->second);
+        g_app.host.OnEqualizerPreset(saved->second);
+        before.erase(saved);
+    }
+}
+
 void RestoreProfile() {
     App::ProfileRestore& restore = g_app.profileRestore;
     if (restore.levels) {
@@ -2937,10 +2993,10 @@ void RestoreProfile() {
         ScheduleSave();
         PushEqualizers();
     }
-    if (restore.headsetEq >= 0) {
-        g_app.host.OnEqualizerPreset(restore.headsetEq);
-    }
+    ApplyProfileHeadsetEq(nullptr);
+    std::map<uint16_t, int> headsets = std::move(restore.headsetEq);
     restore = {};
+    restore.headsetEq = std::move(headsets);
     PushSettings();
 }
 
@@ -2977,28 +3033,17 @@ void ApplyProfile(const GameProfile& profile) {
         }
         return false;
     };
-    bool equalizers = applyEq(profile.gameEq, EqChannel::Game, g_app.settings.gameEq, restore.gameEq);
-    equalizers = applyEq(profile.chatEq, EqChannel::Chat, g_app.settings.chatEq, restore.chatEq) || equalizers;
-    equalizers = applyEq(profile.mediaEq, EqChannel::Media, g_app.settings.mediaEq, restore.mediaEq) || equalizers;
-    equalizers = applyEq(profile.auxEq, EqChannel::Aux, g_app.settings.auxEq, restore.auxEq) || equalizers;
+    // The presets for the device the equalizers belong to now.
+    const ProfileSound& sound = profile.SoundFor(g_app.settings.outputDevice);
+    bool equalizers = applyEq(sound.gameEq, EqChannel::Game, g_app.settings.gameEq, restore.gameEq);
+    equalizers = applyEq(sound.chatEq, EqChannel::Chat, g_app.settings.chatEq, restore.chatEq) || equalizers;
+    equalizers = applyEq(sound.mediaEq, EqChannel::Media, g_app.settings.mediaEq, restore.mediaEq) || equalizers;
+    equalizers = applyEq(sound.auxEq, EqChannel::Aux, g_app.settings.auxEq, restore.auxEq) || equalizers;
     if (equalizers) {
         ScheduleSave();
         PushEqualizers();
     }
-    const bool headset = g_app.features && g_app.device.IsOpen();
-    if (profile.headsetEq >= 0 && headset) {
-        if (restore.headsetEq < 0 && g_app.headset.eqPreset != profile.headsetEq) {
-            restore.headsetEq = g_app.headset.eqPreset;
-        }
-        if (g_app.headset.eqPreset != profile.headsetEq) {
-            g_app.host.OnEqualizerPreset(profile.headsetEq);
-        }
-    } else if (restore.headsetEq >= 0) {
-        if (headset) {
-            g_app.host.OnEqualizerPreset(restore.headsetEq);
-        }
-        restore.headsetEq = -1;
-    }
+    ApplyProfileHeadsetEq(&profile);
     PushSettings();
 }
 
@@ -3040,13 +3085,9 @@ void FollowOutputSound() {
         return;
     }
     if (!settings.outputDevice.empty()) {
-        // A game profile's presets go back first, so each device keeps its own; they apply again afterwards.
-        std::optional<GameProfile> profile;
-        for (const auto& candidate : settings.profiles) {
-            if (!g_app.activeProfile.empty() && _wcsicmp(candidate.exe.c_str(), g_app.activeProfile.c_str()) == 0) {
-                profile = candidate;
-            }
-        }
+        // A game profile's presets go back first, so each device keeps its own; then the profile applies again with
+        // the presets it has for this device.
+        const std::optional<GameProfile> profile = ActiveProfile();
         if (profile) {
             RestoreProfileEqualizers();
         }
@@ -3062,6 +3103,8 @@ void FollowOutputSound() {
         if (known) {
             settings.otherOutputs.erase(kept);
         }
+        settings.outputDevice = key;
+        settings.outputDeviceName = g_app.outputName;
         PushEqualizers();
         SyncOutputPlugins();
         if (profile) {
@@ -4659,6 +4702,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             SendDeviceLevels();
         } else if (wParam == kTimerOutputSound) {
             FollowOutputSound();
+        } else if (wParam == kTimerProfileHeadset) {
+            const std::optional<GameProfile> profile = ActiveProfile();
+            ApplyProfileHeadsetEq(profile ? &*profile : nullptr);
         } else if (wParam == kTimerSendEqualizer) {
             if (g_app.equalizerPending && g_app.features && g_app.device.IsOpen()) {
                 SendEqualizerFilters(*g_app.equalizerPending, g_app.equalizerPendingPreset);

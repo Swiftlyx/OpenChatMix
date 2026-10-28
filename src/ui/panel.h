@@ -357,9 +357,10 @@ private:
     // A label with a value on the right and a chevron, e.g. a device that opens a picker page.
     CardRow ValueItem(uint32_t id, const wchar_t* label, const std::wstring& value, std::function<void()> click);
     // A label with a dropdown: one of count options from a menu, for longer lists or long labels.
+    // fieldWidth: the widest the field gets, more for long values beside a short label.
     CardRow DropdownItem(uint32_t id, const wchar_t* label, int index, int count,
                          std::function<std::wstring(int)> labelOf, std::function<void(int)> select,
-                         const wchar_t* hint = nullptr);
+                         const wchar_t* hint = nullptr, float fieldWidth = 200.0f);
     // A label with − value +: a number stepped by the buttons or typed into the value.
     CardRow NumberItem(uint32_t id, const wchar_t* label, const std::wstring& value, bool canDecrease,
                        bool canIncrease, std::function<void()> decrease, std::function<void()> increase,
@@ -643,6 +644,8 @@ private:
     float DrawMixerHeader();
     bool MicSlot() const { return pickSlot_ == RoutingSlot::MicInput || pickSlot_ == RoutingSlot::MicOutput; }
     GameProfile* EditedProfile();
+    // Opens the profile of exe for editing, on the settings of the device in use when it has its own.
+    void OpenProfile(const std::wstring& exe);
     std::wstring HotkeyHint() const;
 
     const Hit* HitAt(float x, float y, bool wheel) const;
@@ -748,6 +751,7 @@ private:
         bool searchSelected = false;  // Ctrl+A selected the whole search; the next key replaces it.
     } menu_;
     std::wstring profileExe_;               // Profile being edited.
+    std::wstring profileDevice_;            // Its device whose settings are shown (SoundDeviceKey); empty: all.
     std::wstring addOnPath_;                // Add-on being edited.
     std::wstring addOnEvent_;               // Its event whose screen is being edited.
     size_t addOnDisplay_ = 0;               // The display of that screen being edited.

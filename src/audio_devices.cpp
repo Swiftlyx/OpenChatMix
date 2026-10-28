@@ -345,6 +345,17 @@ std::wstring SoundDeviceKey(const std::wstring& endpointId) {
     return L"ep-" + own;
 }
 
+uint16_t SteelSeriesProductOf(const std::wstring& key) {
+    // "usb-1038-xxxx", optionally followed by "-<serial>".
+    constexpr std::wstring_view kPrefix = L"usb-1038-";
+    constexpr size_t kDigits = 4;
+    if (key.size() < kPrefix.size() + kDigits || key.compare(0, kPrefix.size(), kPrefix) != 0 ||
+        (key.size() > kPrefix.size() + kDigits && key[kPrefix.size() + kDigits] != L'-')) {
+        return 0;
+    }
+    return static_cast<uint16_t>(wcstoul(key.substr(kPrefix.size(), kDigits).c_str(), nullptr, 16));
+}
+
 namespace {
 
 std::vector<AudioEndpoint> ListEndpoints(EDataFlow flow, bool includeDisabled) {

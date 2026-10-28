@@ -568,6 +568,12 @@ enum class Text {
     AllowSleepHint,
     RoutingPaused,
     MicPaused,
+    ProfileDevice,
+    AllDevices,
+    ProfileAllDevicesHint,
+    ProfileInheritsHint,
+    ProfileOwnHint,
+    ProfileUseAllDevices,
     Count,
 };
 

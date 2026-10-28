@@ -162,16 +162,30 @@ struct BatteryAlertSettings {
     int threshold = 15;  // Percent.
 };
 
+// What a game profile sets for the sound of one playback device.
+struct ProfileSound {
+    std::wstring gameEq;  // Equalizer presets by name (virtual device mode); empty: unchanged.
+    std::wstring chatEq;
+    std::wstring mediaEq;
+    std::wstring auxEq;
+    int headsetEq = -1;   // Headset equalizer preset index; -1: unchanged.
+
+    bool operator==(const ProfileSound&) const = default;
+};
+
 // Applied while the game runs and undone when it exits.
 struct GameProfile {
     std::wstring exe;
     std::wstring path;
     std::optional<int> balance;  // ChatMix balance as in balance.h, in percent.
-    std::wstring gameEq;         // Equalizer presets by name (virtual device mode); empty: unchanged.
-    std::wstring chatEq;
-    std::wstring mediaEq;
-    std::wstring auxEq;
-    int headsetEq = -1;          // Headset equalizer preset index; -1: unchanged.
+    ProfileSound sound;          // For devices without settings of their own.
+    std::map<std::wstring, ProfileSound> devices;  // Devices with settings of their own, by SoundDeviceKey.
+
+    // The settings for the device with that key.
+    const ProfileSound& SoundFor(const std::wstring& device) const {
+        const auto own = devices.find(device);
+        return own == devices.end() ? sound : own->second;
+    }
 
     bool operator==(const GameProfile&) const = default;
 };

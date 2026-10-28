@@ -2062,8 +2062,7 @@ void Panel::OnFileDialogDone(FileDialog kind, std::wstring* path) {
                     s.profiles.push_back({app.exe, app.path});
                 }
             });
-            profileExe_ = app.exe;
-            GoTo(Page::ProfileEdit);
+            OpenProfile(app.exe);
         } else {
             host_.OnGroupChanged(app, addGroup_);
             GoTo(Page::Group);

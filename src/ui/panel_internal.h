@@ -224,6 +224,8 @@ enum : uint32_t {
     kIdPortable,
     kIdDeviceList,
     kIdAllowSleep,
+    kIdProfileDevice,
+    kIdProfileForget,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,

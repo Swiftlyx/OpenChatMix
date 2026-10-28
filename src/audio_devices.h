@@ -38,6 +38,8 @@ bool IsHeadphonesEndpoint(const std::wstring& endpointId);
 // device, "ep-<endpoint>" for a sound card or virtual device, whose jacks Windows cannot tell apart by what is
 // plugged in. Empty while the endpoint is not present.
 std::wstring SoundDeviceKey(const std::wstring& endpointId);
+// The product ID of a SteelSeries USB device from its SoundDeviceKey; 0 for other devices.
+uint16_t SteelSeriesProductOf(const std::wstring& key);
 
 // Active playback devices, and disabled ones on request. Requires COM on the calling thread.
 std::vector<AudioEndpoint> ListRenderEndpoints(bool includeDisabled = false);

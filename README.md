@@ -334,7 +334,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Keep the panel open | Pin it with the pin next to the page title; click it again to let the panel hide when it loses focus. |
 | Next output device | *Settings* → *Hotkeys* → *Next output device*. |
 | Next microphone for the virtual microphone | *Settings* → *Hotkeys* → *Next microphone* (shown while *Settings* → *Microphone* processes it). |
-| App profiles (balance and equalizers per app) | *Settings* → *App profiles* → *Add*. |
+| App profiles (balance and equalizers per app, presets per device) | *Settings* → *App profiles* → *Add*. |
 | Visualizer on the GameDAC screen | *Headset* → *Visualizer* → *Show while something plays*. |
 | 3rd party add-ons for the GameDAC screen | Close SteelSeries GG, then *Settings* → *3rd party add-ons* → *Add* and pick the program, e.g. `C:\Program Files\SteelSeries\GG\apps\engine\engineApps\discord\gamesense-discord-x64.exe`. |
 
@@ -454,6 +454,12 @@ Presets come from three places:
 
 The preset menus filter as you type. In an app profile, the *Game equalizer* menu starts with GG's
 presets made for that game, under *For this game*.
+
+An app profile can hold presets of its own for each headset or pair of speakers: choose one under
+*Device*, above the profile's equalizers. A device starts with the settings for *All devices*, and the
+first change gives it its own (*Use the settings for all devices* drops them again). Switch to another
+device while the game runs, and the profile puts on that device's presets, the headset equalizer of a
+SteelSeries headset included.
 
 **Plugins.** Below the effects, Game, Chat, Media and Aux each have a *Plugins* list like the microphone's:
 any VST 2 (`.dll`) or VST 3 (`.vst3`) effect, top to bottom; drag them to reorder and click one to open

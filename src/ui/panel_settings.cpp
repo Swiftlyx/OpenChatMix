@@ -44,6 +44,13 @@ GameProfile* Panel::EditedProfile() {
     return found == settings_.profiles.end() ? nullptr : &*found;
 }
 
+void Panel::OpenProfile(const std::wstring& exe) {
+    profileExe_ = exe;
+    const GameProfile* profile = EditedProfile();
+    profileDevice_ = profile && profile->devices.contains(settings_.outputDevice) ? settings_.outputDevice : L"";
+    GoTo(Page::ProfileEdit);
+}
+
 void Panel::DrawSettings() {
     const Palette& p = P();
     DrawTitle(T(Text::Settings));
@@ -826,20 +833,22 @@ void Panel::DrawProfiles() {
                                         profile.path.empty() ? profile.exe : host_.AppName(profile.path)};
                             const float iconTop = top + (design::kTwoLineRowHeight - 32.0f) / 2.0f;
                             DrawAppIcon(app, {kInset, iconTop, kInset + 32.0f, iconTop + 32.0f});
+                            // What applies on the device in use.
+                            const ProfileSound& sound = profile.SoundFor(settings_.outputDevice);
                             std::wstring summary;
                             if (profile.balance) {
                                 summary = BalanceText(*profile.balance);
                             }
-                            if (!profile.gameEq.empty()) {
-                                summary += (summary.empty() ? L"" : L" · ") + profile.gameEq;
+                            if (!sound.gameEq.empty()) {
+                                summary += (summary.empty() ? L"" : L" · ") + sound.gameEq;
                             }
-                            if (profile.headsetEq >= 0 && features_ &&
-                                profile.headsetEq <= features_->equalizer.CustomIndex()) {
+                            if (sound.headsetEq >= 0 && features_ &&
+                                sound.headsetEq <= features_->equalizer.CustomIndex()) {
                                 const int custom = features_->equalizer.CustomIndex();
                                 summary += (summary.empty() ? L"" : L" · ") +
-                                           std::wstring(profile.headsetEq == custom
+                                           std::wstring(sound.headsetEq == custom
                                                             ? T(Text::EqCustom)
-                                                            : features_->equalizer.presets[profile.headsetEq].name);
+                                                            : features_->equalizer.presets[sound.headsetEq].name);
                             }
                             const float textLeft = kInset + 32.0f + design::kSpace3;
                             const float textRight = design::kTrailingIconCenter - design::kSpace4;
@@ -851,10 +860,8 @@ void Panel::DrawProfiles() {
                             canvas_.Glyph(kGlyphChevronRight,
                                           {design::kTrailingIconCenter, top + design::kTwoLineRowHeight / 2.0f},
                                           design::kSmallIconSize, p.onSurfaceVariant);
-                            AddHit({TileRect(top, design::kTwoLineRowHeight), id, [this, exe = profile.exe] {
-                                        profileExe_ = exe;
-                                        GoTo(Page::ProfileEdit);
-                                    }});
+                            AddHit({TileRect(top, design::kTwoLineRowHeight), id,
+                                    [this, exe = profile.exe] { OpenProfile(exe); }});
                         },
                         id});
     }
@@ -901,12 +908,66 @@ void Panel::DrawProfileEdit() {
             editProfile([&](GameProfile& item) { item.balance = balanceAt(index); });
         }));
 
+    // Devices the profile can keep equalizers of their own for: the one in use first, then the others seen, by name.
+    auto nameOf = [this](const std::wstring& device) {
+        if (device == settings_.outputDevice && !settings_.outputDeviceName.empty()) {
+            return settings_.outputDeviceName;
+        }
+        const auto kept = settings_.otherOutputs.find(device);
+        return kept != settings_.otherOutputs.end() && !kept->second.name.empty() ? kept->second.name : device;
+    };
+    std::vector<std::wstring> devices;
+    for (const auto& [device, kept] : settings_.otherOutputs) {
+        if (device != settings_.outputDevice) {
+            devices.push_back(device);
+        }
+    }
+    for (const auto& [device, sound] : profile->devices) {
+        if (device != settings_.outputDevice && !settings_.otherOutputs.contains(device)) {
+            devices.push_back(device);
+        }
+    }
+    std::sort(devices.begin(), devices.end(), [&nameOf](const std::wstring& a, const std::wstring& b) {
+        return _wcsicmp(nameOf(a).c_str(), nameOf(b).c_str()) < 0;
+    });
+    if (!settings_.outputDevice.empty()) {
+        devices.insert(devices.begin(), settings_.outputDevice);
+    }
+    devices.insert(devices.begin(), L"");
+    if (std::find(devices.begin(), devices.end(), profileDevice_) == devices.end()) {
+        profileDevice_.clear();
+    }
+    const std::wstring device = profileDevice_;
+    const bool own = profile->devices.contains(device);
+    const ProfileSound& sound = profile->SoundFor(device);
+    if (devices.size() > 1) {
+        y = DrawCard(y, rows) + design::kGroupGap;
+        rows.clear();
+        const auto shown = std::find(devices.begin(), devices.end(), device);
+        rows.push_back(DropdownItem(
+            kIdProfileDevice, T(Text::ProfileDevice), static_cast<int>(shown - devices.begin()),
+            static_cast<int>(devices.size()),
+            [devices, nameOf](int i) { return i == 0 ? std::wstring(T(Text::AllDevices)) : nameOf(devices[i]); },
+            [this, devices](int i) {
+                profileDevice_ = devices[i];
+                Invalidate();
+            },
+            T(device.empty() ? Text::ProfileAllDevicesHint : own ? Text::ProfileOwnHint : Text::ProfileInheritsHint),
+            260.0f));
+    }
+    // Changes go to the shown device's settings; a device without its own starts from those for all devices.
+    auto editSound = [editProfile, device](std::function<void(ProfileSound&)> change) {
+        editProfile([device, change](GameProfile& item) {
+            change(device.empty() ? item.sound : item.devices.try_emplace(device, item.sound).first->second);
+        });
+    };
+
     // An equalizer preset per channel, from every source and by name; each menu loads its channel's library.
-    auto eqRow = [this, &p, editProfile, path = profile->path, name](uint32_t id, Text label, EqChannel channel,
-                                                                    const std::wstring& current,
-                                                                    std::wstring GameProfile::*field) {
-        auto set = [editProfile, field](const std::wstring& name) {
-            editProfile([&](GameProfile& item) { item.*field = name; });
+    auto eqRow = [this, &p, editSound, path = profile->path, name](uint32_t id, Text label, EqChannel channel,
+                                                                  const std::wstring& current,
+                                                                  std::wstring ProfileSound::*field) {
+        auto set = [editSound, field](const std::wstring& name) {
+            editSound([&](ProfileSound& item) { item.*field = name; });
         };
         return CardRow{kRowHeight, [this, &p, id, label, channel, current, set, path, name](float top) {
                            const D2D1_RECT_F dropdown = DrawDropdown(
@@ -953,31 +1014,50 @@ void Panel::DrawProfileEdit() {
                                         p.onSurface);
                        }};
     };
-    rows.push_back(eqRow(kIdProfileGameEq, Text::ProfileGameEq, EqChannel::Game, profile->gameEq, &GameProfile::gameEq));
-    rows.push_back(eqRow(kIdProfileChatEq, Text::ProfileChatEq, EqChannel::Chat, profile->chatEq, &GameProfile::chatEq));
-    if (routing_.mediaRouted || !profile->mediaEq.empty()) {
+    rows.push_back(eqRow(kIdProfileGameEq, Text::ProfileGameEq, EqChannel::Game, sound.gameEq, &ProfileSound::gameEq));
+    rows.push_back(eqRow(kIdProfileChatEq, Text::ProfileChatEq, EqChannel::Chat, sound.chatEq, &ProfileSound::chatEq));
+    if (routing_.mediaRouted || !sound.mediaEq.empty()) {
         rows.push_back(
-            eqRow(kIdProfileMediaEq, Text::ProfileMediaEq, EqChannel::Media, profile->mediaEq, &GameProfile::mediaEq));
+            eqRow(kIdProfileMediaEq, Text::ProfileMediaEq, EqChannel::Media, sound.mediaEq, &ProfileSound::mediaEq));
     }
-    if (routing_.auxRouted || !profile->auxEq.empty()) {
-        rows.push_back(eqRow(kIdProfileAuxEq, Text::ProfileAuxEq, EqChannel::Aux, profile->auxEq, &GameProfile::auxEq));
+    if (routing_.auxRouted || !sound.auxEq.empty()) {
+        rows.push_back(eqRow(kIdProfileAuxEq, Text::ProfileAuxEq, EqChannel::Aux, sound.auxEq, &ProfileSound::auxEq));
     }
 
-    if (features_ && features_->equalizer.bandsCommand && features_->equalizer.presetCommand) {
-        const EqualizerSpec& eq = features_->equalizer;
-        // Unchanged, presets, custom. Also called later by the dropdown, so it reads the features then.
+    // The headset equalizer: for all devices the connected headset's presets, for a SteelSeries device its own;
+    // other devices have none.
+    const HeadsetFeatures* headset = features_;
+    if (!device.empty()) {
+        const DeviceModel* model = FindDeviceModel(SteelSeriesProductOf(device));
+        headset = model ? &FeaturesFor(model->family) : nullptr;
+    }
+    if (headset && headset->equalizer.bandsCommand && headset->equalizer.presetCommand) {
+        // Unchanged, presets, custom. The features are static, so the dropdown may read them later.
+        // A preset index set for another model may lie past this one's list.
+        const EqualizerSpec* eq = &headset->equalizer;
+        const int chosen = sound.headsetEq <= eq->CustomIndex() ? sound.headsetEq + 1 : 0;
         rows.push_back(DropdownItem(
-            kIdProfileHeadsetEq, T(Text::ProfileHeadsetEq), profile->headsetEq + 1, eq.CustomIndex() + 2,
-            [this](int i) {
-                if (!features_) {
-                    return std::wstring();
-                }
-                const EqualizerSpec& spec = features_->equalizer;
-                return i == 0                       ? std::wstring(T(Text::Unchanged))
-                       : i - 1 == spec.CustomIndex() ? std::wstring(T(Text::EqCustom))
-                                                     : std::wstring(spec.presets[i - 1].name);
+            kIdProfileHeadsetEq, T(Text::ProfileHeadsetEq), chosen, eq->CustomIndex() + 2,
+            [eq](int i) {
+                return i == 0                      ? std::wstring(T(Text::Unchanged))
+                       : i - 1 == eq->CustomIndex() ? std::wstring(T(Text::EqCustom))
+                                                    : std::wstring(eq->presets[i - 1].name);
             },
-            [editProfile](int choice) { editProfile([&](GameProfile& item) { item.headsetEq = choice - 1; }); }));
+            [editSound](int choice) { editSound([&](ProfileSound& item) { item.headsetEq = choice - 1; }); }));
+    }
+    if (own) {
+        rows.push_back({kRowHeight,
+                        [this, &p, editProfile, device](float top) {
+                            canvas_.Glyph(kGlyphReset, {design::kLeadingIconCenter, top + kRowHeight / 2.0f},
+                                          design::kIconSize - 2.0f, p.onSurfaceVariant);
+                            canvas_.Text(T(Text::ProfileUseAllDevices),
+                                         {design::kLeadingTextInset, top, kWidth - kInset, top + kRowHeight},
+                                         TextStyle::BodyLarge, p.onSurface);
+                            AddHit({TileRect(top, kRowHeight), kIdProfileForget, [editProfile, device] {
+                                        editProfile([&](GameProfile& item) { item.devices.erase(device); });
+                                    }});
+                        },
+                        kIdProfileForget});
     }
     y = DrawCard(y, rows) + design::kGroupGap;
 

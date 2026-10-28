@@ -608,8 +608,7 @@ void Panel::DrawRunningRow(const AppItem& app, float top) {
                             s.profiles.push_back({app.exe, app.path});
                         }
                     });
-                    profileExe_ = app.exe;
-                    GoTo(Page::ProfileEdit);
+                    OpenProfile(app.exe);
                 } else {
                     host_.OnGroupChanged(app, addGroup_);
                     group_ = addGroup_;
