@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.9.1 — 2026-10-28
+
+- **Each channel can have devices of its own, in an order.** Turn off *Same as the output* on a channel's *Plays on*
+  page (*Settings → Audio*, Game, Chat, Media or Aux), and it gets a list like the one in *Settings → Devices*: it
+  plays on the first device there that is connected and switched on, moves to the next one when that device
+  disconnects or its headset turns off, and comes back when it returns. Click a device to put it first, drag it to
+  another place, and ⦸ keeps the channel off a device. Devices the list does not order follow the order of *Devices*,
+  and with none of its devices left the channel plays on the output. Without virtual devices, each group's device
+  works the same way, with the Windows default in place of the output. A device chosen in an earlier version becomes
+  the first of the channel's list. Follows [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13) by
+  [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+- Fixed (experimental): on the Arctis 7 and Arctis 1 Wireless, *Reset* and *Flat* on the equalizer could knock out
+  the dongle until it was plugged in again. For a band at 0 dB the app now sends only the command that turns the band
+  off, as SteelSeries' own code does, instead of also writing a filter that changes nothing. Reported by
+  [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13).
+- The Arctis 7's *Earcup lights* switch is now *Blink the dongle's light while the headset is off*: SteelSeries'
+  description and Engine show that this is what the command does.
+- The READMEs start with a list of contents, fold their long sections away until opened, and link every project
+  they mention.
+
 ## 2.9.0 — 2026-10-28
 
 - More SteelSeries headsets, all experimental, from the sources the app already follows (HeadsetControl, where it
