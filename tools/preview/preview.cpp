@@ -28,6 +28,7 @@
 #include "../../src/devices.h"
 #include "../../src/headset.h"
 #include "../../src/i18n.h"
+#include "../../src/output_priority.h"
 #include "../../src/icon.h"
 #include "../../src/settings.h"
 #include "../../src/settings_transfer.h"
@@ -391,6 +392,33 @@ void PushHeadset() {
                             Current().family != DeviceFamily::Arctis5);
 }
 
+std::vector<AudioEndpoint> ListedDevices(ui::DeviceList list);
+
+std::vector<std::wstring> EndpointIds(const std::vector<AudioEndpoint>& endpoints) {
+    std::vector<std::wstring> ids;
+    for (const AudioEndpoint& endpoint : endpoints) {
+        ids.push_back(endpoint.id);
+    }
+    return ids;
+}
+
+ChannelOutput* ChannelOutputOf(ui::RoutingSlot slot) {
+    RoutingSettings& routing = g.settings.routing;
+    switch (slot) {
+    case ui::RoutingSlot::GameOutput: return &routing.gameOutput;
+    case ui::RoutingSlot::ChatOutput: return &routing.chatOutput;
+    case ui::RoutingSlot::MediaOutput: return &routing.mediaOutput;
+    case ui::RoutingSlot::AuxOutput: return &routing.auxOutput;
+    default: return nullptr;
+    }
+}
+
+// The devices a channel may play on, as the app lists them: the connected ones without excluded devices.
+std::vector<std::wstring> ChannelCandidates(const ChannelOutput& output) {
+    std::vector<AudioEndpoint> preferred = ListedDevices(ui::DeviceList::Outputs);
+    return ChannelDevices(EndpointIds(preferred), output.order, output.excluded);
+}
+
 void PushRouting() {
     const RoutingSettings& routing = g.settings.routing;
     const std::vector<AudioEndpoint> endpoints = ListRenderEndpoints(true);
@@ -425,12 +453,28 @@ void PushRouting() {
     set(ui::RoutingSlot::Output, routing.output,
         routing.output.empty() ? std::wstring(T(Text::AutomaticHeadset)) + L" · " + Current().name
                                : named(routing.output, L""));
-    for (const auto& [slot, id] : {std::pair{ui::RoutingSlot::GameOutput, routing.gameOutput},
-                                   std::pair{ui::RoutingSlot::ChatOutput, routing.chatOutput},
-                                   std::pair{ui::RoutingSlot::MediaOutput, routing.mediaOutput},
-                                   std::pair{ui::RoutingSlot::AuxOutput, routing.auxOutput}}) {
-        set(slot, id,
-            id.empty() ? std::wstring(T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput)) : named(id, L""));
+    // A channel with an order of its own plays on the first device left, as in the app; the others on the output.
+    const std::vector<AudioEndpoint> preferred = ListedDevices(ui::DeviceList::Outputs);
+    constexpr ui::RoutingSlot kChannelSlots[] = {ui::RoutingSlot::GameOutput, ui::RoutingSlot::ChatOutput,
+                                                 ui::RoutingSlot::MediaOutput, ui::RoutingSlot::AuxOutput};
+    for (int channel = 0; channel < 4; ++channel) {
+        const ChannelOutput& output = *ChannelOutputOf(kChannelSlots[channel]);
+        const std::vector<std::wstring> candidates = ChannelCandidates(output);
+        const std::wstring current = output.Own() && !candidates.empty() ? candidates.front() : g.defaultOutput;
+        if (output.Own()) {
+            set(kChannelSlots[channel], current, named(current, L""));
+        } else {
+            set(kChannelSlots[channel], L"", T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput));
+        }
+        std::vector<ui::DeviceView>& devices = view.channelDevices[channel];
+        for (const std::wstring& id : candidates) {
+            devices.push_back({id, named(id, L""), id == current, false});
+        }
+        for (const AudioEndpoint& endpoint : preferred) {
+            if (std::find(output.excluded.begin(), output.excluded.end(), endpoint.id) != output.excluded.end()) {
+                devices.push_back({endpoint.id, endpoint.name, endpoint.id == current, true});
+            }
+        }
     }
     view.mediaRouted = routing.enabled && g.settings.mediaGroup && !routing.media.empty();
     view.auxRouted = routing.enabled && g.settings.auxGroup && !routing.aux.empty();
@@ -748,17 +792,45 @@ public:
         case ui::RoutingSlot::Chat: routing.chat = id; break;
         case ui::RoutingSlot::Media: routing.media = id; break;
         case ui::RoutingSlot::Output: routing.output = id; break;
-        case ui::RoutingSlot::GameOutput: routing.gameOutput = id; break;
-        case ui::RoutingSlot::ChatOutput: routing.chatOutput = id; break;
-        case ui::RoutingSlot::MediaOutput: routing.mediaOutput = id; break;
         case ui::RoutingSlot::Aux: routing.aux = id; break;
-        case ui::RoutingSlot::AuxOutput: routing.auxOutput = id; break;
+        case ui::RoutingSlot::GameOutput:
+        case ui::RoutingSlot::ChatOutput:
+        case ui::RoutingSlot::MediaOutput:
+        case ui::RoutingSlot::AuxOutput:
+            // As the app does: an empty ID follows the output again, a device goes first in the channel's order.
+            if (ChannelOutput& output = *ChannelOutputOf(slot); id.empty()) {
+                output = {};
+            } else {
+                std::erase(output.order, id);
+                output.order.insert(output.order.begin(), id);
+                std::erase(output.excluded, id);
+            }
+            break;
         case ui::RoutingSlot::MicInput:
         case ui::RoutingSlot::MicOutput: break;
         }
         Save();
         PushSettings();
         PushRouting();
+    }
+    void OnRoutingMove(ui::RoutingSlot slot, size_t from, size_t to) override {
+        if (ChannelOutput* output = ChannelOutputOf(slot); output && output->Own()) {
+            MoveInOrder(output->order, ChannelCandidates(*output), from, to);
+            Save();
+            PushSettings();
+            PushRouting();
+        }
+    }
+    void OnRoutingExclude(ui::RoutingSlot slot, const std::wstring& id, bool excluded) override {
+        if (ChannelOutput* output = ChannelOutputOf(slot); output && output->Own()) {
+            std::erase(output->excluded, id);
+            if (excluded) {
+                output->excluded.push_back(id);
+            }
+            Save();
+            PushSettings();
+            PushRouting();
+        }
     }
     void OnRoutingManage(bool enabled) override {
         g.settings.routing.manageDevices = enabled;
@@ -868,20 +940,7 @@ public:
         if (from >= listed.size() || to >= listed.size() || from == to) {
             return;
         }
-        for (const std::wstring& id : listed) {
-            if (std::find(priority.order.begin(), priority.order.end(), id) == priority.order.end()) {
-                priority.order.push_back(id);
-            }
-        }
-        const std::wstring moved = listed[from];
-        listed.erase(listed.begin() + static_cast<std::ptrdiff_t>(from));
-        listed.insert(listed.begin() + static_cast<std::ptrdiff_t>(to), moved);
-        size_t next = 0;
-        for (std::wstring& id : priority.order) {
-            if (std::find(listed.begin(), listed.end(), id) != listed.end()) {
-                id = listed[next++];
-            }
-        }
+        MoveInOrder(priority.order, listed, from, to);
         Save();
         PushSettings();
         PushOutputs();

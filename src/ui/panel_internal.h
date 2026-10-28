@@ -230,6 +230,8 @@ enum : uint32_t {
     kIdAllowSleep,
     kIdProfileDevice,
     kIdProfileForget,
+    kIdChannelFollow,
+    kIdChannelOutputList,
     kIdHotkeyRow = 40,
     kIdAddGroup = 60,
     kIdLanguage = 70,

@@ -505,7 +505,8 @@ constexpr uint16_t kWireBandOff = 20001;
 // gives it (through Linux-Arctis-Manager): six fixed bands whose biquad filters the computer works out at 48 kHz
 // (Audio EQ Cookbook, Q per band) and writes as 28 [channel] [address] [value, float32 big-endian] [filter number],
 // for the left channel 3 and the right channel 4 (filter numbers 42 higher): b0, b1, b2, a0, -a1 and -a2 with a0 one,
-// at the band's address plus 08 plus their index, then the band's address with zeros. Not confirmed on a headset.
+// at the band's address plus 08 plus their index, then the band's address with zeros; a band without gain gets only
+// that last write. Not confirmed on a headset.
 struct ChipBand {
     ::FilterType type;
     double frequency;
@@ -890,12 +891,17 @@ const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
 // [02 on / 00 off], auto-off 06 51 [minutes, 0-90], the battery in percent in the answer to 06 18, and 06 09 to keep
 // a setting. Whether the headset is on: 06 14, answered with 03 when it is and 01 when it is not (both Arctis 7
 // models, as SteelSeries describes them). Also from that description, on the Arctis 7: microphone volume
-// 06 33 00 [0-100] and the mute light 06 45 [1 steady, 2 breathing].
+// 06 33 00 [0-100], the mute light 06 45 [1 steady, 2 breathing], and 06 55 as the dongle's light, 06 55 [headset on]
+// [headset off] with 0 off, 1 steady and 2 breathing: the lights command above is SteelSeries Engine's switch that
+// blinks it while the headset is off.
 constexpr SettingSpec kLegacySidetone[] = {
     {0x35, Sidetone, SettingKind::Slider, 0, 18, {}, 0, 0, SettingWire::PaddedLevel},
 };
 constexpr SettingSpec kLegacyLights[] = {
     {0x55, EarcupLights, SettingKind::Toggle, 0, 2, {}, 0, 0, SettingWire::Prefixed, 0x01},
+};
+constexpr SettingSpec kArctis7DongleLight[] = {
+    {0x55, DongleLightBlink, SettingKind::Toggle, 0, 2, {}, 0, 0, SettingWire::Prefixed, 0x01},
 };
 constexpr SettingOption kMuteLightStyles[] = {{1, OptSteady}, {2, OptBreathing}};
 constexpr SettingSpec kArctis7Microphone[] = {
@@ -908,7 +914,7 @@ constexpr SettingSpec kArctis7Power[] = {
 };
 constexpr SettingSection kArctis7Sections[] = {
     {Microphone, kArctis7Microphone},
-    {Lighting, kLegacyLights},
+    {Lighting, kArctis7DongleLight},
     {Power, kArctis7Power},
 };
 constexpr SettingSection kArctisProSections[] = {
@@ -1364,8 +1370,8 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
     return EqualizerCommands(spec, builtin ? BuiltinPresetFilters(spec, preset) : CurveFilters(curve, spec.range), preset);
 }
 
-// On the AV6X02 a band without gain gets the filter that changes nothing written too, rather than only its closing
-// write, as whether that write alone turns the band off is not known.
+// On the AV6X02 a band without gain gets only its closing write, which turns the band off, as SteelSeries' own code
+// does; its coefficients are never written.
 std::vector<std::vector<uint8_t>> ChipBandCommands(const EqualizerSpec& equalizer, int band, float gainDb) {
     std::vector<std::vector<uint8_t>> commands;
     if (equalizer.chip == SoundChip::Cx20892) {
@@ -1384,7 +1390,7 @@ std::vector<std::vector<uint8_t>> ChipBandCommands(const EqualizerSpec& equalize
     const uint8_t address = static_cast<uint8_t>(band << 4);
     const uint8_t rightFilters = static_cast<uint8_t>(spec.filterNumber + kChipRightFilters);
     for (const auto [channel, filters] : {std::pair{kChipLeft, spec.filterNumber}, std::pair{kChipRight, rightFilters}}) {
-        for (uint8_t index = 0; index < std::size(values); ++index) {
+        for (uint8_t index = 0; gainDb != 0.0f && index < std::size(values); ++index) {
             commands.push_back(ChipWrite(channel, static_cast<uint8_t>(address | kChipCoefficientAddress | index),
                                          values[index], static_cast<uint8_t>(filters + index)));
         }

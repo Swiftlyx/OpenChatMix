@@ -31,6 +31,18 @@ struct AppRule {
     std::wstring path;  // Last known executable path, used for the icon; may be empty.
 };
 
+// Where a channel of virtual device mode, or a group without it, plays: on the first connected device of its order
+// that is not excluded and whose headset is on. An empty order follows the output (the Windows default without
+// virtual devices), and so does a channel none of whose devices is left.
+struct ChannelOutput {
+    std::vector<std::wstring> order;     // Endpoint IDs, most preferred first; connected devices it does not list
+                                         // follow in the order of Settings::outputs.
+    std::vector<std::wstring> excluded;  // Endpoint IDs the channel never plays on.
+
+    bool Own() const { return !order.empty(); }
+    bool operator==(const ChannelOutput&) const = default;
+};
+
 // Virtual device mode: Game and Chat come from two playback devices and are mixed into the output.
 struct RoutingSettings {
     bool enabled = false;
@@ -39,11 +51,11 @@ struct RoutingSettings {
     std::wstring media;   // A virtual device of its own for the Media group, chosen by hand; empty: none.
     std::wstring aux;     // The same for the Aux group.
     std::wstring output;  // Empty: the connected SteelSeries headset.
-    // Where each channel plays; empty: the output above.
-    std::wstring gameOutput;
-    std::wstring chatOutput;
-    std::wstring mediaOutput;
-    std::wstring auxOutput;
+    // Where each channel plays.
+    ChannelOutput gameOutput;
+    ChannelOutput chatOutput;
+    ChannelOutput mediaOutput;
+    ChannelOutput auxOutput;
     // The Game and Chat devices are enabled and made the Windows defaults only while the mode runs.
     bool manageDevices = true;
     std::wstring savedDefault;         // Default output and communications device before the mode

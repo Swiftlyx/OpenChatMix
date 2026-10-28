@@ -190,6 +190,8 @@ public:
     void OnExtraEqualizerCurve(ExtraEqualizer which, const EqCurve& curve) override;
     void OnRoutingEnabled(bool enabled) override;
     void OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) override;
+    void OnRoutingMove(ui::RoutingSlot slot, size_t from, size_t to) override;
+    void OnRoutingExclude(ui::RoutingSlot slot, const std::wstring& id, bool excluded) override;
     void OnRoutingManage(bool enabled) override;
     void OnIdleAnimation(IdleAnimationKind animation) override;
     void OnIdleDelay(int seconds) override;
@@ -1232,17 +1234,27 @@ bool AuxRouted() {
     return settings.routing.enabled && settings.auxGroup && !settings.routing.aux.empty();
 }
 
-// The devices virtual device mode would use now; empty channel outputs become the shared output.
+std::vector<AudioEndpoint> PreferredOutputs();
+std::wstring ChannelDeviceId(const ChannelOutput& output, const std::vector<AudioEndpoint>& preferred);
+
+bool AnyOwnChannelOutput() {
+    const RoutingSettings& routing = g_app.settings.routing;
+    return routing.gameOutput.Own() || routing.chatOutput.Own() || routing.mediaOutput.Own() || routing.auxOutput.Own();
+}
+
+// The devices virtual device mode would use now; channels that follow the output, or have none of their devices
+// left, play on the shared output.
 RoutingPlan CurrentRoutingPlan() {
     const RoutingSettings& routing = g_app.settings.routing;
     const std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
     const std::wstring output = RoutingOutputId(endpoints);
+    const std::vector<AudioEndpoint> preferred = AnyOwnChannelOutput() ? PreferredOutputs() : std::vector<AudioEndpoint>{};
     // On a headset that mixes by its dial, Chat plays on its Chat device and the other channels on its Game device,
     // so the dial balances them.
     const HeadsetSides sides = MixingHeadsetSides(endpoints);
     const bool onHeadset = !sides.game.empty() && (output == sides.game || output == sides.chat);
-    auto resolve = [&](const std::wstring& id, bool chat = false) -> std::wstring {
-        if (!id.empty()) {
+    auto resolve = [&](const ChannelOutput& channel, bool chat = false) -> std::wstring {
+        if (std::wstring id = ChannelDeviceId(channel, preferred); !id.empty()) {
             return id;
         }
         if (onHeadset) {
@@ -1433,6 +1445,9 @@ void AssignVirtualDevices() {
     Save();
 }
 
+std::vector<AudioEndpoint> ChannelCandidates(const ChannelOutput& output, const std::vector<AudioEndpoint>& preferred);
+std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& connected);
+
 void UpdateRouting() {
     const std::vector<AudioEndpoint> endpoints = ListRenderEndpoints(true);
     auto nameOf = [&](const std::wstring& id) -> std::wstring {
@@ -1459,21 +1474,45 @@ void UpdateRouting() {
         routing.output.empty()
             ? std::wstring(T(Text::AutomaticHeadset)) + (outputId.empty() ? L"" : L" · " + nameOf(outputId))
             : nameOf(routing.output));
-    // Empty: the mode's output with virtual devices, the Windows default without them.
-    auto channelOutput = [&](ui::RoutingSlot slot, const std::wstring& id) {
-        set(slot, id,
-            id.empty() ? std::wstring(T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput)) : nameOf(id));
-    };
-    channelOutput(ui::RoutingSlot::GameOutput, routing.gameOutput);
-    channelOutput(ui::RoutingSlot::ChatOutput, routing.chatOutput);
-    channelOutput(ui::RoutingSlot::MediaOutput, routing.mediaOutput);
-    channelOutput(ui::RoutingSlot::AuxOutput, routing.auxOutput);
+    // Where each channel plays: a channel with an order of its own names the device it plays on now, one that follows
+    // the output names the mode's output with virtual devices and the Windows default without them.
+    const RoutingPlan plan = CurrentRoutingPlan();
+    const std::vector<AudioEndpoint> preferred = PreferredOutputs();
+    const std::vector<AudioEndpoint> connected = routing.enabled ? std::vector<AudioEndpoint>{} : ListRenderEndpoints();
+    constexpr ui::RoutingSlot kChannelSlots[] = {ui::RoutingSlot::GameOutput, ui::RoutingSlot::ChatOutput,
+                                                 ui::RoutingSlot::MediaOutput, ui::RoutingSlot::AuxOutput};
+    const ChannelOutput* const channelOutputs[] = {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput,
+                                                   &routing.auxOutput};
+    const std::wstring* const planOutputs[] = {&plan.gameOutput, &plan.chatOutput, &plan.mediaOutput, &plan.auxOutput};
+    for (int channel = 0; channel < 4; ++channel) {
+        const ChannelOutput& output = *channelOutputs[channel];
+        std::wstring current = *planOutputs[channel];
+        if (!routing.enabled) {
+            current = DirectTarget(static_cast<AppGroup>(channel), connected);
+            if (current.empty()) {
+                current = DefaultRenderEndpoint(eConsole);
+            }
+        }
+        if (output.Own()) {
+            set(kChannelSlots[channel], current, nameOf(current));
+        } else {
+            set(kChannelSlots[channel], L"", T(routing.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput));
+        }
+        std::vector<ui::DeviceView>& devices = view.channelDevices[channel];
+        for (const auto& endpoint : ChannelCandidates(output, preferred)) {
+            devices.push_back({endpoint.id, endpoint.name, endpoint.id == current, false});
+        }
+        for (const auto& endpoint : preferred) {
+            if (std::find(output.excluded.begin(), output.excluded.end(), endpoint.id) != output.excluded.end()) {
+                devices.push_back({endpoint.id, endpoint.name, endpoint.id == current, true});
+            }
+        }
+    }
     view.mediaRouted = MediaRouted();
     view.auxRouted = AuxRouted();
     view.manageDevices = routing.manageDevices;
     view.ownDevices = DirectChannelsAllowed();
     if (view.ownDevices) {
-        const RoutingPlan plan = CurrentRoutingPlan();
         view.directNames[0] = routing.game.empty() ? nameOf(plan.gameOutput) : L"";
         view.directNames[1] = routing.chat.empty() ? nameOf(plan.chatOutput) : L"";
     }
@@ -1997,9 +2036,12 @@ void UpdateMixerEndpoints() {
         return;
     }
     // Devices the groups play on directly: their apps are listed and get the balance there.
-    for (const std::wstring* id : {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput, &routing.auxOutput}) {
-        if (!id->empty() && std::find(extra.begin(), extra.end(), *id) == extra.end()) {
-            extra.push_back(*id);
+    const std::vector<AudioEndpoint> preferred = AnyOwnChannelOutput() ? PreferredOutputs() : std::vector<AudioEndpoint>{};
+    for (const ChannelOutput* output :
+         {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput, &routing.auxOutput}) {
+        const std::wstring id = ChannelDeviceId(*output, preferred);
+        if (!id.empty() && std::find(extra.begin(), extra.end(), id) == extra.end()) {
+            extra.push_back(id);
         }
     }
     // The mixer works on a SteelSeries headset's own devices; the default output gets the balance as well, for the
@@ -2013,25 +2055,25 @@ void UpdateMixerEndpoints() {
     g_app.mixer.SetExtraEndpoints(std::move(extra), false);
 }
 
-// Without virtual devices, a group whose device is chosen plays there through the per-app device of
-// Windows; the others follow the Windows default. A chosen device that is not connected counts as none.
+// Without virtual devices, a group with devices of its own plays on the first one left through the per-app device of
+// Windows; the others follow the Windows default, and so does a group none of whose devices is left.
 // A headset that mixes by its dial gets Game and Chat on its own devices while it is the default output.
 bool DirectGroupOutputs() {
-    const RoutingSettings& routing = g_app.settings.routing;
-    return !routing.enabled &&
-           (!routing.gameOutput.empty() || !routing.chatOutput.empty() || !routing.mediaOutput.empty() ||
-            !routing.auxOutput.empty() || (HeadsetMixes() && !DefaultHeadsetSides(ListRenderEndpoints()).game.empty()));
+    return !g_app.settings.routing.enabled &&
+           (AnyOwnChannelOutput() || (HeadsetMixes() && !DefaultHeadsetSides(ListRenderEndpoints()).game.empty()));
 }
 
+std::vector<AudioEndpoint> PreferredAmong(std::vector<AudioEndpoint> endpoints);
+
+// connected: ListRenderEndpoints().
 std::wstring DirectTarget(AppGroup group, const std::vector<AudioEndpoint>& connected) {
     const RoutingSettings& routing = g_app.settings.routing;
-    const std::wstring& id = group == AppGroup::Chat    ? routing.chatOutput
-                             : group == AppGroup::Media ? routing.mediaOutput
-                             : group == AppGroup::Aux   ? routing.auxOutput
-                                                        : routing.gameOutput;
-    const bool present = std::any_of(connected.begin(), connected.end(),
-                                     [&](const AudioEndpoint& endpoint) { return endpoint.id == id; });
-    if (present) {
+    const ChannelOutput& output = group == AppGroup::Chat    ? routing.chatOutput
+                                  : group == AppGroup::Media ? routing.mediaOutput
+                                  : group == AppGroup::Aux   ? routing.auxOutput
+                                                             : routing.gameOutput;
+    if (std::wstring id = ChannelDeviceId(output, output.Own() ? PreferredAmong(connected) : std::vector<AudioEndpoint>{});
+        !id.empty()) {
         return id;
     }
     // A headset that mixes by its dial, while it plays: Chat on its Chat device, the others on its Game device.
@@ -3572,6 +3614,10 @@ void Host::OnRoutingEnabled(bool enabled) {
     }
 }
 
+ChannelOutput* ChannelOutputOf(ui::RoutingSlot slot);
+std::vector<std::wstring> EndpointIds(const std::vector<AudioEndpoint>& endpoints);
+void FollowChannelOutputs();
+
 void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
     RoutingSettings& routing = g_app.settings.routing;
     if (slot == ui::RoutingSlot::MicInput || slot == ui::RoutingSlot::MicOutput) {
@@ -3598,11 +3644,20 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
     case ui::RoutingSlot::Chat: routing.chat = id; break;
     case ui::RoutingSlot::Media: routing.media = id; break;
     case ui::RoutingSlot::Output: routing.output = id; break;
-    case ui::RoutingSlot::GameOutput: routing.gameOutput = id; break;
-    case ui::RoutingSlot::ChatOutput: routing.chatOutput = id; break;
-    case ui::RoutingSlot::MediaOutput: routing.mediaOutput = id; break;
     case ui::RoutingSlot::Aux: routing.aux = id; break;
-    case ui::RoutingSlot::AuxOutput: routing.auxOutput = id; break;
+    case ui::RoutingSlot::GameOutput:
+    case ui::RoutingSlot::ChatOutput:
+    case ui::RoutingSlot::MediaOutput:
+    case ui::RoutingSlot::AuxOutput:
+        // An empty ID follows the output again; a device goes first in the channel's order.
+        if (ChannelOutput& output = *ChannelOutputOf(slot); id.empty()) {
+            output = {};
+        } else {
+            std::erase(output.order, id);
+            output.order.insert(output.order.begin(), id);
+            std::erase(output.excluded, id);
+        }
+        break;
     case ui::RoutingSlot::MicInput:
     case ui::RoutingSlot::MicOutput: break;
     }
@@ -3616,6 +3671,33 @@ void Host::OnRoutingDevice(ui::RoutingSlot slot, const std::wstring& id) {
         RefreshApps();
         UpdateRouting();
     }
+    PushSettings();
+}
+
+// Moves a device among the ones a channel may play on, as the Plays on page lists them. The routing starts again only
+// when the channel moves to another device.
+void Host::OnRoutingMove(ui::RoutingSlot slot, size_t from, size_t to) {
+    ChannelOutput* output = ChannelOutputOf(slot);
+    if (!output || !output->Own()) {
+        return;
+    }
+    MoveInOrder(output->order, EndpointIds(ChannelCandidates(*output, PreferredOutputs())), from, to);
+    Save();
+    FollowChannelOutputs();
+    PushSettings();
+}
+
+void Host::OnRoutingExclude(ui::RoutingSlot slot, const std::wstring& id, bool excluded) {
+    ChannelOutput* output = ChannelOutputOf(slot);
+    if (!output || !output->Own()) {
+        return;
+    }
+    std::erase(output->excluded, id);
+    if (excluded) {
+        output->excluded.push_back(id);
+    }
+    Save();
+    FollowChannelOutputs();
     PushSettings();
 }
 
@@ -3967,14 +4049,19 @@ void SortByPriority(std::vector<AudioEndpoint>& endpoints, const DevicePriority&
                           [&](const AudioEndpoint& endpoint) { return !IsExcluded(priority, endpoint.id); });
 }
 
-// Active playback devices a person listens to (no virtual cables, no Game or Chat device), most preferred first.
-std::vector<AudioEndpoint> PreferredOutputs() {
-    std::vector<AudioEndpoint> endpoints = ListRenderEndpoints();
+// The playback devices a person listens to among endpoints (no virtual cables, no Game or Chat device), most preferred
+// first.
+std::vector<AudioEndpoint> PreferredAmong(std::vector<AudioEndpoint> endpoints) {
     std::erase_if(endpoints, [](const AudioEndpoint& endpoint) {
         return IsVirtualEndpoint(endpoint) || IsRoutingDevice(endpoint.id);
     });
     SortByPriority(endpoints, g_app.settings.outputs);
     return endpoints;
+}
+
+// The active ones.
+std::vector<AudioEndpoint> PreferredOutputs() {
+    return PreferredAmong(ListRenderEndpoints());
 }
 
 // Active microphones a person speaks into (no virtual cables), most preferred first.
@@ -3997,6 +4084,75 @@ std::vector<AudioEndpoint> AllowedOutputs() {
     std::vector<AudioEndpoint> endpoints = PreferredOutputs();
     std::erase_if(endpoints, [](const AudioEndpoint& endpoint) { return IsExcludedOutput(endpoint.id); });
     return endpoints;
+}
+
+std::vector<std::wstring> EndpointIds(const std::vector<AudioEndpoint>& endpoints) {
+    std::vector<std::wstring> ids;
+    for (const auto& endpoint : endpoints) {
+        ids.push_back(endpoint.id);
+    }
+    return ids;
+}
+
+// The connected devices a channel may play on, most preferred first; preferred is PreferredOutputs().
+std::vector<AudioEndpoint> ChannelCandidates(const ChannelOutput& output, const std::vector<AudioEndpoint>& preferred) {
+    std::vector<AudioEndpoint> endpoints;
+    for (const std::wstring& id : ChannelDevices(EndpointIds(preferred), output.order, output.excluded)) {
+        endpoints.push_back(*std::find_if(preferred.begin(), preferred.end(),
+                                          [&id](const AudioEndpoint& endpoint) { return endpoint.id == id; }));
+    }
+    return endpoints;
+}
+
+// The device a channel with an order of its own plays on now; empty while it follows the output, or while none of its
+// devices is connected and on.
+std::wstring ChannelDeviceId(const ChannelOutput& output, const std::vector<AudioEndpoint>& preferred) {
+    if (!output.Own()) {
+        return {};
+    }
+    for (const auto& endpoint : ChannelCandidates(output, preferred)) {
+        if (!HeadsetSwitchedOff(endpoint)) {
+            return endpoint.id;
+        }
+    }
+    return {};
+}
+
+ChannelOutput* ChannelOutputOf(ui::RoutingSlot slot) {
+    RoutingSettings& routing = g_app.settings.routing;
+    switch (slot) {
+    case ui::RoutingSlot::GameOutput: return &routing.gameOutput;
+    case ui::RoutingSlot::ChatOutput: return &routing.chatOutput;
+    case ui::RoutingSlot::MediaOutput: return &routing.mediaOutput;
+    case ui::RoutingSlot::AuxOutput: return &routing.auxOutput;
+    default: return nullptr;
+    }
+}
+
+// A channel with an order of its own moves when the device it plays on comes or goes, or its headset switches off or
+// on, also while the output stays.
+void FollowChannelOutputs() {
+    const RoutingSettings& routing = g_app.settings.routing;
+    if (!AnyOwnChannelOutput()) {
+        return;
+    }
+    if (routing.enabled) {
+        const RoutingPlan plan = CurrentRoutingPlan();
+        const RoutingPlan& running = g_app.router.Plan();
+        if (g_app.router.IsRunning() &&
+            (plan.gameOutput != running.gameOutput || plan.chatOutput != running.chatOutput ||
+             (!running.media.empty() && plan.mediaOutput != running.mediaOutput) ||
+             (!running.aux.empty() && plan.auxOutput != running.auxOutput))) {
+            Log("routing: a channel moves to another device");
+            StartRouting();
+            return;
+        }
+    } else {
+        UpdateMixerEndpoints();
+        SyncAppRouting();
+        ApplyLevels();
+    }
+    UpdateRouting();
 }
 
 // The routing output in virtual device mode, otherwise the Windows default device.
@@ -4159,6 +4315,7 @@ void FollowOutputPriority() {
     }
     g_app.lastOutput = current;
     PushOutputs();
+    FollowChannelOutputs();
 }
 
 // The same for the microphones. A headset that is switched off takes its microphone along. A virtual cable in use
@@ -4208,28 +4365,13 @@ void Host::OnDeviceMove(ui::DeviceList list, size_t from, size_t to) {
     if (from >= devices.size() || to >= devices.size() || from == to) {
         return;
     }
-    std::vector<std::wstring>& order = priority.order;
-    for (const auto& endpoint : devices) {
-        if (std::find(order.begin(), order.end(), endpoint.id) == order.end()) {
-            order.push_back(endpoint.id);
-        }
-    }
-    // The connected devices keep the places they hold in the full order, filled in their new order.
-    std::vector<std::wstring> listed;
-    for (const auto& endpoint : devices) {
-        listed.push_back(endpoint.id);
-    }
-    MoveItem(listed, from, to);
-    size_t next = 0;
-    for (std::wstring& id : order) {
-        if (std::find(listed.begin(), listed.end(), id) != listed.end()) {
-            id = listed[next++];
-        }
-    }
+    MoveInOrder(priority.order, EndpointIds(devices), from, to);
     Save();
     PushSettings();
     PushOutputs();
     PushMics();
+    // Channels follow this order after their own.
+    FollowChannelOutputs();
 }
 
 void Host::OnDeviceExclude(ui::DeviceList list, const std::wstring& id, bool excluded) {
@@ -4242,6 +4384,7 @@ void Host::OnDeviceExclude(ui::DeviceList list, const std::wstring& id, bool exc
     PushSettings();
     PushOutputs();
     PushMics();
+    FollowChannelOutputs();
 }
 
 // Warns once when the battery falls to the threshold, in the popup; charging or 5% above re-arms it.

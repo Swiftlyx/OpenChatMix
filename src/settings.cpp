@@ -531,6 +531,19 @@ void SaveDevicePriority(const std::wstring& path, const wchar_t* section, const 
     WriteSectionString(path, section, L"ReturnToPreferred", priority.returnToPreferred ? L"1" : L"0");
 }
 
+// [Routing] GameOutput=id|id, GameOutputExcluded=id|id; earlier versions kept a single ID under the first key.
+ChannelOutput LoadChannelOutput(const std::wstring& path, const std::wstring& key) {
+    ChannelOutput output;
+    output.order = SplitList(ReadString(path, kRoutingSection, key.c_str(), L""));
+    output.excluded = SplitList(ReadString(path, kRoutingSection, (key + L"Excluded").c_str(), L""));
+    return output;
+}
+
+void SaveChannelOutput(const std::wstring& path, const std::wstring& key, const ChannelOutput& output) {
+    WriteSectionString(path, kRoutingSection, key.c_str(), JoinList(output.order));
+    WriteSectionString(path, kRoutingSection, (key + L"Excluded").c_str(), JoinList(output.excluded));
+}
+
 IdleAnimationKind ParseIdleAnimation(const std::wstring& text) {
     for (size_t i = 0; i < std::size(kIdleAnimationNames); ++i) {
         if (_wcsicmp(text.c_str(), kIdleAnimationNames[i]) == 0) {
@@ -1050,10 +1063,10 @@ Settings LoadSettings(const std::wstring& path) {
     settings.routing.output = ReadString(path, kRoutingSection, L"Output", L"");
     settings.routing.media = ReadString(path, kRoutingSection, L"Media", L"");
     settings.routing.aux = ReadString(path, kRoutingSection, L"Aux", L"");
-    settings.routing.gameOutput = ReadString(path, kRoutingSection, L"GameOutput", L"");
-    settings.routing.chatOutput = ReadString(path, kRoutingSection, L"ChatOutput", L"");
-    settings.routing.mediaOutput = ReadString(path, kRoutingSection, L"MediaOutput", L"");
-    settings.routing.auxOutput = ReadString(path, kRoutingSection, L"AuxOutput", L"");
+    settings.routing.gameOutput = LoadChannelOutput(path, L"GameOutput");
+    settings.routing.chatOutput = LoadChannelOutput(path, L"ChatOutput");
+    settings.routing.mediaOutput = LoadChannelOutput(path, L"MediaOutput");
+    settings.routing.auxOutput = LoadChannelOutput(path, L"AuxOutput");
     settings.routing.manageDevices = GetPrivateProfileIntW(kRoutingSection, L"ManageDevices", 1, path.c_str()) != 0;
     settings.routing.savedDefault = ReadString(path, kRoutingSection, L"SavedDefault", L"");
     settings.routing.savedCommunications = ReadString(path, kRoutingSection, L"SavedCommunications", L"");
@@ -1175,10 +1188,10 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WritePrivateProfileStringW(kRoutingSection, L"Output", settings.routing.output.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Media", settings.routing.media.c_str(), path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"Aux", settings.routing.aux.c_str(), path.c_str());
-    WritePrivateProfileStringW(kRoutingSection, L"GameOutput", settings.routing.gameOutput.c_str(), path.c_str());
-    WritePrivateProfileStringW(kRoutingSection, L"ChatOutput", settings.routing.chatOutput.c_str(), path.c_str());
-    WritePrivateProfileStringW(kRoutingSection, L"MediaOutput", settings.routing.mediaOutput.c_str(), path.c_str());
-    WritePrivateProfileStringW(kRoutingSection, L"AuxOutput", settings.routing.auxOutput.c_str(), path.c_str());
+    SaveChannelOutput(path, L"GameOutput", settings.routing.gameOutput);
+    SaveChannelOutput(path, L"ChatOutput", settings.routing.chatOutput);
+    SaveChannelOutput(path, L"MediaOutput", settings.routing.mediaOutput);
+    SaveChannelOutput(path, L"AuxOutput", settings.routing.auxOutput);
     WritePrivateProfileStringW(kRoutingSection, L"ManageDevices", settings.routing.manageDevices ? L"1" : L"0",
                                path.c_str());
     WritePrivateProfileStringW(kRoutingSection, L"SavedDefault", settings.routing.savedDefault.c_str(), path.c_str());

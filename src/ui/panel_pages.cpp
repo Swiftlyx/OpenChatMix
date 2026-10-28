@@ -954,8 +954,140 @@ void Panel::DrawRoutingChannel() {
     EndScroll(Page::RoutingChannel, kHeaderHeight, y);
 }
 
+void Panel::DrawChannelOutput(int channel) {
+    const Palette& p = P();
+    constexpr Text kChannels[] = {Text::Game, Text::Chat, Text::Media, Text::Aux};
+    const RoutingSlot slot = pickSlot_;
+    const RoutingSettings& routing = settings_.routing;
+    const ChannelOutput* const outputs[] = {&routing.gameOutput, &routing.chatOutput, &routing.mediaOutput,
+                                            &routing.auxOutput};
+    const bool own = outputs[channel]->Own();
+    const bool virtualMode = routing_.enabled;
+    DrawHeader(T(Text::RoutingPlaysOn), T(kChannels[channel]));
+    float y = BeginScroll(Page::PickDevice, kHeaderHeight);
+
+    const std::vector<DeviceView>& devices = routing_.channelDevices[channel];
+    // An order of its own starts with the device the channel plays on now.
+    std::wstring now;
+    for (const DeviceView& device : devices) {
+        if (!device.excluded && (device.current || now.empty())) {
+            now = device.id;
+            if (device.current) {
+                break;
+            }
+        }
+    }
+    y = DrawCard(y, {SwitchItem(kIdChannelFollow, T(virtualMode ? Text::SameAsOutput : Text::SameAsWindowsDefault), !own,
+                                [this, slot, own, now] {
+                                    if (own || !now.empty()) {
+                                        host_.OnRoutingDevice(slot, own ? L"" : now);
+                                    }
+                                },
+                                T(virtualMode ? Text::ChannelFollowHint : Text::GroupFollowHint))}) +
+        design::kSectionGap;
+    if (!own) {
+        EndScroll(Page::PickDevice, kHeaderHeight, y);
+        return;
+    }
+
+    y = SectionTitle(T(Text::Priority), y);
+    y = PageHint(T(Text::ChannelPriorityHint), y);
+    if (devices.empty()) {
+        y = DrawCard(y, {HintItem(T(Text::NoPlaybackDevices))});
+        EndScroll(Page::PickDevice, kHeaderHeight, y);
+        return;
+    }
+    // Devices the channel never plays on arrive last; the drag card holds the others, in their order.
+    std::vector<const DeviceView*> allowed;
+    std::vector<const DeviceView*> excluded;
+    for (const DeviceView& device : devices) {
+        (device.excluded ? excluded : allowed).push_back(&device);
+    }
+    // Right of the name: a check on the device the channel plays on, then the button that moves the row to the other
+    // list.
+    const float buttonX = design::kTrailingIconCenter - 32.0f;
+    const float checkX = buttonX - design::kIconButtonSize;
+    const float nameRight = checkX - design::kSmallIconSize / 2.0f - design::kSpace2;
+    if (allowed.empty()) {
+        y = DrawCard(y, {HintItem(T(Text::AllChannelDevicesExcluded))});
+    } else {
+        std::vector<uint32_t> ids;
+        std::vector<std::wstring> deviceIds;
+        for (const DeviceView* device : allowed) {
+            ids.push_back(HashId(kKindOutput, device->id));
+            deviceIds.push_back(device->id);
+        }
+        // Place in the order, the name and the check; a click puts the device first.
+        y = DrawDragCard(
+            y, kIdChannelOutputList, ids, kRowHeight,
+            [this, &p, &allowed, slot, buttonX, checkX, nameRight](size_t index, size_t place, const D2D1_RECT_F& row,
+                                                                   bool lifted) {
+                const DeviceView& device = *allowed[index];
+                const float middle = (row.top + row.bottom) / 2.0f;
+                const D2D1_COLOR_F accent = device.current || lifted ? p.primary : p.onSurfaceVariant;
+                canvas_.Text(std::to_wstring(place + 1), {kInset - design::kSpace1, row.top, kInset + 16.0f, row.bottom},
+                             TextStyle::LabelLarge, accent, TextAlign::Center);
+                canvas_.Text(device.name, {design::kLeadingTextInset - design::kSpace3, row.top, nameRight, row.bottom},
+                             TextStyle::BodyLarge, device.current ? p.primary : p.onSurface);
+                if (device.current) {
+                    canvas_.Glyph(kGlyphCheck, {checkX, middle}, design::kSmallIconSize, p.primary);
+                }
+                const std::wstring id = device.id;
+                IconButton(HashId(kKindOutputExclude, id), {buttonX, middle}, kGlyphBlocked, p.onSurfaceVariant,
+                           [this, slot, id] { host_.OnRoutingExclude(slot, id, true); });
+                Tooltip(HashId(kKindOutputExclude, id), T(Text::TipNeverPlayHere));
+            },
+            [this, slot](size_t from, size_t to) { host_.OnRoutingMove(slot, from, to); },
+            // Runs on release, after this frame: it keeps its own copy of the device IDs.
+            [this, slot, deviceIds](size_t index) {
+                if (index < deviceIds.size()) {
+                    host_.OnRoutingDevice(slot, deviceIds[index]);
+                }
+            });
+    }
+
+    if (!excluded.empty()) {
+        y = SectionTitle(T(Text::NeverPlaysOn), y + design::kSectionGap);
+        y = PageHint(T(virtualMode ? Text::ChannelExcludedHint : Text::GroupExcludedHint), y);
+        std::vector<CardRow> rows;
+        for (const DeviceView* device : excluded) {
+            const uint32_t rowId = HashId(kKindOutput, device->id);
+            rows.push_back({kRowHeight,
+                            [this, &p, device, slot, rowId, buttonX, checkX, nameRight](float top) {
+                                const float middle = top + kRowHeight / 2.0f;
+                                const std::wstring id = device->id;
+                                AddHit({TileRect(top, kRowHeight), rowId,
+                                        [this, slot, id] { host_.OnRoutingDevice(slot, id); }});
+                                canvas_.Glyph(kGlyphBlocked, {kInset + 8.0f - design::kSpace1 / 2.0f, middle},
+                                              design::kSmallIconSize, p.onSurfaceVariant);
+                                canvas_.Text(device->name,
+                                             {design::kLeadingTextInset - design::kSpace3, top, nameRight, top + kRowHeight},
+                                             TextStyle::BodyLarge, device->current ? p.primary : p.onSurfaceVariant);
+                                if (device->current) {
+                                    canvas_.Glyph(kGlyphCheck, {checkX, middle}, design::kSmallIconSize, p.primary);
+                                }
+                                IconButton(HashId(kKindOutputExclude, id), {buttonX, middle}, kGlyphUndo,
+                                           p.onSurfaceVariant, [this, slot, id] { host_.OnRoutingExclude(slot, id, false); });
+                                Tooltip(HashId(kKindOutputExclude, id), T(Text::TipPlayHereAgain));
+                            },
+                            rowId});
+        }
+        y = DrawCard(y, rows);
+    }
+    EndScroll(Page::PickDevice, kHeaderHeight, y);
+}
+
 void Panel::DrawPickDevice() {
     const Palette& p = P();
+    // A channel's output has a page of its own: the output, or devices of the channel's own in an order.
+    constexpr RoutingSlot kChannelOutputs[] = {RoutingSlot::GameOutput, RoutingSlot::ChatOutput,
+                                               RoutingSlot::MediaOutput, RoutingSlot::AuxOutput};
+    for (int channel = 0; channel < 4; ++channel) {
+        if (pickSlot_ == kChannelOutputs[channel]) {
+            DrawChannelOutput(channel);
+            return;
+        }
+    }
     constexpr Text kTitles[] = {Text::RoutingGame,    Text::RoutingChat,    Text::RoutingOutput,
                                 Text::MicInput,       Text::MicOutput,      Text::RoutingMediaDevice,
                                 Text::RoutingPlaysOn, Text::RoutingPlaysOn, Text::RoutingPlaysOn,
@@ -974,9 +1106,7 @@ void Panel::DrawPickDevice() {
     case RoutingSlot::GameOutput:
     case RoutingSlot::ChatOutput:
     case RoutingSlot::MediaOutput:
-    case RoutingSlot::AuxOutput:
-        items.push_back({L"", T(routing_.enabled ? Text::SameAsOutput : Text::WindowsDefaultOutput), std::nullopt});
-        break;
+    case RoutingSlot::AuxOutput: break;  // See DrawChannelOutput.
     case RoutingSlot::Game:
     case RoutingSlot::Chat:
         if (routing_.ownDevices) {

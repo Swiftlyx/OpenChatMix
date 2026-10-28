@@ -582,6 +582,17 @@ enum class Text {
     SurroundSound,
     CaseBattery,
     EqualizerPreset,
+    SameAsWindowsDefault,
+    ChannelFollowHint,
+    GroupFollowHint,
+    ChannelPriorityHint,
+    AllChannelDevicesExcluded,
+    NeverPlaysOn,
+    ChannelExcludedHint,
+    GroupExcludedHint,
+    TipNeverPlayHere,
+    TipPlayHereAgain,
+    DongleLightBlink,
     Count,
 };
 

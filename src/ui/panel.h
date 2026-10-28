@@ -51,6 +51,14 @@ struct MenuItem {
     bool action = false;  // Opens a page instead of choosing an entry: set apart by a line, primary color, a chevron.
 };
 
+// A connected playback device or microphone in the order of preference.
+struct DeviceView {
+    std::wstring id;
+    std::wstring name;
+    bool current = false;   // The device in use.
+    bool excluded = false;  // Never switched to automatically or by the hotkey.
+};
+
 // Virtual device mode as shown in the panel.
 struct RoutingView {
     bool enabled = false;
@@ -67,18 +75,13 @@ struct RoutingView {
     // straight on them, with no equalizer or plugins.
     bool ownDevices = false;
     std::wstring directNames[2];  // Where Game and Chat play without a virtual device; empty while they have one.
+    // The connected devices Game, Chat, Media and Aux may play on, in each one's order, then the ones it never plays
+    // on; current marks the device it plays on now.
+    std::array<std::vector<DeviceView>, 4> channelDevices;
 };
 
 // The two lists of the Devices page.
 enum class DeviceList { Outputs, Microphones };
-
-// A connected playback device or microphone in the order of preference.
-struct DeviceView {
-    std::wstring id;
-    std::wstring name;
-    bool current = false;   // The device in use.
-    bool excluded = false;  // Never switched to automatically or by the hotkey.
-};
 
 // A second pair of headphones beside the headset or output the status line names: connected Bluetooth headphones,
 // with their battery when Windows knows it.
@@ -172,7 +175,13 @@ public:
     virtual void OnExtraEqualizerPreset(ExtraEqualizer which, int index) = 0;
     virtual void OnExtraEqualizerCurve(ExtraEqualizer which, const EqCurve& curve) = 0;
     virtual void OnRoutingEnabled(bool enabled) = 0;
+    // For a channel's output slot (GameOutput and the others) an empty id follows the output, and a device goes first
+    // in the channel's own order.
     virtual void OnRoutingDevice(RoutingSlot slot, const std::wstring& id) = 0;
+    // Moves a device among the ones a channel with an order of its own may play on, as listed in channelDevices.
+    virtual void OnRoutingMove(RoutingSlot slot, size_t from, size_t to) = 0;
+    // Keeps the channel off the device, or lets it play there again.
+    virtual void OnRoutingExclude(RoutingSlot slot, const std::wstring& id, bool excluded) = 0;
     virtual void OnRoutingManage(bool enabled) = 0;
     virtual void OnIdleAnimation(IdleAnimationKind animation) = 0;
     virtual void OnIdleDelay(int seconds) = 0;
@@ -561,6 +570,8 @@ private:
     float DrawVisualizer(float top);
     float DrawIdleScreen(float top);
     void DrawPickDevice();
+    // The picker of a channel's output slot: the output, or devices of the channel's own in an order.
+    void DrawChannelOutput(int channel);
     float DrawRoutingSettings(float top);
     void OpenPicker(RoutingSlot slot);
     // Converts a game preset to the headset's band curve; an unsaved custom curve is backed up first.

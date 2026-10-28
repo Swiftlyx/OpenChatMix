@@ -584,6 +584,17 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Surround sound",  // SurroundSound
     L"case",  // CaseBattery
     L"Equalizer preset",  // EqualizerPreset
+    L"Same as the Windows default",  // SameAsWindowsDefault
+    L"Plays wherever the output goes. Turn this off to give the channel devices of its own, in the order you choose.",  // ChannelFollowHint
+    L"Plays on the Windows default device. Turn this off to give the group devices of its own, in the order you choose.",  // GroupFollowHint
+    L"Plays on the first device here that is connected and switched on, and moves to the next one when that device disconnects or its headset turns off. Click a device to put it first, or drag it to another place. Devices that are not connected are not shown.",  // ChannelPriorityHint
+    L"Every connected device is in Never plays on.",  // AllChannelDevicesExcluded
+    L"Never plays on",  // NeverPlaysOn
+    L"These devices are skipped. When no other device of the list is left, the channel plays on the output.",  // ChannelExcludedHint
+    L"These devices are skipped. When no other device of the list is left, the group plays on the Windows default device.",  // GroupExcludedHint
+    L"Never play here",  // TipNeverPlayHere
+    L"Play here again",  // TipPlayHereAgain
+    L"Blink the dongle's light while the headset is off",  // DongleLightBlink
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1162,6 +1173,17 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Об'ємний звук",
     L"кейс",
     L"Пресет еквалайзера",
+    L"Як типовий у Windows",
+    L"Відтворюється там само, де основний вихід. Вимкніть, щоб задати каналу власні пристрої в потрібному порядку.",
+    L"Відтворюється на типовому пристрої Windows. Вимкніть, щоб задати групі власні пристрої в потрібному порядку.",
+    L"Звук іде на перший пристрій у списку, який підключено й увімкнено, а коли той відключається чи його гарнітура вимикається, переходить на наступний. Натисніть на пристрій, щоб поставити його першим, або перетягніть його на інше місце. Відключені пристрої тут не показуються.",
+    L"Усі підключені пристрої в списку «Ніколи не відтворювати на».",
+    L"Ніколи не відтворювати на",
+    L"Ці пристрої пропускаються. Коли інших пристроїв зі списку не лишилося, канал відтворюється на основному виході.",
+    L"Ці пристрої пропускаються. Коли інших пристроїв зі списку не лишилося, група відтворюється на типовому пристрої Windows.",
+    L"Ніколи не відтворювати тут",
+    L"Знову відтворювати тут",
+    L"Блимати індикатором донгла, поки гарнітура вимкнена",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1740,6 +1762,17 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Surround ses",
     L"kutu",
     L"Ekolayzır ön ayarı",
+    L"Windows varsayılanıyla aynı",
+    L"Çıkış nereye giderse orada çalar. Kanala kendi cihazlarını seçtiğiniz sırayla vermek için bunu kapatın.",
+    L"Windows varsayılan cihazında çalar. Gruba kendi cihazlarını seçtiğiniz sırayla vermek için bunu kapatın.",
+    L"Buradaki bağlı ve açık ilk cihazda çalar; o cihazın bağlantısı kesildiğinde veya kulaklığı kapandığında sıradakine geçer. Bir cihazı en üste almak için tıklayın ya da başka bir yere sürükleyin. Bağlı olmayan cihazlar gösterilmez.",
+    L"Bağlı tüm cihazlar Asla çalma listesinde.",
+    L"Asla çalma",
+    L"Bu cihazlar atlanır. Listede başka cihaz kalmadığında kanal çıkışta çalar.",
+    L"Bu cihazlar atlanır. Listede başka cihaz kalmadığında grup Windows varsayılan cihazında çalar.",
+    L"Burada asla çalma",
+    L"Burada yeniden çal",
+    L"Kulaklık kapalıyken alıcının ışığı yanıp sönsün",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {
