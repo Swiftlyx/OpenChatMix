@@ -325,11 +325,14 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
         // The panel keeps the scale chosen when it opened.
         return 0;
     case WM_APP_FRAME:
-        frames_.FrameHandled();
         if (animating_) {
             InvalidateRect(window, nullptr, FALSE);
             UpdateWindow(window);
         }
+        // Only after the frame: GetMessage hands out posted messages before input, so a frame slower than a refresh
+        // would find the next one already queued, and the wheel, the mouse and keys would wait until the animation
+        // ends.
+        frames_.FrameHandled();
         return 0;
     case WM_MOUSEMOVE:
         OnMouseMove(dip(GET_X_LPARAM(lParam)), dip(GET_Y_LPARAM(lParam)));
@@ -757,11 +760,10 @@ float Panel::BeginScroll(Page page, float top) {
     wheel.rect = area;
     wheel.id = kIdSettingsPage;
     // Clamped to the limit of the last frame, so the content never runs past its end and springs back.
-    wheel.wheel = [this, page](int notches) {
+    wheel.scroll = [this, page, key](float notches, bool precise) {
         const auto limit = scrollMax_.find(page);
-        scroll_[page] = std::clamp(scroll_[page] - notches * kRowHeight, 0.0f,
-                                   limit == scrollMax_.end() ? std::numeric_limits<float>::max() : limit->second);
-        Invalidate();
+        ScrollBy(key, scroll_[page], notches * kRowHeight,
+                 limit == scrollMax_.end() ? std::numeric_limits<float>::max() : limit->second, precise);
     };
     AddHit(std::move(wheel));
     canvas_.PushClip(area);
@@ -788,6 +790,15 @@ void Panel::EndScroll(Page page, float top, float y) {
         scroll_[page] = value;
         SetAnimation(AnimKey(kIdSettingsPage, static_cast<uint32_t>(page)), value);
     });
+}
+
+void Panel::ScrollBy(uint64_t key, float& target, float distance, float maxScroll, bool precise) {
+    const float before = target;
+    target = std::clamp(target - distance, 0.0f, maxScroll);
+    if (precise) {
+        SetAnimation(key, AnimatedValue(key, before) + (target - before));
+    }
+    Invalidate();
 }
 
 void Panel::AddHit(Hit hit) {
@@ -1350,9 +1361,8 @@ void Panel::DrawMenu() {
     list.id = kIdMenuList;
     list.click = [] {};
     // Three items a notch, as Windows scrolls lists.
-    list.wheel = [this](int notches) {
-        menu_.scroll -= notches * 3.0f * kItemHeight;
-        Invalidate();
+    list.scroll = [this, maxScroll](float notches, bool precise) {
+        ScrollBy(AnimKey(kIdMenuList, 0), menu_.scroll, notches * 3.0f * kItemHeight, maxScroll, precise);
     };
     AddHit(std::move(list));
 
@@ -1527,9 +1537,8 @@ void Panel::DrawList(const D2D1_RECT_F& list, uint32_t id, float& scroll, size_t
     Hit wheel;
     wheel.rect = list;
     wheel.id = id;
-    wheel.wheel = [this, &scroll, maxScroll, pitch](int notches) {
-        scroll = std::clamp(scroll - notches * pitch, 0.0f, maxScroll);
-        Invalidate();
+    wheel.scroll = [this, &scroll, maxScroll, pitch, id](float notches, bool precise) {
+        ScrollBy(AnimKey(id, 0), scroll, notches * pitch, maxScroll, precise);
     };
     AddHit(std::move(wheel));
 
@@ -1602,7 +1611,7 @@ const Panel::Hit* Panel::HitAt(float x, float y, bool wheel) const {
         if (!Contains(it->rect, x, y)) {
             continue;
         }
-        if (wheel ? static_cast<bool>(it->wheel) : (it->click || it->drag || it->doubleClick)) {
+        if (wheel ? (it->wheel || it->scroll) : (it->click || it->drag || it->doubleClick)) {
             return &*it;
         }
     }
@@ -1694,13 +1703,21 @@ void Panel::OnMouseUp(float x, float y) {
 }
 
 void Panel::OnWheel(float x, float y, int delta) {
+    const Hit* hit = HitAt(x, y, true);
+    // Scrolling follows every part of a notch; steps such as a volume or the balance wait for whole notches.
+    if (hit && hit->scroll) {
+        wheelRemainder_ = 0;
+        const auto scroll = hit->scroll;
+        scroll(static_cast<float>(delta) / WHEEL_DELTA, delta % WHEEL_DELTA != 0);
+        return;
+    }
     wheelRemainder_ += delta;
     const int notches = wheelRemainder_ / WHEEL_DELTA;
     if (notches == 0) {
         return;
     }
     wheelRemainder_ -= notches * WHEEL_DELTA;
-    if (const Hit* hit = HitAt(x, y, true)) {
+    if (hit) {
         const auto wheel = hit->wheel;
         wheel(notches);
     }

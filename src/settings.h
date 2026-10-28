@@ -292,6 +292,9 @@ struct Settings {
     bool mediaGroup = false;                           // Offer the Media group outside the virtual device mode.
     bool auxGroup = false;                             // Offer the Aux group, likewise.
     bool equalizer = false;                            // Equalizer tab and processing in virtual device mode.
+    // Set by hand only (issue #7): the Nova 7 Gen 2 protocol's filter frequencies go out little-endian instead of
+    // big-endian, to tell by ear which order the headset reads.
+    bool nova7EqLittleEndian = false;
     AppearanceSettings appearance;
     RoutingSettings routing;
     DevicePriority outputs;

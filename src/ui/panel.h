@@ -320,6 +320,9 @@ private:
         std::function<void()> click;
         std::function<void(float x, float y)> drag;
         std::function<void(int notches)> wheel;
+        // Scrolling areas take every part of a notch; precise: the turn is not whole notches, as touchpads and
+        // free-spinning wheels send it.
+        std::function<void(float notches, bool precise)> scroll;
         std::function<void()> doubleClick;
         std::function<void()> release;  // When the button goes up after a press on this hit, wherever it is.
         const wchar_t* tooltip = nullptr;  // Shown after the pointer rests on the hit, or on keyboard focus.
@@ -418,6 +421,9 @@ private:
     void DrawTile(const D2D1_RECT_F& rect, uint32_t id, bool first, bool last, bool lifted = false);
     float BeginScroll(Page page, float top);
     void EndScroll(Page page, float top, float y);
+    // Moves a scrolling area's target by distance. Whole notches glide there on the scroll spring; precise turns,
+    // which glide on their own, move the shown position along at once.
+    void ScrollBy(uint64_t key, float& target, float distance, float maxScroll, bool precise);
     // A connected button group: the selected button fills with fill and holds onFill.
     void DrawSegmented(const D2D1_RECT_F& rect, uint32_t baseId, std::span<const wchar_t* const> labels, int selected,
                        D2D1_COLOR_F fill, D2D1_COLOR_F onFill, const std::function<void(int)>& select);

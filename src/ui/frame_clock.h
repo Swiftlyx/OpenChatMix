@@ -23,7 +23,8 @@ public:
     void Start(HWND window, UINT message);
     void Stop();
     bool IsRunning() const { return running_.load(); }
-    // Call when the posted message is handled; at most one message is queued at a time.
+    // Call once the frame for the posted message is drawn; at most one message is queued at a time, and none while
+    // a frame draws, so input that arrives meanwhile goes before the next frame.
     void FrameHandled() { posted_ = false; }
 
 private:

@@ -1012,6 +1012,7 @@ Settings LoadSettings(const std::wstring& path) {
     settings.mediaGroup = ReadInt(path, L"MediaGroup", 0) != 0;
     settings.auxGroup = ReadInt(path, L"AuxGroup", 0) != 0;
     settings.equalizer = ReadInt(path, L"Equalizer", 0) != 0;
+    settings.nova7EqLittleEndian = ReadInt(path, L"Nova7EqLittleEndian", 0) != 0;
 
     AppearanceSettings& appearance = settings.appearance;
     appearance.theme = ParseName(ReadString(path, kAppearanceSection, L"Theme", L"system"), kThemeNames,

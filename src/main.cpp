@@ -948,6 +948,16 @@ void SendChipEqualizer(const EqCurve& curve) {
     g_app.chipCurve = curve;
 }
 
+// The headset's equalizer as it goes out: Nova7EqLittleEndian in the ini flips the Gen 2 protocol's frequency byte
+// order, which no capture confirms yet (issue #7).
+EqualizerSpec SentEqualizerSpec() {
+    EqualizerSpec eq = g_app.features->equalizer;
+    if (eq.bigEndianFrequency && g_app.settings.nova7EqLittleEndian) {
+        eq.bigEndianFrequency = false;
+    }
+    return eq;
+}
+
 void SendEqualizerCurve(const EqCurve& curve) {
     const EqualizerSpec& eq = g_app.features->equalizer;
     // Fourteen writes a band: a drag reaches the chip at most every kEqualizerSendGapMs, the latest curve always.
@@ -967,7 +977,7 @@ void SendEqualizerCurve(const EqCurve& curve) {
         SendChipEqualizer(curve);
         return;
     }
-    for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve)) {
+    for (const std::vector<uint8_t>& command : EqualizerCommands(SentEqualizerSpec(), curve)) {
         SendHeadsetCommand(command, eq.SentAsFeature());
     }
 }
@@ -1007,7 +1017,7 @@ void SendEqualizerFilters(const EqFilters& filters, int preset = -1) {
     KillTimer(g_app.window, kTimerSendEqualizer);
     g_app.equalizerPending.reset();
     g_app.equalizerSentTick = now;
-    const EqualizerSpec& eq = g_app.features->equalizer;
+    const EqualizerSpec eq = SentEqualizerSpec();
     for (const std::vector<uint8_t>& command : EqualizerCommands(eq, filters, preset)) {
         SendHeadsetCommand(command, eq.SentAsFeature());
     }
@@ -2934,6 +2944,9 @@ void ConnectDevice() {
         const DeviceModel& model = *g_app.device.Model();
         Log("connected: %ls", model.name);
         g_app.features = &FeaturesFor(model.family);
+        if (g_app.features->equalizer.bigEndianFrequency && g_app.settings.nova7EqLittleEndian) {
+            Log("equalizer frequencies go out little-endian (Nova7EqLittleEndian=1)");
+        }
         g_app.headset = HeadsetState();
         g_app.dialLevels.reset();
         LoadHeadsetState(g_app.iniPath, model.productId, *g_app.features, g_app.headset);
