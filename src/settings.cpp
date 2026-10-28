@@ -968,6 +968,7 @@ Settings LoadSettings(const std::wstring& path) {
     settings.mediaVolume = std::clamp(ReadInt(path, L"MediaVolume", 100), 0, 100);
     settings.auxVolume = std::clamp(ReadInt(path, L"AuxVolume", 100), 0, 100);
     settings.warnGg = ReadInt(path, L"WarnGg", 1) != 0;
+    settings.allowSleep = ReadInt(path, L"AllowSleep", 0) != 0;
     // Media and the equalizer start turned off; settings files from earlier versions keep their choice.
     settings.mediaGroup = ReadInt(path, L"MediaGroup", 0) != 0;
     settings.auxGroup = ReadInt(path, L"AuxGroup", 0) != 0;
@@ -1100,6 +1101,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"MediaVolume", std::to_wstring(settings.mediaVolume).c_str());
     WriteString(path, L"AuxVolume", std::to_wstring(settings.auxVolume).c_str());
     WriteString(path, L"WarnGg", settings.warnGg ? L"1" : L"0");
+    WriteString(path, L"AllowSleep", settings.allowSleep ? L"1" : L"0");
     WriteString(path, L"MediaGroup", settings.mediaGroup ? L"1" : L"0");
     WriteString(path, L"AuxGroup", settings.auxGroup ? L"1" : L"0");
     WriteString(path, L"Equalizer", settings.equalizer ? L"1" : L"0");

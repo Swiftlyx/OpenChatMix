@@ -315,6 +315,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Write a log for a bug report | *Settings* → *General* → *Diagnostics* → *Write a log*; *Open the log folder* shows `OpenChatMix.log`. |
 | Language, startup, the tour | *Settings* → *General*. |
 | Keep the settings next to the app (portable) | *Settings* → *General* → *Keep settings next to the app*. |
+| Let the PC sleep with virtual devices or the processed microphone | *Settings* → *General* → *Let the computer sleep*. |
 | Back up the settings or move them to another PC | *Settings* → *General* → *Export*; *Import* there takes them back and restarts OpenChatMix. The previous settings go to `%APPDATA%\OpenChatMix\Backups` first. |
 | Recover the headset | Tray menu → *Reconnect headset*. |
 | Headset settings and EQ | *Headset* tab (shown when a supported headset is connected). |
@@ -707,6 +708,14 @@ are in `src/ui/design.h`.
   (CPU load, a slow plugin or a driver), and the `speed` value shows how far apart the devices'
   clocks are. With no such lines, the crackle comes from elsewhere, e.g. the virtual cable's own
   buffer (*VB-CABLE Control Panel → Max Latency*) or a USB hub.
+- **The PC does not go to sleep.** Windows stays awake while any audio stream is open, and virtual device
+  mode and the microphone processing keep theirs open: `powercfg /requests` (as administrator) then lists
+  the headset, the microphone and the cables under `SYSTEM` with *An audio stream is currently in use*.
+  Turn on *Settings → General → Let the computer sleep*: the bridges then close their streams a minute
+  after no app plays into the virtual devices, and the microphone processing a minute after no app
+  records the cable (unless you listen to it); the next app that plays or records opens them again, and
+  the very start of its sound may be cut. An app that keeps its own stream open, such as a game or a
+  voice channel, keeps Windows awake as it would without OpenChatMix.
 - **The visualizer does not show.** With *Music and video* it shows only while an app tells Windows it
   plays — its controls then appear in the Windows media flyout next to the volume. Some games and apps
   do not; choose *Any sound* for them.

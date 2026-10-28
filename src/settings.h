@@ -261,6 +261,8 @@ struct Settings {
     bool popups = true;                                // Popups at all; the low battery warning has its own switch.
     PopupCorner popupCorner = PopupCorner::TopRight;
     bool warnGg = true;                                // Notify when SteelSeries GG takes over the headset.
+    // Virtual device mode and the microphone processing close their streams while unused, so Windows may sleep.
+    bool allowSleep = false;
     bool mediaGroup = false;                           // Offer the Media group outside the virtual device mode.
     bool auxGroup = false;                             // Offer the Aux group, likewise.
     bool equalizer = false;                            // Equalizer tab and processing in virtual device mode.

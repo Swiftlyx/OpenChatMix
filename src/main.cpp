@@ -50,6 +50,7 @@
 #include "gg_screen.h"
 #include "settings.h"
 #include "settings_transfer.h"
+#include "stream_watch.h"
 #include "ui/osd.h"
 #include "ui/tray_flyout.h"
 #include "ui/panel.h"
@@ -82,6 +83,7 @@ constexpr UINT_PTR kTimerAddOnScreen = 17;
 constexpr UINT_PTR kTimerOutputBattery = 18;
 constexpr UINT_PTR kTimerSendEqualizer = 19;
 constexpr UINT_PTR kTimerOutputSound = 20;
+constexpr UINT_PTR kTimerAudioUse = 21;
 constexpr UINT kTrayFrameMs = 15;  // About one frame of a 60 Hz display; the tray needs no more.
 constexpr UINT kMicRetryMs = 3000;
 constexpr UINT kSavePluginsMs = 60 * 1000;  // Plugin settings are kept safe while their windows are used.
@@ -121,6 +123,12 @@ constexpr UINT kOutputBatteryPollMs = 60000;  // A Bluetooth output's battery, a
 // Another output brings its own sound settings once it has stayed this long, so a headset that drops out for a moment
 // keeps its plugins loaded.
 constexpr UINT kOutputSoundDelayMs = 3000;
+// With Let the computer sleep: how often apps that play or record are looked for, more often while something waits
+// to start again, and how long the streams of virtual device mode and the microphone processing stay open after the
+// last of them stopped.
+constexpr UINT kAudioUseCheckMs = 1000;
+constexpr UINT kAudioResumeCheckMs = 100;
+constexpr ULONGLONG kAudioIdleMs = 60 * 1000;
 constexpr ULONGLONG kIdlePreviewMs = 8000;  // A newly chosen animation shows right away for this long.
 constexpr float kSilencePeak = 0.0001f;     // About -80 dBFS.
 // SteelSeries GG's apps draw on the same display; the screensaver holds still while they show something, for as
@@ -281,6 +289,13 @@ struct App {
     std::array<LoadedPlugins, std::size(kPluginChains)> plugins;  // By EqChannel.
     std::wstring micInputId;    // The microphone the running chain records from.
     std::wstring micMonitorId;  // Where the running chain is listened to; empty when it is not.
+    std::wstring micCableId;    // The recording side of the cable the chain plays into; empty when unknown.
+    // Let the computer sleep: apps that play into the virtual devices or record the cable, and the streams paused
+    // while there are none.
+    StreamWatch streamWatch;
+    ULONGLONG bridgeUseTick = 0;
+    ULONGLONG micUseTick = 0;
+    bool micPaused = false;
     std::set<std::wstring> knownOutputs;  // Connected playback devices at the last check.
     std::wstring lastOutput;              // The output in use at the last check.
     std::set<std::wstring> knownMics;     // The same for the microphones.
@@ -1402,7 +1417,9 @@ void UpdateRouting() {
     view.cablesMissing =
         !view.ownDevices && (routing.game.empty() || routing.chat.empty()) && !FindVirtualDevices(endpoints);
     if (routing.enabled) {
-        if (g_app.router.IsRunning()) {
+        if (g_app.router.IsPaused()) {
+            view.status = T(Text::RoutingPaused);
+        } else if (g_app.router.IsRunning()) {
             view.status = T(Text::RoutingRunning);
             if (const int latency = g_app.router.LatencyMs(); latency > 0) {
                 view.status += std::wstring(L" · ") + T(Text::AddsLatency) + L" ~" + std::to_wstring(latency) + L" " +
@@ -1452,6 +1469,8 @@ void StartRouting() {
         UpdateMixerEndpoints();
         const RoutingPlan plan = CurrentRoutingPlan();
         if (!RoutingProblem(plan) && g_app.router.Start(plan, g_app.window)) {
+            // A start counts as use, so Let the computer sleep gives the bridges their minute before pausing them.
+            g_app.bridgeUseTick = GetTickCount64();
             // App volumes may carry the balance from the time the streams were not running; a channel without a
             // bridge gets it back on its apps.
             g_app.mixer.ResetVolumes();
@@ -1586,7 +1605,9 @@ void PushMic() {
         }
     }
     if (settings.enabled) {
-        if (g_app.mic.IsRunning()) {
+        if (g_app.micPaused) {
+            view.status = T(Text::MicPaused);
+        } else if (g_app.mic.IsRunning()) {
             view.status = T(Text::RoutingRunning);
             if (const int latency = g_app.mic.LatencyMs(); latency > 0) {
                 view.status += std::wstring(L" · ") + T(Text::AddsLatency) + L" ~" + std::to_wstring(latency) + L" " +
@@ -1784,6 +1805,9 @@ void StartMic() {
     g_app.mic.Stop();
     g_app.micLevels.Stop();
     KillTimer(g_app.window, kTimerMicRetry);
+    // A start counts as use, so Let the computer sleep gives the chain its minute before pausing it.
+    g_app.micPaused = false;
+    g_app.micUseTick = GetTickCount64();
     const MicSettings& settings = g_app.settings.mic;
     if (!settings.enabled) {
         UnloadPlugins(EqChannel::Mic);
@@ -1795,6 +1819,12 @@ void StartMic() {
     LoadPlugins(EqChannel::Mic, MicProcessor::kRate);
     const std::vector<AudioEndpoint> renders = ListRenderEndpoints();
     const std::wstring output = MicOutputId(renders);
+    g_app.micCableId.clear();
+    for (const auto& endpoint : renders) {
+        if (!output.empty() && endpoint.id == output) {
+            g_app.micCableId = PairedCaptureEndpoint(endpoint, ListCaptureEndpoints());
+        }
+    }
     g_app.mic.SetSettings(MicDsp());
     PushPlugins(EqChannel::Mic);
     // Listening goes where ChatMix plays: the routing output, or the Windows default device.
@@ -1813,15 +1843,71 @@ void StartMic() {
         std::vector<std::wstring> ids{g_app.micInputId};
         if (!output.empty()) {
             ids.push_back(output);
-            for (const auto& endpoint : renders) {
-                if (endpoint.id == output) {
-                    ids.push_back(PairedCaptureEndpoint(endpoint, ListCaptureEndpoints()));
-                }
-            }
+            ids.push_back(g_app.micCableId);
         }
         g_app.micLevels.Start(ids, g_app.window, WM_APP_MIC_LEVEL);
     }
     PushMic();
+}
+
+// Let the computer sleep: an open audio stream keeps Windows awake, so the bridges of virtual device mode run only
+// while an app plays into one of their devices, and the microphone processing only while an app records the cable
+// or the microphone is listened to. A minute after the last of them stopped the streams close; the next one opens
+// them again. The levels, equalizers and plugins stay loaded meanwhile.
+void CheckAudioUse() {
+    const ULONGLONG now = GetTickCount64();
+    const bool allow = g_app.settings.allowSleep;
+    if (g_app.settings.routing.enabled && g_app.router.IsRunning()) {
+        const RoutingPlan& plan = g_app.router.Plan();
+        const bool used = !allow || g_app.streamWatch.InUse(plan.game) || g_app.streamWatch.InUse(plan.chat) ||
+                          g_app.streamWatch.InUse(plan.media) || g_app.streamWatch.InUse(plan.aux);
+        if (used) {
+            g_app.bridgeUseTick = now;
+        }
+        if (used && g_app.router.IsPaused()) {
+            if (g_app.router.Resume()) {
+                Log("routing resumed");
+                SyncOutputPlugins();
+                ApplyLevels();
+                UpdateRouting();
+            } else {
+                PostMessageW(g_app.window, WM_APP_ROUTING, 0, 0);
+            }
+        } else if (!used && !g_app.router.IsPaused() && now - g_app.bridgeUseTick >= kAudioIdleMs) {
+            g_app.router.Pause();
+            Log("routing paused: no app plays into its devices");
+            UpdateRouting();
+        }
+    }
+    if (g_app.settings.mic.enabled && (g_app.mic.IsRunning() || g_app.micPaused)) {
+        // Without the cable's recording side nobody can be seen recording, so the chain keeps running.
+        const bool used = !allow || g_app.settings.mic.monitor || g_app.micCableId.empty() ||
+                          g_app.streamWatch.InUse(g_app.micCableId);
+        if (used) {
+            g_app.micUseTick = now;
+        }
+        if (used && g_app.micPaused) {
+            Log("mic chain resumed");
+            StartMic();
+        } else if (!used && !g_app.micPaused && now - g_app.micUseTick >= kAudioIdleMs) {
+            g_app.mic.Stop();
+            KillTimer(g_app.window, kTimerMicRetry);
+            g_app.micPaused = true;
+            Log("mic chain paused: no app records the cable");
+            PushMic();
+        }
+    }
+}
+
+// The check runs only while the setting is on, or while something it paused waits to start again.
+void UpdateAudioUseWatch() {
+    const bool paused = g_app.router.IsPaused() || g_app.micPaused;
+    if (g_app.settings.allowSleep || paused) {
+        SetTimer(g_app.window, kTimerAudioUse, paused ? kAudioResumeCheckMs : kAudioUseCheckMs, nullptr);
+    } else {
+        KillTimer(g_app.window, kTimerAudioUse);
+        g_app.streamWatch.Clear();
+    }
 }
 
 // Apps on the Game and Chat devices are listed (and routed) in virtual device mode, and those on the device a
@@ -3679,6 +3765,11 @@ void Host::OnSettingsEdit(const std::function<void(Settings&)>& edit) {
     if (before.warnGg != after.warnGg) {
         UpdateStatus();
     }
+    if (before.allowSleep != after.allowSleep) {
+        // Turned off, it starts what it paused at once.
+        CheckAudioUse();
+        UpdateAudioUseWatch();
+    }
     if (!before.checkUpdates && after.checkUpdates) {
         MaybeCheckForUpdate();
     }
@@ -4517,12 +4608,19 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             RefreshOutputBattery();
             return 0;
         }
+        if (wParam == kTimerAudioUse) {
+            CheckAudioUse();
+            UpdateAudioUseWatch();
+            return 0;
+        }
         KillTimer(window, wParam);
         if (wParam == kTimerTrayCard) {
             ShowTrayCard();
         } else if (wParam == kTimerReconnect) {
             ConnectDevice();
         } else if (wParam == kTimerRebindAudio) {
+            // Devices that came or went are looked up again for apps that play or record.
+            g_app.streamWatch.Clear();
             // A new default output takes the balance.
             if (!g_app.settings.routing.enabled) {
                 UpdateMixerEndpoints();
@@ -4541,8 +4639,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             RefreshOutputName();
             UpdateStatus();
             FollowMicPriority();
-            // A cable or microphone that came back, or a new default microphone.
-            if (g_app.settings.mic.enabled &&
+            // A cable or microphone that came back, or a new default microphone. A paused chain takes them when an
+            // app records the cable again.
+            if (g_app.settings.mic.enabled && !g_app.micPaused &&
                 (!g_app.mic.IsRunning() ||
                  (g_app.settings.mic.input.empty() && DefaultCaptureEndpoint(eCommunications) != g_app.micInputId) ||
                  (g_app.settings.mic.monitor && CurrentOutput() != g_app.micMonitorId))) {
@@ -4568,7 +4667,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             SetTimer(window, kTimerUpdateCheck, kUpdateTimerMs, nullptr);
             MaybeCheckForUpdate();
         } else if (wParam == kTimerMicRetry) {
-            if (g_app.settings.mic.enabled && !g_app.mic.IsRunning()) {
+            if (g_app.settings.mic.enabled && !g_app.mic.IsRunning() && !g_app.micPaused) {
                 StartMic();
             }
         } else if (wParam == kTimerSavePlugins) {
@@ -4792,6 +4891,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     FollowOutputPriority();
     StartMic();
     FollowMicPriority();
+    UpdateAudioUseWatch();
     if (!g_app.settings.routing.enabled) {
         UpdateMixerEndpoints();
     }

@@ -101,10 +101,18 @@ public:
     // Posts WM_APP_DEVICE_VOLUME to notifyWindow when the volume of a routed device changes.
     bool Start(const RoutingPlan& plan, HWND notifyWindow);
     void Stop();
+    // Closes the bridges' streams while no app plays into the devices, since a running stream keeps Windows from
+    // sleeping. The plan, levels, equalizers and plugin lists stay, and the router counts as running.
+    void Pause();
+    // Starts the bridges again; false when one could not start, which stops the router.
+    bool Resume();
+    bool IsPaused() const { return paused_; }
     bool IsRunning() const {
-        return started_ && (!gameRouted_ || game_.IsRunning()) && (!chatRouted_ || chat_.IsRunning()) &&
-               (!mediaRouted_ || media_.IsRunning()) && (!auxRouted_ || aux_.IsRunning());
+        return started_ && (paused_ || ((!gameRouted_ || game_.IsRunning()) && (!chatRouted_ || chat_.IsRunning()) &&
+                                        (!mediaRouted_ || media_.IsRunning()) && (!auxRouted_ || aux_.IsRunning())));
     }
+    // The devices the bridges take the sound from; empty for a channel without a bridge.
+    const RoutingPlan& Plan() const { return plan_; }
     // Whether the channel has a bridge in the running plan; without one its apps play straight on its output.
     bool Routes(EqChannel channel) const;
     BridgeError Error() const;
@@ -149,6 +157,10 @@ private:
     DeviceVolume mediaVolume_;
     DeviceVolume auxVolume_;
     bool started_ = false;  // Between a successful Start and Stop, even with no bridge in the plan.
+    bool paused_ = false;
+    RoutingPlan plan_;
+    HWND notify_ = nullptr;
+    UINT32 pausedRates_[4] = {};  // Game, Chat, Media and Aux as they played before the pause.
     bool gameRouted_ = false;
     bool chatRouted_ = false;
     bool mediaRouted_ = false;

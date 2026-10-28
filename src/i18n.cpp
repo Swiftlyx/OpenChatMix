@@ -566,6 +566,10 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Switching after a disconnect and the Next microphone hotkey skip these microphones. You can still use one by clicking it.",  // MicNeverSwitchToHint
     L"Every connected microphone is in Never switch to.",  // AllMicsExcluded
     L"No microphones found",  // NoMicrophones
+    L"Let the computer sleep",  // AllowSleep
+    L"Windows does not sleep while an audio stream is open, and virtual device mode and the microphone processing keep theirs open. With this on, they close them a minute after no app plays into the virtual devices or records the cable, and open them again when one does; the very start of a sound may then be cut.",  // AllowSleepHint
+    L"Paused: no app plays into the virtual devices",  // RoutingPaused
+    L"Paused: no app records the cable",  // MicPaused
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1126,6 +1130,10 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Перемикання після відключення й гаряча клавіша «Наступний мікрофон» оминають ці мікрофони. Перемкнутися на такий мікрофон можна, натиснувши на нього.",
     L"Усі підключені мікрофони в списку «Не перемикатися на».",
     L"Мікрофонів не знайдено",
+    L"Дозволяти комп'ютеру засинати",
+    L"Windows не засинає, поки відкритий аудіопотік, а режим віртуальних пристроїв і обробка мікрофона тримають свої потоки відкритими. Коли це ввімкнено, вони закривають їх через хвилину після того, як жодна програма не грає у віртуальні пристрої й не записує кабель, і відкривають знову, щойно якась почне; самий початок звуку тоді може обрізатися.",
+    L"Пауза: жодна програма не грає у віртуальні пристрої",
+    L"Пауза: жодна програма не записує кабель",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1686,6 +1694,10 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Bağlantı kopunca geçiş ve Sonraki mikrofon kısayolu bu mikrofonları atlar. Yine de birine tıklayarak kullanabilirsiniz.",
     L"Bağlı tüm mikrofonlar Asla geçme listesinde.",
     L"Mikrofon bulunamadı",
+    L"Bilgisayarın uyumasına izin ver",
+    L"Bir ses akışı açıkken Windows uyumaz; sanal cihaz modu ve mikrofon işleme kendi akışlarını açık tutar. Bu açıkken, hiçbir uygulama sanal cihazlara ses çalmadığında ve kabloyu kaydetmediğinde bir dakika sonra akışları kapatır, biri başlayınca yeniden açar; sesin ilk anı o zaman kesilebilir.",
+    L"Duraklatıldı: hiçbir uygulama sanal cihazlara ses çalmıyor",
+    L"Duraklatıldı: hiçbir uygulama kabloyu kaydetmiyor",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

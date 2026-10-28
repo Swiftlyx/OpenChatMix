@@ -564,6 +564,10 @@ enum class Text {
     MicNeverSwitchToHint,
     AllMicsExcluded,
     NoMicrophones,
+    AllowSleep,
+    AllowSleepHint,
+    RoutingPaused,
+    MicPaused,
     Count,
 };
 

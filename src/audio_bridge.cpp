@@ -455,6 +455,9 @@ void AudioBridge::Run() {
 }
 
 bool AudioRouter::Start(const RoutingPlan& plan, HWND notifyWindow) {
+    paused_ = false;
+    plan_ = plan;
+    notify_ = notifyWindow;
     gameRouted_ = !plan.game.empty();
     chatRouted_ = !plan.chat.empty();
     mediaRouted_ = !plan.media.empty();
@@ -504,6 +507,8 @@ bool AudioRouter::Routes(EqChannel channel) const {
 
 void AudioRouter::Stop() {
     started_ = false;
+    paused_ = false;
+    plan_ = {};
     for (DeviceVolume* volume : {&gameVolume_, &chatVolume_, &mediaVolume_, &auxVolume_}) {
         if (volume->control && volume->callback) {
             volume->control->UnregisterControlChangeNotify(volume->callback.Get());
@@ -514,6 +519,35 @@ void AudioRouter::Stop() {
     chat_.Stop();
     media_.Stop();
     aux_.Stop();
+}
+
+void AudioRouter::Pause() {
+    if (!started_ || paused_) {
+        return;
+    }
+    AudioBridge* const bridges[] = {&game_, &chat_, &media_, &aux_};
+    for (size_t index = 0; index < std::size(bridges); ++index) {
+        pausedRates_[index] = bridges[index]->Rate();
+        bridges[index]->Stop();
+    }
+    paused_ = true;
+}
+
+bool AudioRouter::Resume() {
+    if (!started_ || !paused_) {
+        return started_;
+    }
+    paused_ = false;
+    // Volumes, equalizers and plugin lists stayed with the bridges.
+    const bool game = !gameRouted_ || game_.Start(plan_.game, plan_.gameOutput, notify_);
+    const bool chat = !chatRouted_ || chat_.Start(plan_.chat, plan_.chatOutput, notify_);
+    const bool media = !mediaRouted_ || media_.Start(plan_.media, plan_.mediaOutput, notify_);
+    const bool aux = !auxRouted_ || aux_.Start(plan_.aux, plan_.auxOutput, notify_);
+    if (!game || !chat || !media || !aux) {
+        Stop();
+        return false;
+    }
+    return true;
 }
 
 void AudioRouter::WatchVolume(const std::wstring& id, HWND notifyWindow, DeviceVolume& volume) {
@@ -589,6 +623,17 @@ void AudioRouter::SetPlugins(EqChannel channel, PluginList plugins, UINT32 rate)
 }
 
 UINT32 AudioRouter::Rate(EqChannel channel) const {
+    // Paused bridges keep their plugins prepared for the rate they played at.
+    if (paused_) {
+        switch (channel) {
+        case EqChannel::Game: return gameRouted_ ? pausedRates_[0] : 0;
+        case EqChannel::Chat: return chatRouted_ ? pausedRates_[1] : 0;
+        case EqChannel::Media: return mediaRouted_ ? pausedRates_[2] : 0;
+        case EqChannel::Aux: return auxRouted_ ? pausedRates_[3] : 0;
+        case EqChannel::Mic: break;
+        }
+        return 0;
+    }
     switch (channel) {
     case EqChannel::Game: return gameRouted_ ? game_.Rate() : 0;
     case EqChannel::Chat: return chatRouted_ ? chat_.Rate() : 0;

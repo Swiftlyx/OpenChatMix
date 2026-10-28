@@ -163,6 +163,9 @@ void Panel::DrawGeneral() {
             host_.OnAutostartChanged(autostart_);
             Invalidate();
         }),
+        SwitchItem(
+            kIdAllowSleep, T(Text::AllowSleep), settings_.allowSleep,
+            [this] { Edit([](Settings& s) { s.allowSleep = !s.allowSleep; }); }, T(Text::AllowSleepHint)),
     }) + design::kGroupGap;
 
     y = DrawCard(y, {NavItem(kIdTourShow, kGlyphInfo, p.primary, T(Text::TourShow), T(Text::TourShowHint),
