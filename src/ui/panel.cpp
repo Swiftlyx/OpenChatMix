@@ -2012,8 +2012,7 @@ void Panel::RunFileDialog(FileDialog kind) {
         SYSTEMTIME now{};
         GetLocalTime(&now);
         wchar_t stamp[32];
-        swprintf_s(stamp, L" %04u-%02u-%02u %02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
-                   now.wSecond);
+        swprintf_s(stamp, L" %04u-%02u-%02u %02u-%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute);
         request.fileName = std::wstring(T(Text::SettingsFilter)) + stamp + L".zip";
         request.extension = L"zip";
         request.save = true;
