@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.9.4 — 2026-10-29
+
+- The exported settings ZIP shows the time as hours and minutes, for example
+  `OpenChatMix settings 2026-10-29 01-07.zip`, instead of `010712`.
+
 ## 2.9.3 — 2026-10-29
 
 - Settings backups: the exported ZIP is named with the time as well as the date, so several backups made on one
