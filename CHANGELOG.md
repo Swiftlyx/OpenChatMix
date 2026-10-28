@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.8.1 — 2026-10-28
+
+- Two pairs of headphones at once: with Bluetooth headphones connected beside the headset (or beside other
+  headphones in use), the *Mixer* tab shows both, each on a line of its own with its connection and battery, and a
+  lit dot marks the one the sound plays on. The tray card lists both. Before, the battery of Bluetooth headphones
+  showed only while no SteelSeries headset was connected. Follows [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13) by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+- Microphone priority. *Settings → Output devices* is now *Settings → Devices*, with a list for the output devices and
+  one for the microphones. The microphones get the same order of preference, switching when one disconnects or a
+  preferred one comes back (a switched-off wireless headset counts as disconnected) and *Never switch to*. The
+  microphone switched to becomes the Windows default, unless a virtual cable is the default, and the input of the
+  microphone processing when one is chosen there. The *Next microphone* hotkey follows this order. Follows
+  [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13) by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ).
+- ChatMix works on the output in use while a SteelSeries headset is connected, for example on Bluetooth headphones:
+  their apps get the balance too. A headset that mixes by its own dial (Arctis 7, 9, Pro, Pro Wireless) turned the
+  app's balance off as long as it was connected, even with the sound on other headphones; now that happens only
+  while it plays. Elsewhere the app mixes, and a dial the headset reports (Arctis 7, 9, Pro) drives the balance. Reported by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in
+  [#13](https://github.com/Swiftlyx/OpenChatMix/issues/13).
+
 ## 2.8.0 — 2026-10-27
 
 - Each headset and microphone keeps its own sound settings. The equalizers and plugins of Game, Chat, Media and
