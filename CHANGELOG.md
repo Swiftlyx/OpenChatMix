@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.9.2 — 2026-10-28
+
+- The panel no longer holds back the mouse wheel, clicks and keys while it animates. When a frame took longer than
+  one refresh of the monitor (a slower computer, a 144 or 240 Hz screen), the next frame was already waiting when it
+  ended, and Windows hands out such messages before input, so a scroll or the save countdown kept everything else
+  waiting until it was over. Reported by [@zer0ed](https://github.com/zer0ed) in
+  [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+- Scrolling with a touchpad or a mouse wheel that spins freely or scrolls smoothly follows every movement now,
+  instead of waiting for a whole notch and then gliding a full row.
+- A test switch for the Nova 7 Gen 2 protocol's equalizer (Nova 7 `22A1`, Nova 7 Gen 2 `227E`, the Gen 2 7X and 7P
+  models): `Nova7EqLittleEndian=1` under `[ChatMix]` in `OpenChatMix.ini` sends the filter frequencies
+  little-endian instead of big-endian, so the two byte orders can be compared by ear. The log says when it is on.
+  Asked for by [@zer0ed](https://github.com/zer0ed) in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7).
+
 ## 2.9.1 — 2026-10-28
 
 - **Each channel can have devices of its own, in an order.** Turn off *Same as the output* on a channel's *Plays on*
