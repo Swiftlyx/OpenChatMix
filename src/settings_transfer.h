@@ -21,6 +21,9 @@ bool RecycleSettings(const std::wstring& directory);
 // Where an archive waits to be imported by the next start of OpenChatMix.
 std::wstring PendingImportPath(const std::wstring& configDirectory);
 
+// configDirectory\Backups: the copies made before an import, and where export and import open first.
+std::wstring BackupDirectory(const std::wstring& configDirectory);
+
 // Puts the archive's settings in configDirectory: the ini is replaced, presets and plugin states of the
 // same name are overwritten and others are kept. The current settings are first exported to
 // configDirectory\Backups. False if the archive is not a settings archive or the backup failed; nothing

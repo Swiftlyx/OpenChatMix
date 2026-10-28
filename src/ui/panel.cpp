@@ -15,6 +15,7 @@
 
 #include "../app.h"
 #include "../app_info.h"
+#include "../settings_transfer.h"
 #include "panel_internal.h"
 #include "spring.h"
 
@@ -23,6 +24,13 @@ using Microsoft::WRL::ComPtr;
 namespace ui {
 
 using namespace detail;
+
+namespace {
+
+// The settings export and import dialogs share one remembered folder.
+constexpr GUID kSettingsDialog = {0x011ddb65, 0x00bb, 0x44f9, {0x91, 0x05, 0x87, 0xb7, 0xca, 0x80, 0x04, 0xeb}};
+
+}  // namespace
 
 Panel::Panel(HINSTANCE instance, PanelHost& host) : instance_(instance), host_(host) {
     QueryPerformanceFrequency(&frequency_);
@@ -1955,6 +1963,8 @@ void Panel::RunFileDialog(FileDialog kind) {
         bool save = false;
         bool json = false;
         std::wstring extension;  // Added to a typed name without one.
+        std::wstring defaultFolder;  // Opened while Windows remembers no folder for the dialog.
+        std::optional<GUID> client;  // Remembers the dialog's last folder apart from the other dialogs.
     };
     Request request{kind};
     switch (kind) {
@@ -2001,17 +2011,22 @@ void Panel::RunFileDialog(FileDialog kind) {
         request.pattern = L"*.zip";
         SYSTEMTIME now{};
         GetLocalTime(&now);
-        wchar_t date[16];
-        swprintf_s(date, L" %04u-%02u-%02u", now.wYear, now.wMonth, now.wDay);
-        request.fileName = std::wstring(T(Text::SettingsFilter)) + date + L".zip";
+        wchar_t stamp[32];
+        swprintf_s(stamp, L" %04u-%02u-%02u %02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute,
+                   now.wSecond);
+        request.fileName = std::wstring(T(Text::SettingsFilter)) + stamp + L".zip";
         request.extension = L"zip";
         request.save = true;
+        request.defaultFolder = BackupDirectory(ConfigDirectory());
+        request.client = kSettingsDialog;
         break;
     }
     case FileDialog::ImportSettings:
         request.title = T(Text::SettingsImportTitle);
         request.filterName = T(Text::SettingsFilter);
         request.pattern = L"*.zip";
+        request.defaultFolder = BackupDirectory(ConfigDirectory());
+        request.client = kSettingsDialog;
         break;
     case FileDialog::Plugin: {
         request.title = T(Text::PluginTitle);
@@ -2033,6 +2048,9 @@ void Panel::RunFileDialog(FileDialog kind) {
         ComPtr<IFileDialog> dialog;
         const CLSID type = request.save ? CLSID_FileSaveDialog : CLSID_FileOpenDialog;
         if (SUCCEEDED(CoCreateInstance(type, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+            if (request.client) {
+                dialog->SetClientGuid(*request.client);
+            }
             const COMDLG_FILTERSPEC filter{request.filterName.c_str(), request.pattern.c_str()};
             dialog->SetFileTypes(1, &filter);
             dialog->SetTitle(request.title.c_str());
@@ -2045,6 +2063,14 @@ void Panel::RunFileDialog(FileDialog kind) {
             if (!request.folder.empty() &&
                 SUCCEEDED(SHCreateItemFromParsingName(request.folder.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
                 dialog->SetFolder(folder.Get());
+            }
+            // The folder has to exist to be shown.
+            ComPtr<IShellItem> defaultFolder;
+            if (!request.defaultFolder.empty() &&
+                (CreateDirectoryW(request.defaultFolder.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS) &&
+                SUCCEEDED(SHCreateItemFromParsingName(request.defaultFolder.c_str(), nullptr,
+                                                      IID_PPV_ARGS(&defaultFolder)))) {
+                dialog->SetDefaultFolder(defaultFolder.Get());
             }
             if (!request.fileName.empty()) {
                 dialog->SetFileName(request.fileName.c_str());

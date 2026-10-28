@@ -360,7 +360,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Language, startup, the tour | *Settings* → *General*. |
 | Keep the settings next to the app (portable) | *Settings* → *General* → *Keep settings next to the app*. |
 | Let the PC sleep with virtual devices or the processed microphone | *Settings* → *General* → *Let the computer sleep*. |
-| Back up the settings or move them to another PC | *Settings* → *General* → *Export*; *Import* there takes them back and restarts OpenChatMix. The previous settings go to `%APPDATA%\OpenChatMix\Backups` first. |
+| Back up the settings or move them to another PC | *Settings* → *General* → *Export* saves a ZIP named with the date and time; *Import* there takes one back and restarts OpenChatMix. The previous settings go to `%APPDATA%\OpenChatMix\Backups` first (next to `OpenChatMix.exe` when the settings are kept there), and both buttons open that folder until you pick another one. |
 | Recover the headset | Tray menu → *Reconnect headset*. |
 | Headset settings and EQ | *Headset* tab (shown when a supported headset is connected). |
 | Rename, copy or delete saved headset presets | *Headset* tab → the buttons beside each preset under *My presets*. Deleted presets go to the Recycle Bin. |

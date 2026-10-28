@@ -411,12 +411,16 @@ std::wstring PendingImportPath(const std::wstring& configDirectory) {
     return configDirectory + L"\\Pending import.zip";
 }
 
+std::wstring BackupDirectory(const std::wstring& configDirectory) {
+    return configDirectory + L"\\Backups";
+}
+
 bool ImportSettings(const std::wstring& configDirectory, const std::wstring& zipPath) {
     const std::optional<std::vector<Entry>> entries = ReadSettingsArchive(zipPath);
     if (!entries) {
         return false;
     }
-    const std::wstring backups = configDirectory + L"\\Backups";
+    const std::wstring backups = BackupDirectory(configDirectory);
     CreateDirectoryW(backups.c_str(), nullptr);
     SYSTEMTIME now{};
     GetLocalTime(&now);
