@@ -674,9 +674,7 @@ public:
     void OnEqualizerFilters(const EqFilters& filters) override {
         if (const HeadsetFeatures* features = Features()) {
             // As the app does: within the headset's limits.
-            ParametricEq eq;
-            eq.bands = filters;
-            g.headset.eqFilters = PresetFilters(eq, features->equalizer.notch);
+            g.headset.eqFilters = HeadsetFilters(filters, features->equalizer);
             g.headset.eqFiltersKnown = true;
             g.headset.eqPreset = features->equalizer.CustomIndex();
         }

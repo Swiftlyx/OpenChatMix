@@ -574,6 +574,10 @@ enum class Text {
     ProfileInheritsHint,
     ProfileOwnHint,
     ProfileUseAllDevices,
+    MuteLightStyle,
+    OptSteady,
+    OptBreathing,
+    EqChipHint,
     Count,
 };
 

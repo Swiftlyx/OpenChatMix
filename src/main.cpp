@@ -336,6 +336,9 @@ struct App {
     ULONGLONG levelsSentTick = 0;
     ULONGLONG equalizerSentTick = 0;
     std::optional<EqFilters> equalizerPending;  // Filters held back by kEqualizerSendGapMs.
+    std::optional<EqCurve> chipPending;         // A sound chip's curve held back by kEqualizerSendGapMs.
+    // What the dongle's sound chip plays (EqFormat::Chip); none until something was sent to it since it last forgot.
+    std::optional<EqCurve> chipCurve;
     int equalizerPendingPreset = -1;            // The built-in preset they are, -1 for custom filters.
     bool levelsUnverified = false;  // The last balance sent is not confirmed by a state reply yet.
     bool commitPending = false;     // Settings were sent and the headset's save is still to come.
@@ -922,15 +925,65 @@ void ApplyPopupSettings() {
                             corner == PopupCorner::BottomLeft || corner == PopupCorner::BottomRight);
 }
 
+// The dongle's sound chip (EqFormat::Chip): its first curve after it forgot goes out whole, later ones with the bands
+// that changed. It keeps nothing, so there is nothing to save on the headset either.
+void SendChipEqualizer(const EqCurve& curve) {
+    const EqualizerSpec& eq = g_app.features->equalizer;
+    for (int band = 0; band < eq.Bands(); ++band) {
+        if (g_app.chipCurve && (*g_app.chipCurve)[band] == curve[band]) {
+            continue;
+        }
+        const int steps = std::clamp<int>(curve[band], -eq.range, eq.range);
+        for (const std::vector<uint8_t>& command : ChipBandCommands(band, steps / 2.0f)) {
+            g_app.device.SendCommand(command);
+        }
+    }
+    g_app.chipCurve = curve;
+}
+
 void SendEqualizerCurve(const EqCurve& curve) {
+    const EqualizerSpec& eq = g_app.features->equalizer;
+    // Fourteen writes a band: a drag reaches the chip at most every kEqualizerSendGapMs, the latest curve always.
+    const ULONGLONG now = GetTickCount64();
+    if (eq.format == EqFormat::Chip && now - g_app.equalizerSentTick < kEqualizerSendGapMs) {
+        g_app.chipPending = curve;
+        SetTimer(g_app.window, kTimerSendEqualizer,
+                 static_cast<UINT>(kEqualizerSendGapMs - (now - g_app.equalizerSentTick)), nullptr);
+        return;
+    }
     // Filters still held back from a drag would undo it.
     KillTimer(g_app.window, kTimerSendEqualizer);
     g_app.equalizerPending.reset();
-    g_app.equalizerSentTick = GetTickCount64();
-    const EqualizerSpec& eq = g_app.features->equalizer;
+    g_app.chipPending.reset();
+    g_app.equalizerSentTick = now;
+    if (eq.format == EqFormat::Chip) {
+        SendChipEqualizer(curve);
+        return;
+    }
     for (const std::vector<uint8_t>& command : EqualizerCommands(eq, curve)) {
         SendHeadsetCommand(command, eq.SentAsFeature());
     }
+}
+
+// A sound chip that forgot its equalizer (a new connection, the headset switched on) gets it again; a flat curve
+// needs nothing, as the chip starts without one.
+void RestoreChipEqualizer() {
+    g_app.chipCurve.reset();
+    if (!g_app.features || g_app.features->equalizer.format != EqFormat::Chip || !g_app.device.IsOpen()) {
+        return;
+    }
+    const EqualizerSpec& eq = g_app.features->equalizer;
+    const HeadsetState& headset = g_app.headset;
+    const bool preset = headset.eqPreset >= 0 && headset.eqPreset < eq.CustomIndex();
+    const EqCurve curve = preset                  ? eq.presets[headset.eqPreset].curve
+                          : headset.eqCurveKnown ? headset.eqCurve
+                                                 : EqCurve{};
+    if (std::all_of(curve.begin(), curve.end(), [](int8_t band) { return band == 0; })) {
+        return;
+    }
+    Log("equalizer set again on the dongle's sound chip");
+    g_app.equalizerSentTick = GetTickCount64();
+    SendChipEqualizer(curve);
 }
 
 // Sends the filters at most every kEqualizerSendGapMs; the latest ones always go out. preset: the built-in preset
@@ -2830,6 +2883,7 @@ void ConnectDevice() {
         g_app.levels = MixesInHeadset(model) && !ReportsDial(model) ? Levels{} : DialLevels(g_app.levels);
         g_app.panel->SetLevels(g_app.levels);
         g_app.device.Start(g_app.levels);
+        RestoreChipEqualizer();
         StartIdleScreen(false);
         UpdateAddOns();
         SetTimer(g_app.window, kTimerProfileHeadset, kProfileHeadsetDelayMs, nullptr);
@@ -2881,6 +2935,8 @@ void ReconnectDevice() {
 void HandleDeviceLost() {
     Log("headset lost");
     KillTimer(g_app.window, kTimerProfileHeadset);
+    g_app.chipCurve.reset();
+    g_app.chipPending.reset();
     SaveHeadset();
     StopIdleScreen();
     g_app.device.Close();
@@ -3425,10 +3481,8 @@ void Host::OnEqualizerFilters(const EqFilters& filters) {
     if (!g_app.features || !g_app.device.IsOpen() || !g_app.features->equalizer.Parametric()) {
         return;
     }
-    // Within the headset's limits; a notch it has no type for becomes a peak cut.
-    ParametricEq eq;
-    eq.bands = filters;
-    const EqFilters fitted = PresetFilters(eq, g_app.features->equalizer.notch);
+    // Within the headset's limits: filter types it has not, as the closest it plays (see HeadsetFilters).
+    const EqFilters fitted = HeadsetFilters(filters, g_app.features->equalizer);
     SendEqualizerFilters(fitted);
     g_app.headset.eqFilters = fitted;
     g_app.headset.eqFiltersKnown = true;
@@ -4550,6 +4604,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                 Log("headset switched %s", g_app.headset.headsetOff ? "off" : "on");
                 FollowOutputPriority();
                 FollowMicPriority();
+                if (!g_app.headset.headsetOff) {
+                    RestoreChipEqualizer();
+                }
             }
         }
         return 0;
@@ -4708,6 +4765,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         } else if (wParam == kTimerSendEqualizer) {
             if (g_app.equalizerPending && g_app.features && g_app.device.IsOpen()) {
                 SendEqualizerFilters(*g_app.equalizerPending, g_app.equalizerPendingPreset);
+            } else if (g_app.chipPending && g_app.features && g_app.device.IsOpen()) {
+                SendEqualizerCurve(*g_app.chipPending);
             }
         } else if (wParam == kTimerUpdateCheck) {
             SetTimer(window, kTimerUpdateCheck, kUpdateTimerMs, nullptr);

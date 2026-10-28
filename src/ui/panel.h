@@ -544,9 +544,10 @@ private:
     float DrawEqualizer(float top);
     // The equalizer's title with its reset; with extra equalizers, the switch between them below it.
     float DrawEqualizerTitle(float top, std::function<void()> reset);
-    // Ten band sliders from top; change gets the edited curve. Returns the bottom of the band labels.
+    // Band sliders from top, one per label (the ten octave bands without labels); change gets the edited curve.
+    // Returns the bottom of the band labels.
     float DrawBandSliders(float top, const EqCurve& curve, int8_t range, bool editable, uint32_t idBase,
-                          std::function<void(const EqCurve&)> change);
+                          std::function<void(const EqCurve&)> change, std::span<const wchar_t* const> labels = {});
     // The graph and band editor of a parametric headset equalizer, in place of the ten band sliders.
     float DrawHeadsetFilters(float top);
     // An extra equalizer of the Nova Elite (Bluetooth, microphone): presets and ten band sliders.
@@ -833,6 +834,7 @@ private:
     std::unordered_map<uint64_t, Motion> animations_;
     FrameClock frames_;
     bool animating_ = false;
+    bool slowAnimating_ = false;  // Something changes slowly with time: drawn again by kSlowFrameTimer.
     float frameSeconds_ = 0.0f;
     LARGE_INTEGER lastFrame_{};
     LARGE_INTEGER frequency_{};

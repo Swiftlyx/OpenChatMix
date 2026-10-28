@@ -29,6 +29,10 @@ inline constexpr float kInset = design::kContentInset;
 inline constexpr ULONGLONG kReopenGuardMs = 400;
 inline constexpr UINT_PTR kMeterTimer = 1;     // Panel window timer that reads the level meters.
 inline constexpr UINT_PTR kTooltipTimer = 2;   // Panel window timer for the tooltip delay.
+// Panel window timer for drawings that change slowly with time, such as the headset's save countdown: redrawing the
+// whole page at the display's refresh rate for them slowed the panel down (issue #7).
+inline constexpr UINT_PTR kSlowFrameTimer = 3;
+inline constexpr UINT kSlowFrameMs = 66;  // About 15 frames a second.
 inline constexpr ULONGLONG kSaveDoneMs = 2000;  // How long Done shows after a headset save.
 inline constexpr UINT kTooltipDelayMs = 500;
 inline constexpr UINT kMeterIntervalMs = 33;  // A tray click that closed the panel must not reopen it.

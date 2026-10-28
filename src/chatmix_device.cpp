@@ -287,10 +287,6 @@ void ChatMixDevice::QueryBattery(bool quiet) {
     if (features.batteryQuery) {
         SendQuery(features.batteryQuery, quiet);
     }
-    if (features.probeQuery) {
-        Sleep(kCommandGapMs);
-        SendQuery(features.probeQuery, quiet);
-    }
 }
 
 bool ChatMixDevice::SendCommand(std::span<const uint8_t> payload) {

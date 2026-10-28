@@ -222,13 +222,13 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
     };
     if (spec.Parametric()) {
         // A parametric headset plays the preset's own filters.
-        const EqFilters filters = PresetFilters(preset.eq, spec.notch);
+        const EqFilters filters = HeadsetFilters(preset.eq.bands, spec);
         const EqFilters& current = headset_.eqFilters;
         const bool flat = std::all_of(current.begin(), current.end(), [](const EqBand& band) {
             return !band.enabled || (UsesGain(band.type) && std::fabs(band.gain) < 0.05f);
         });
         const bool saved = std::any_of(userPresets_.begin(), userPresets_.end(), [&](const UserPreset& user) {
-            return PresetFilters(user, spec.range) == current;
+            return HeadsetFilters(PresetFilters(user, spec.range), spec) == current;
         });
         if (headset_.eqFiltersKnown && !flat && !saved && current != filters) {
             backup([&current](const std::wstring& path, const std::wstring& name) {
@@ -262,9 +262,9 @@ void Panel::ApplyHeadsetGamePreset(const NamedEq& preset) {
 void Panel::DrawSaveState(float right, float centerY) {
     const Palette& p = P();
     const ULONGLONG now = GetTickCount64();
-    // Both stages move with time, so they are drawn on every frame, like springs, until Done has faded.
+    // Both stages move with time, so they are drawn again a few times a second until Done has faded.
     if (saveDeadline_ || (savedAt_ && now - savedAt_ < kSaveDoneMs)) {
-        animating_ = true;
+        slowAnimating_ = true;
     }
     if (saveDeadline_) {
         const float left = saveDeadline_ > now ? static_cast<float>(saveDeadline_ - now) : 0.0f;
@@ -322,11 +322,18 @@ float Panel::DrawEqualizer(float y) {
     const EqCurve curve = ActiveCurve();
     y = DrawEqualizerTitle(y, [this] { SetHeadsetCurve(EqCurve{}); });
 
-    // One hint under the presets: a preset stored on the headset cannot be edited, an untested format says so.
-    const wchar_t* hint = devicePreset ? T(Text::EqPresetActive) : eq.experimental ? T(Text::EqExperimental) : nullptr;
+    // One hint under the presets: a preset stored on the headset cannot be edited, an untested format says so, and a
+    // sound chip also that it plays only while the app runs.
+    const wchar_t* hint = devicePreset                  ? T(Text::EqPresetActive)
+                          : eq.format == EqFormat::Chip ? T(Text::EqChipHint)
+                          : eq.experimental             ? T(Text::EqExperimental)
+                                                        : nullptr;
     const float hintHeight = hint ? HintHeight(hint, kWidth - 64.0f) + 4.0f : 0.0f;
     const float bandsHeight = 20.0f + kEqTrackHeight + 30.0f;
-    const D2D1_RECT_F card = Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + HeadsetPresetToolsHeight());
+    // Preset files and game presets have the ten octave bands; an equalizer with bands of its own goes without them.
+    const bool presetTools = eq.Bands() == kEqBands;
+    const D2D1_RECT_F card =
+        Card(y, 16.0f + 44.0f + hintHeight + bandsHeight + (presetTools ? HeadsetPresetToolsHeight() : 0.0f));
 
     std::vector<const wchar_t*> labels;
     for (const auto& preset : eq.presets) {
@@ -344,8 +351,10 @@ float Panel::DrawEqualizer(float y) {
 
     // A preset stored on the headset is shown as it plays, but only the custom curve can be edited.
     const float labelsBottom = DrawBandSliders(inner, curve, eq.range, !devicePreset, 0,
-                                               [this](const EqCurve& next) { SetHeadsetCurve(next); });
-    DrawHeadsetPresetTools(labelsBottom + 6.0f);
+                                               [this](const EqCurve& next) { SetHeadsetCurve(next); }, eq.bandLabels);
+    if (presetTools) {
+        DrawHeadsetPresetTools(labelsBottom + 6.0f);
+    }
     return card.bottom + design::kSectionGap;
 }
 
@@ -382,7 +391,7 @@ float Panel::DrawEqualizerTitle(float y, std::function<void()> reset) {
 }
 
 float Panel::DrawBandSliders(float inner, const EqCurve& curve, int8_t range, bool editable, uint32_t idBase,
-                             std::function<void(const EqCurve&)> change) {
+                             std::function<void(const EqCurve&)> change, std::span<const wchar_t* const> labels) {
     const Palette& p = P();
     const float valueTop = inner;
     const float trackTop = inner + 20.0f;
@@ -390,9 +399,13 @@ float Panel::DrawBandSliders(float inner, const EqCurve& curve, int8_t range, bo
     const float zero = (trackTop + trackBottom) / 2.0f;
     const float half = kEqTrackHeight / 2.0f;
     const float left = 32.0f;
-    const float column = (kWidth - 64.0f) / kEqBands;
+    if (labels.empty()) {
+        labels = kBandLabels;
+    }
+    const int bands = static_cast<int>(std::min<size_t>(labels.size(), kEqBands));
+    const float column = (kWidth - 64.0f) / bands;
     const float alpha = editable ? 1.0f : 0.8f;
-    for (int band = 0; band < kEqBands; ++band) {
+    for (int band = 0; band < bands; ++band) {
         const float cx = left + column * (band + 0.5f);
         const uint32_t id = idBase + kIdEqBand + band;
         const float value = Animate(AnimKey(id, 0), static_cast<float>(curve[band]), design::kSpringFastEffects);
@@ -408,7 +421,7 @@ float Panel::DrawBandSliders(float inner, const EqCurve& curve, int8_t range, bo
                           Alpha(curve[band] == 0 ? p.onSurface : p.primary, alpha));
         canvas_.Text(FormatDb(curve[band]), {cx - column / 2.0f, valueTop, cx + column / 2.0f, valueTop + 16.0f},
                      TextStyle::LabelMedium, Alpha(p.onSurfaceVariant, alpha), TextAlign::Center);
-        canvas_.Text(kBandLabels[band],
+        canvas_.Text(labels[band],
                      {cx - column / 2.0f, trackBottom + 8.0f, cx + column / 2.0f, trackBottom + 24.0f},
                      TextStyle::BodySmall, p.onSurfaceVariant, TextAlign::Center);
 
@@ -551,7 +564,7 @@ void Panel::DrawHeadsetPresetTools(float actions) {
         for (const UserPreset& preset : presets) {
             const D2D1_RECT_F row{24.0f, rowTop, kWidth - 24.0f, rowTop + kPresetRowHeight};
             if (parametric) {
-                const EqFilters presetFilters = PresetFilters(preset, eq.range);
+                const EqFilters presetFilters = HeadsetFilters(PresetFilters(preset, eq.range), eq);
                 DrawPresetRow(preset, row, presetFilters == filters,
                               [this, presetFilters] { SetHeadsetFilters(presetFilters); });
             } else {

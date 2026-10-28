@@ -170,14 +170,17 @@ Panel::EqEditor Panel::HeadsetEqEditor() {
         ParametricEq eq;
         eq.bands = ActiveHeadsetFilters();
         edit(eq);
-        SetHeadsetFilters(PresetFilters(eq, features_->equalizer.notch));
+        SetHeadsetFilters(HeadsetFilters(eq.bands, features_->equalizer));
     };
     editor.band = &headsetBand_;
     editor.accent = p.primary;
     editor.onAccent = p.onPrimary;
     editor.hardware = true;
-    // Notch is the last type; only headsets with a notch type of their own offer it.
-    editor.typeCount = features_->equalizer.notch ? kFilterTypeCount : kFilterTypeCount - 1;
+    // Peak is the first type and notch the last; only headsets with a notch type of their own offer it, and those
+    // that play only peaks offer no choice.
+    editor.typeCount = features_->equalizer.peaksOnly ? 1
+                       : features_->equalizer.notch   ? kFilterTypeCount
+                                                      : kFilterTypeCount - 1;
     editor.idBase = kIdHeadsetEqBase;
     return editor;
 }
@@ -660,13 +663,16 @@ float Panel::DrawBandEditor(float y, const ParametricEq& eq, const EqEditor& edi
                                 }});
                     }});
 
+    // A single type leaves nothing to choose.
     const int typeCount = editor.typeCount;
-    rows.push_back(DropdownItem(
-        kIdEqType + ids, T(Text::FilterType), std::min(static_cast<int>(settings.type), typeCount - 1), typeCount,
-        [](int i) { return std::wstring(T(kFilterLabels[i])); },
-        [editBand](int index) {
-            editBand([index](EqBand& target) { target.type = static_cast<FilterType>(index); });
-        }));
+    if (typeCount > 1) {
+        rows.push_back(DropdownItem(
+            kIdEqType + ids, T(Text::FilterType), std::min(static_cast<int>(settings.type), typeCount - 1), typeCount,
+            [](int i) { return std::wstring(T(kFilterLabels[i])); },
+            [editBand](int index) {
+                editBand([index](EqBand& target) { target.type = static_cast<FilterType>(index); });
+            }));
+    }
 
     rows.push_back(NumberItem(
         kIdEqFrequency + ids, T(Text::Frequency), FormatFrequency(settings.frequency), settings.frequency > kEqMinFrequency,

@@ -44,9 +44,10 @@ enum class DeviceFamily {
     Nova5X,
     NovaElite,
     Arctis7,
-    Arctis7Rev2019,  // The Arctis 7 of 2019 also tells whether the headset is on.
+    Arctis7Rev2019,  // The Arctis 7 of 2019, whose link reply HeadsetControl confirms; no 0% guess needed.
     ArctisPro,       // Arctis Pro and Arctis Pro + GameDAC, wired: no battery.
     Arctis1,
+    Arctis7XP,       // Arctis 7X and 7P: the Arctis 1 Wireless' commands, without what only its description has.
     Arctis9,
     ArctisProWireless,
 };

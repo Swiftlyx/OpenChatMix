@@ -1,7 +1,9 @@
 #include "headset.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <numbers>
 #include <optional>
 
 namespace {
@@ -188,7 +190,8 @@ const HeadsetFeatures kNova7Gen2{
                   .range = 20,
                   .presets = kNova7Presets,
                   .format = EqFormat::Parametric,
-                  .experimental = true},
+                  .experimental = true,
+                  .peaksOnly = true},
     .save = kSaveState,
     // The sound pops while these headsets save (issue #7), so a run of changes is saved once, after it ends.
     .saveDelayMs = 3000,
@@ -325,6 +328,91 @@ constexpr uint8_t kWireHighShelf = 5;
 constexpr uint8_t kWireNotch = 6;
 // A band that is off, as GG sends it: a peak at this frequency without gain.
 constexpr uint16_t kWireBandOff = 20001;
+
+// The sound chip of the Arctis 7 and Arctis 1 Wireless dongles (Avnera AV6X02), as SteelSeries' own description
+// gives it (through Linux-Arctis-Manager): six fixed bands whose biquad filters the computer works out at 48 kHz
+// (Audio EQ Cookbook, Q per band) and writes as 28 [channel] [address] [value, float32 big-endian] [filter number],
+// for the left channel 3 and the right channel 4 (filter numbers 42 higher): b0, b1, b2, a0, -a1 and -a2 with a0 one,
+// at the band's address plus 08 plus their index, then the band's address with zeros. Not confirmed on a headset.
+struct ChipBand {
+    ::FilterType type;
+    double frequency;
+    double q;
+    uint8_t filterNumber;  // Of the left channel's first coefficient.
+};
+constexpr ChipBand kChipBands[] = {
+    {::FilterType::LowShelf, 64.0, 1.1, 1},     {::FilterType::Peaking, 180.0, 0.8, 8},
+    {::FilterType::Peaking, 500.0, 0.8, 15},    {::FilterType::Peaking, 1400.0, 0.8, 22},
+    {::FilterType::Peaking, 3900.0, 0.7, 29},   {::FilterType::HighShelf, 11000.0, 1.1, 36},
+};
+constexpr const wchar_t* kChipBandLabels[] = {L"64", L"180", L"500", L"1.4k", L"3.9k", L"11k"};
+static_assert(std::size(kChipBands) == std::size(kChipBandLabels));
+constexpr uint8_t kChipCommand = 0x28;
+constexpr uint8_t kChipLeft = 3;
+constexpr uint8_t kChipRight = 4;
+constexpr uint8_t kChipRightFilters = 42;  // Added to the filter numbers of the right channel.
+constexpr uint8_t kChipCoefficientAddress = 0x08;
+constexpr double kChipSampleRate = 48000.0;
+constexpr EqPreset kChipPresets[] = {{L"Flat", {}}};
+// ±12 dB in half-decibel steps, as SteelSeries Engine offered.
+constexpr EqualizerSpec kChipEqualizer{.bandsCommand = kChipCommand,
+                                       .range = 24,
+                                       .presets = kChipPresets,
+                                       .format = EqFormat::Chip,
+                                       .experimental = true,
+                                       .bandLabels = kChipBandLabels};
+
+// b0, b1, b2, a1, a2 of a band at a gain, divided by a0; no gain gives the filter that changes nothing.
+std::array<double, 5> ChipCoefficients(const ChipBand& band, double gainDb) {
+    if (gainDb == 0.0) {
+        return {1.0, 0.0, 0.0, 0.0, 0.0};
+    }
+    const double w0 = 2.0 * std::numbers::pi * band.frequency / kChipSampleRate;
+    const double cosW0 = std::cos(w0);
+    const double alpha = std::sin(w0) / (2.0 * band.q);
+    const double a = std::pow(10.0, gainDb / 40.0);
+    const double shelfAlpha = 2.0 * std::sqrt(a) * alpha;
+    double b0 = 0.0, b1 = 0.0, b2 = 0.0, a0 = 0.0, a1 = 0.0, a2 = 0.0;
+    switch (band.type) {
+    case ::FilterType::LowShelf:
+        b0 = a * ((a + 1.0) - (a - 1.0) * cosW0 + shelfAlpha);
+        b1 = 2.0 * a * ((a - 1.0) - (a + 1.0) * cosW0);
+        b2 = a * ((a + 1.0) - (a - 1.0) * cosW0 - shelfAlpha);
+        a0 = (a + 1.0) + (a - 1.0) * cosW0 + shelfAlpha;
+        a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cosW0);
+        a2 = (a + 1.0) + (a - 1.0) * cosW0 - shelfAlpha;
+        break;
+    case ::FilterType::HighShelf:
+        b0 = a * ((a + 1.0) + (a - 1.0) * cosW0 + shelfAlpha);
+        b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cosW0);
+        b2 = a * ((a + 1.0) + (a - 1.0) * cosW0 - shelfAlpha);
+        a0 = (a + 1.0) - (a - 1.0) * cosW0 + shelfAlpha;
+        a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cosW0);
+        a2 = (a + 1.0) - (a - 1.0) * cosW0 - shelfAlpha;
+        break;
+    default:
+        b0 = 1.0 + alpha * a;
+        b1 = -2.0 * cosW0;
+        b2 = 1.0 - alpha * a;
+        a0 = 1.0 + alpha / a;
+        a1 = -2.0 * cosW0;
+        a2 = 1.0 - alpha / a;
+        break;
+    }
+    return {b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0};
+}
+
+std::vector<uint8_t> ChipWrite(uint8_t channel, uint8_t address, float value, uint8_t filterNumber) {
+    const uint32_t bits = std::bit_cast<uint32_t>(value);
+    return {kChipCommand,
+            channel,
+            address,
+            static_cast<uint8_t>(bits >> 24),
+            static_cast<uint8_t>(bits >> 16),
+            static_cast<uint8_t>(bits >> 8),
+            static_cast<uint8_t>(bits),
+            filterNumber};
+}
 
 uint8_t WireType(::FilterType type) {
     switch (type) {
@@ -523,19 +611,26 @@ const SettingSpec* HeadsetFeatures::FindSetting(uint8_t command) const {
 
 // Arctis 7 of 2017 and 2019, Arctis Pro and Arctis Pro + GameDAC: sidetone 06 35 [on] 00 [0-18], lights 06 55 01
 // [02 on / 00 off], auto-off 06 51 [minutes, 0-90], the battery in percent in the answer to 06 18, and 06 09 to keep
-// a setting. The Linux driver also asks the Arctis 7 of 2019 whether the headset is on: 06 14, answered with 03 when
-// it is.
+// a setting. Whether the headset is on: 06 14, answered with 03 when it is and 01 when it is not (both Arctis 7
+// models, as SteelSeries describes them). Also from that description, on the Arctis 7: microphone volume
+// 06 33 00 [0-100] and the mute light 06 45 [1 steady, 2 breathing].
 constexpr SettingSpec kLegacySidetone[] = {
     {0x35, Sidetone, SettingKind::Slider, 0, 18, {}, 0, 0, SettingWire::PaddedLevel},
 };
 constexpr SettingSpec kLegacyLights[] = {
     {0x55, EarcupLights, SettingKind::Toggle, 0, 2, {}, 0, 0, SettingWire::Prefixed, 0x01},
 };
+constexpr SettingOption kMuteLightStyles[] = {{1, OptSteady}, {2, OptBreathing}};
+constexpr SettingSpec kArctis7Microphone[] = {
+    {0x33, MicVolume, SettingKind::Slider, 0, 100, {}, 0, 0, SettingWire::Prefixed, 0x00},
+    kLegacySidetone[0],
+    {0x45, MuteLightStyle, SettingKind::Choice, 1, 2, kMuteLightStyles},
+};
 constexpr SettingSpec kArctis7Power[] = {
     {0x51, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts},
 };
 constexpr SettingSection kArctis7Sections[] = {
-    {Microphone, kLegacySidetone},
+    {Microphone, kArctis7Microphone},
     {Lighting, kLegacyLights},
     {Power, kArctis7Power},
 };
@@ -546,23 +641,25 @@ constexpr SettingSection kArctisProSections[] = {
 constexpr uint8_t kArctis7Battery = 0x18;
 constexpr uint8_t kArctis7Link = 0x14;
 constexpr uint8_t kArctis7HeadsetOn = 0x03;
+constexpr uint8_t kArctis7HeadsetOff = 0x01;
 // The dongle stays plugged in while the headset is off; asked this often, the output follows within seconds.
 constexpr unsigned kArctis7BatteryPollMs = 5000;
 // 0% replies in a row that count as switched off (offAtZeroBattery), so a single one does not move the sound away.
 constexpr int kZeroBatteryReadsOff = 2;
-// The original Arctis 7 answers 0% while it is off. Whether it knows the 2019 model's link query is not known, so
-// that is asked only for the log.
+// The original Arctis 7 answers 0% while it is off, which tells it until its link reply has been seen.
 const HeadsetFeatures kArctis7{
     .sections = kArctis7Sections,
+    .equalizer = kChipEqualizer,
     .save = kSaveState,
     .batteryQuery = kArctis7Battery,
-    .probeQuery = kArctis7Link,
+    .linkQuery = kArctis7Link,
     .offAtZeroBattery = true,
     .batteryPollMs = kArctis7BatteryPollMs,
     .experimental = true,
 };
 const HeadsetFeatures kArctis7Rev2019{
     .sections = kArctis7Sections,
+    .equalizer = kChipEqualizer,
     .save = kSaveState,
     .batteryQuery = kArctis7Battery,
     .linkQuery = kArctis7Link,
@@ -576,11 +673,20 @@ const HeadsetFeatures kArctisPro{
 };
 
 // Arctis 1 Wireless, Arctis 1 Xbox, Arctis 7X and Arctis 7P: sidetone as on the Arctis 7, auto-off 06 53 [minutes],
-// 06 12 answered with [01 when the headset is off] [battery in percent].
+// 06 12 answered with [01 when the headset is off] [battery in percent]. SteelSeries' description of the Arctis 1
+// Wireless (not of the 7X and 7P) adds the microphone volume and the sound chip of the Arctis 7.
+constexpr SettingSpec kArctis1Microphone[] = {
+    {0x33, MicVolume, SettingKind::Slider, 0, 100, {}, 0, 0, SettingWire::Prefixed, 0x00},
+    kLegacySidetone[0],
+};
 constexpr SettingSpec kArctis1Power[] = {
     {0x53, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts},
 };
 constexpr SettingSection kArctis1Sections[] = {
+    {Microphone, kArctis1Microphone},
+    {Power, kArctis1Power},
+};
+constexpr SettingSection kArctis7XPSections[] = {
     {Microphone, kLegacySidetone},
     {Power, kArctis1Power},
 };
@@ -588,6 +694,13 @@ constexpr uint8_t kArctis1Battery = 0x12;
 constexpr uint8_t kArctis1HeadsetOff = 0x01;
 const HeadsetFeatures kArctis1{
     .sections = kArctis1Sections,
+    .equalizer = kChipEqualizer,
+    .save = kSaveState,
+    .batteryQuery = kArctis1Battery,
+    .experimental = true,
+};
+const HeadsetFeatures kArctis7XP{
+    .sections = kArctis7XPSections,
     .save = kSaveState,
     .batteryQuery = kArctis1Battery,
     .experimental = true,
@@ -661,6 +774,7 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     case DeviceFamily::Arctis7Rev2019: return kArctis7Rev2019;
     case DeviceFamily::ArctisPro: return kArctisPro;
     case DeviceFamily::Arctis1: return kArctis1;
+    case DeviceFamily::Arctis7XP: return kArctis7XP;
     case DeviceFamily::Arctis9: return kArctis9;
     case DeviceFamily::ArctisProWireless: return kArctisProWireless;
     case DeviceFamily::Nova5X: break;
@@ -683,12 +797,13 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
     case DeviceProtocol::ArctisLegacy:
         // 06 18 [battery 0-100] tells nothing about charging or whether the headset is on; 06 14 [03 while it is on]
         // does the latter.
-        // The original model's reply to 06 14 only goes to the log (HeadsetFeatures::probeQuery).
+        // A link reply with another value than the two described is left alone.
         if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Battery) {
             updates.push_back({.kind = Kind::Battery, .value = std::min<int>(data[2], 100), .linkKnown = false});
         } else if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Link &&
-                   FeaturesFor(model.family).linkQuery == kArctis7Link) {
-            updates.push_back({.kind = Kind::Link, .headsetOff = data[2] != kArctis7HeadsetOn});
+                   FeaturesFor(model.family).linkQuery == kArctis7Link &&
+                   (data[2] == kArctis7HeadsetOn || data[2] == kArctis7HeadsetOff)) {
+            updates.push_back({.kind = Kind::Link, .headsetOff = data[2] == kArctis7HeadsetOff});
         }
         return updates;
     case DeviceProtocol::Arctis1Legacy:
@@ -813,14 +928,15 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         // Handled by the balance logic, not part of the settings.
         break;
     case Kind::Battery:
-        // A 0% that may only mean the headset is off: off once it repeats, while the last real battery stays.
-        if (features.offAtZeroBattery && update.value == 0) {
+        // Until a link reply tells it, a 0% that may only mean the headset is off: off once it repeats, while the last
+        // real battery stays.
+        if (features.offAtZeroBattery && !state.linkSeen && update.value == 0) {
             if (++state.zeroBatteryReads >= kZeroBatteryReadsOff) {
                 state.headsetOff = true;
             }
             break;
         }
-        if (features.offAtZeroBattery) {
+        if (features.offAtZeroBattery && !state.linkSeen) {
             state.zeroBatteryReads = 0;
             state.headsetOff = false;
         }
@@ -833,6 +949,7 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         break;
     case Kind::Link:
         state.headsetOff = update.headsetOff;
+        state.linkSeen = true;
         break;
     case Kind::Bluetooth:
         // Mode 1 off, 2 pairing, otherwise on (4 with a link); link 1 when a device is connected, as
@@ -889,6 +1006,16 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         }
         return {command};
     }
+    if (spec.format == EqFormat::Chip) {
+        std::vector<std::vector<uint8_t>> commands;
+        for (int band = 0; band < spec.Bands(); ++band) {
+            const int steps = std::clamp<int>(curve[band], -spec.range, spec.range);
+            for (auto& command : ChipBandCommands(band, steps / 2.0f)) {
+                commands.push_back(std::move(command));
+            }
+        }
+        return commands;
+    }
     if (spec.format == EqFormat::FeatureGains) {
         std::vector<uint8_t> report = EliteReportHead(spec, preset);
         for (const int8_t band : curve) {
@@ -898,6 +1025,29 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
     }
     const bool builtin = preset >= 0 && preset < spec.CustomIndex();
     return EqualizerCommands(spec, builtin ? BuiltinPresetFilters(spec, preset) : CurveFilters(curve, spec.range), preset);
+}
+
+// A band without gain gets the filter that changes nothing written too, rather than only its closing write, as
+// whether that write alone turns the band off is not known.
+std::vector<std::vector<uint8_t>> ChipBandCommands(int band, float gainDb) {
+    std::vector<std::vector<uint8_t>> commands;
+    if (band < 0 || band >= static_cast<int>(std::size(kChipBands))) {
+        return commands;
+    }
+    const ChipBand& spec = kChipBands[band];
+    const auto [b0, b1, b2, a1, a2] = ChipCoefficients(spec, gainDb);
+    const float values[] = {static_cast<float>(b0), static_cast<float>(b1), static_cast<float>(b2), 1.0f,
+                            static_cast<float>(-a1), static_cast<float>(-a2)};
+    const uint8_t address = static_cast<uint8_t>(band << 4);
+    const uint8_t rightFilters = static_cast<uint8_t>(spec.filterNumber + kChipRightFilters);
+    for (const auto [channel, filters] : {std::pair{kChipLeft, spec.filterNumber}, std::pair{kChipRight, rightFilters}}) {
+        for (uint8_t index = 0; index < std::size(values); ++index) {
+            commands.push_back(ChipWrite(channel, static_cast<uint8_t>(address | kChipCoefficientAddress | index),
+                                         values[index], static_cast<uint8_t>(filters + index)));
+        }
+        commands.push_back(ChipWrite(channel, address, 0.0f, static_cast<uint8_t>(filters + std::size(values))));
+    }
+    return commands;
 }
 
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters, int preset) {
@@ -946,7 +1096,22 @@ EqFilters CurveFilters(const EqCurve& curve, int8_t range, bool shelves) {
 EqFilters BuiltinPresetFilters(const EqualizerSpec& spec, int index) {
     const EqCurve& curve = spec.presets[index].curve;
     const bool flat = std::all_of(curve.begin(), curve.end(), [](int8_t band) { return band == 0; });
-    return CurveFilters(curve, spec.range, !flat);
+    return CurveFilters(curve, spec.range, !flat && !spec.peaksOnly);
+}
+
+EqFilters HeadsetFilters(const EqFilters& bands, const EqualizerSpec& spec) {
+    ParametricEq eq;
+    eq.bands = bands;
+    EqFilters filters = PresetFilters(eq, spec.notch);
+    if (spec.peaksOnly) {
+        for (EqBand& band : filters) {
+            if (band.type == ::FilterType::LowPass || band.type == ::FilterType::HighPass) {
+                band.gain = 0.0f;
+            }
+            band.type = ::FilterType::Peaking;
+        }
+    }
+    return filters;
 }
 
 EqFilters PresetFilters(const ParametricEq& eq, bool notch) {

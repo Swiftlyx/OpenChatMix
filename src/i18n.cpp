@@ -576,6 +576,10 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Uses the settings for all devices until you change something below.",  // ProfileInheritsHint
     L"Apply while you use this device: switch to another one during the game and its presets apply instead.",  // ProfileOwnHint
     L"Use the settings for all devices",  // ProfileUseAllDevices
+    L"Mute light",  // MuteLightStyle
+    L"Steady",  // OptSteady
+    L"Breathing",  // OptBreathing
+    L"Experimental, from SteelSeries' own description and not yet tried on a headset: start at a low volume. The dongle keeps no equalizer of its own, so it plays only while OpenChatMix runs; the app sets it again whenever the headset connects or turns on.",  // EqChipHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1146,6 +1150,10 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Поки ви нічого не зміните нижче, діють налаштування для всіх пристроїв.",
     L"Діють, поки ви користуєтеся цим пристроєм: якщо під час гри перейти на інший, застосуються його пресети.",
     L"Брати налаштування для всіх пристроїв",
+    L"Індикатор вимкнення мікрофона",
+    L"Постійно",
+    L"Пульсує",
+    L"Експериментально, за власним описом SteelSeries і ще без перевірки на гарнітурі: почніть із тихої гучності. Донгл не зберігає еквалайзер, тож він діє лише, поки працює OpenChatMix; програма задає його знову щоразу, коли гарнітура підключається чи вмикається.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1716,6 +1724,10 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Aşağıda bir şeyi değiştirene kadar tüm cihazların ayarlarını kullanır.",
     L"Bu cihazı kullanırken geçerlidir: oyun sırasında başka bir cihaza geçerseniz onun ön ayarları uygulanır.",
     L"Tüm cihazların ayarlarını kullan",
+    L"Sessize alma ışığı",
+    L"Sabit",
+    L"Nefes alan",
+    L"Deneysel, SteelSeries'in kendi tanımından ve henüz bir kulaklıkta denenmedi: düşük ses seviyesiyle başlayın. Dongle ekolayzırı saklamaz, bu yüzden yalnızca OpenChatMix çalışırken geçerlidir; uygulama kulaklık her bağlandığında veya açıldığında onu yeniden ayarlar.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

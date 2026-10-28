@@ -1308,7 +1308,7 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
             start = end + 1;
         }
         if (count == kEqBands) {
-            state.eqFilters = PresetFilters(read, features.equalizer.notch);
+            state.eqFilters = HeadsetFilters(read.bands, features.equalizer);
             state.eqFiltersKnown = true;
         } else if (state.eqCurveKnown) {
             state.eqFilters = CurveFilters(state.eqCurve, features.equalizer.range);

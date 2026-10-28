@@ -83,6 +83,9 @@ enum class EqFormat : uint8_t {
     Parametric,  // Nova 7 Gen 2 protocol: a preset name, ten filters, then a commit (see EqualizerCommands).
     Feature,     // Nova Elite: one feature report with the preset's names and ten filters.
     FeatureGains,  // Nova Elite Bluetooth: the same report with ten gains of fixed bands instead of filters.
+    // Arctis 7 and Arctis 1 Wireless: the computer works out the filter of each fixed band and writes it into the
+    // sound chip of the dongle, which keeps nothing when it is unplugged (see ChipBandCommands).
+    Chip,
 };
 
 struct EqualizerSpec {
@@ -95,9 +98,16 @@ struct EqualizerSpec {
     EqFormat format = EqFormat::Graphic;
     bool experimental = false;  // Written from protocol descriptions only, not yet confirmed on the headset.
     bool notch = false;         // Parametric: the headset has a notch filter type of its own.
+    // Parametric: only peaks are known to play right. The Nova 7 Gen 2 whistles loudly with some shelves and passes
+    // (issue #7), so other types become peaks before they are sent.
+    bool peaksOnly = false;
     uint8_t customSlot = 4;     // Nova Elite: the onboard slot of the custom setting.
+    // Fixed bands of their own, as labelled under the sliders, in the first entries of a curve; empty: the ten
+    // octave bands.
+    std::span<const wchar_t* const> bandLabels = {};
     // The custom curve is preset index presets.size().
     int CustomIndex() const { return static_cast<int>(presets.size()); }
+    int Bands() const { return bandLabels.empty() ? kEqBands : static_cast<int>(bandLabels.size()); }
     // Nova Elite: the onboard slot of a preset index or of the custom setting; -1 for neither.
     int SlotOf(int index) const {
         if (index >= 0 && index < CustomIndex()) {
@@ -135,13 +145,11 @@ struct HeadsetFeatures {
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
     uint8_t batteryQuery = 0;            // Answered with the battery status (Nova Pro Wireless, dongles' b0).
     uint8_t linkQuery = 0;               // Answered with whether the headset is on, asked with the battery (Arctis 7).
-    // Asked with the battery only so a log shows the reply, where the model's answer is not known yet.
-    uint8_t probeQuery = 0;
-    uint8_t queryArgument = 0;           // Sent after each query byte (AA on the Arctis Pro Wireless); 0 for none.
+    uint8_t queryArgument = 0;          // Sent after each query byte (AA on the Arctis Pro Wireless); 0 for none.
     // The battery is asked for once the link reply says the headset is on, as neither reply names its query
     // (Arctis Pro Wireless); otherwise both are asked for together.
     bool batteryAfterLink = false;
-    // The dongle answers 0% while the headset is off and has no other way to tell (original Arctis 7): 0% that
+    // The dongle answers 0% while the headset is off (original Arctis 7): until a link reply tells it, 0% that
     // repeats counts as switched off, and any other battery as on.
     bool offAtZeroBattery = false;
     unsigned batteryPollMs = 0;          // How often the battery and link are asked for; 0 for the default.
@@ -180,6 +188,7 @@ struct HeadsetState {
     int spareBattery = -1;            // Percent of the spare battery in the base station; -1 unknown or none.
     bool charging = false;
     bool headsetOff = false;
+    bool linkSeen = false;            // A link reply came, which then alone tells whether the headset is on.
     int zeroBatteryReads = 0;         // 0% replies in a row (HeadsetFeatures::offAtZeroBattery).
     BluetoothState bluetooth = BluetoothState::Unknown;
 
@@ -212,20 +221,26 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
 inline constexpr uint8_t kNoiseControlCommand = 0xBD;
 
 // The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one, one feature
-// report (without its report ID) for the Nova Elite. preset: the index of the built-in preset the curve is, which
-// the Nova Elite takes along by name; -1 for the custom curve.
+// report (without its report ID) for the Nova Elite, those of every band for a sound chip. preset: the index of the
+// built-in preset the curve is, which the Nova Elite takes along by name; -1 for the custom curve.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve, int preset = -1);
+// The commands that set one band of a sound chip (EqFormat::Chip) to a gain in dB, both channels.
+std::vector<std::vector<uint8_t>> ChipBandCommands(int band, float gainDb);
 // The same for the filters of a parametric equalizer.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters,
                                                     int preset = -1);
 // A curve as filters: peaks at the usual octave centres with a Q of one octave; with shelves, the lowest and
 // highest band are shelves instead.
 EqFilters CurveFilters(const EqCurve& curve, int8_t range, bool shelves = false);
-// A built-in preset as GG sets it on a parametric headset: shelves at both ends and peaks between, Flat all peaks.
+// A built-in preset as GG sets it on a parametric headset: shelves at both ends and peaks between, Flat all peaks;
+// all peaks on a headset that plays only peaks.
 EqFilters BuiltinPresetFilters(const EqualizerSpec& spec, int index);
 // The bands of a preset as the headset's filters, within its limits. Without a notch type of its own, a notch
 // becomes the deepest peak cut.
 EqFilters PresetFilters(const ParametricEq& eq, bool notch = false);
+// Filters as the headset plays them, within all its limits: as PresetFilters, and on a headset that plays only peaks
+// a shelf becomes a peak with its gain and a low or high pass a peak without gain.
+EqFilters HeadsetFilters(const EqFilters& filters, const EqualizerSpec& spec);
 // The filters the headset plays now: a preset's curve as filters, or the custom ones.
 EqFilters ActiveFilters(const EqualizerSpec& spec, const HeadsetState& state);
 // The bytes after the report ID that set one setting: [command, value], or the whole stream mix.

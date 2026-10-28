@@ -283,6 +283,11 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
             TickMeters();
             return 0;
         }
+        if (wParam == kSlowFrameTimer) {
+            KillTimer(window, kSlowFrameTimer);
+            Invalidate();
+            return 0;
+        }
         if (wParam == kTooltipTimer) {
             KillTimer(window, kTooltipTimer);
             if (tipId_ && tipId_ == hotId_) {
@@ -436,6 +441,7 @@ void Panel::Render() {
                         : 0.0f;
     lastFrame_ = now;
     animating_ = false;
+    slowAnimating_ = false;
     hits_.clear();
     hitClip_.clear();
     focusables_.clear();
@@ -490,6 +496,10 @@ void Panel::Render() {
     } else {
         frames_.Stop();
         lastFrame_.QuadPart = 0;
+    }
+    // Frames per refresh draw slow changes too; otherwise the timer does, once per frame drawn.
+    if (slowAnimating_ && !animating_) {
+        SetTimer(window_, kSlowFrameTimer, kSlowFrameMs, nullptr);
     }
 }
 
