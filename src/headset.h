@@ -135,10 +135,16 @@ struct HeadsetFeatures {
     uint8_t stateQuery = 0;              // Answered with the current settings (Nova Pro Wired).
     uint8_t batteryQuery = 0;            // Answered with the battery status (Nova Pro Wireless, dongles' b0).
     uint8_t linkQuery = 0;               // Answered with whether the headset is on, asked with the battery (Arctis 7).
+    // Asked with the battery only so a log shows the reply, where the model's answer is not known yet.
+    uint8_t probeQuery = 0;
     uint8_t queryArgument = 0;           // Sent after each query byte (AA on the Arctis Pro Wireless); 0 for none.
     // The battery is asked for once the link reply says the headset is on, as neither reply names its query
     // (Arctis Pro Wireless); otherwise both are asked for together.
     bool batteryAfterLink = false;
+    // The dongle answers 0% while the headset is off and has no other way to tell (original Arctis 7): 0% that
+    // repeats counts as switched off, and any other battery as on.
+    bool offAtZeroBattery = false;
+    unsigned batteryPollMs = 0;          // How often the battery and link are asked for; 0 for the default.
     bool oled = false;                   // 128x64 display that accepts drawing reports (06 93).
     bool bluetooth = false;              // The battery reply also tells the base station's Bluetooth.
     bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
@@ -174,6 +180,7 @@ struct HeadsetState {
     int spareBattery = -1;            // Percent of the spare battery in the base station; -1 unknown or none.
     bool charging = false;
     bool headsetOff = false;
+    int zeroBatteryReads = 0;         // 0% replies in a row (HeadsetFeatures::offAtZeroBattery).
     BluetoothState bluetooth = BluetoothState::Unknown;
 
     HeadsetState() { values.fill(-1); }

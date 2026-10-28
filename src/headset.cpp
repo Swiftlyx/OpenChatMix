@@ -546,10 +546,19 @@ constexpr SettingSection kArctisProSections[] = {
 constexpr uint8_t kArctis7Battery = 0x18;
 constexpr uint8_t kArctis7Link = 0x14;
 constexpr uint8_t kArctis7HeadsetOn = 0x03;
+// The dongle stays plugged in while the headset is off; asked this often, the output follows within seconds.
+constexpr unsigned kArctis7BatteryPollMs = 5000;
+// 0% replies in a row that count as switched off (offAtZeroBattery), so a single one does not move the sound away.
+constexpr int kZeroBatteryReadsOff = 2;
+// The original Arctis 7 answers 0% while it is off. Whether it knows the 2019 model's link query is not known, so
+// that is asked only for the log.
 const HeadsetFeatures kArctis7{
     .sections = kArctis7Sections,
     .save = kSaveState,
     .batteryQuery = kArctis7Battery,
+    .probeQuery = kArctis7Link,
+    .offAtZeroBattery = true,
+    .batteryPollMs = kArctis7BatteryPollMs,
     .experimental = true,
 };
 const HeadsetFeatures kArctis7Rev2019{
@@ -557,6 +566,7 @@ const HeadsetFeatures kArctis7Rev2019{
     .save = kSaveState,
     .batteryQuery = kArctis7Battery,
     .linkQuery = kArctis7Link,
+    .batteryPollMs = kArctis7BatteryPollMs,
     .experimental = true,
 };
 const HeadsetFeatures kArctisPro{
@@ -673,9 +683,11 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
     case DeviceProtocol::ArctisLegacy:
         // 06 18 [battery 0-100] tells nothing about charging or whether the headset is on; 06 14 [03 while it is on]
         // does the latter.
+        // The original model's reply to 06 14 only goes to the log (HeadsetFeatures::probeQuery).
         if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Battery) {
             updates.push_back({.kind = Kind::Battery, .value = std::min<int>(data[2], 100), .linkKnown = false});
-        } else if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Link) {
+        } else if (size >= 3 && data[0] == 0x06 && data[1] == kArctis7Link &&
+                   FeaturesFor(model.family).linkQuery == kArctis7Link) {
             updates.push_back({.kind = Kind::Link, .headsetOff = data[2] != kArctis7HeadsetOn});
         }
         return updates;
@@ -801,6 +813,17 @@ void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const Hea
         // Handled by the balance logic, not part of the settings.
         break;
     case Kind::Battery:
+        // A 0% that may only mean the headset is off: off once it repeats, while the last real battery stays.
+        if (features.offAtZeroBattery && update.value == 0) {
+            if (++state.zeroBatteryReads >= kZeroBatteryReadsOff) {
+                state.headsetOff = true;
+            }
+            break;
+        }
+        if (features.offAtZeroBattery) {
+            state.zeroBatteryReads = 0;
+            state.headsetOff = false;
+        }
         state.battery = update.value;
         state.spareBattery = update.spare;
         state.charging = update.charging;

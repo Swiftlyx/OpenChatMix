@@ -265,26 +265,31 @@ void ChatMixDevice::Start(Levels levels) {
     }
 }
 
-bool ChatMixDevice::SendQuery(uint8_t query) {
+bool ChatMixDevice::SendQuery(uint8_t query, bool quiet) {
     const uint8_t argument = model_ ? FeaturesFor(model_->family).queryArgument : 0;
     lastQuery_ = query;
-    return argument ? Send({query, argument}) : Send({query});
+    const uint8_t payload[] = {query, argument};
+    return Send(std::span<const uint8_t>(payload, argument ? 2 : 1), quiet);
 }
 
-void ChatMixDevice::QueryBattery() {
+void ChatMixDevice::QueryBattery(bool quiet) {
     if (!model_) {
         return;
     }
     const HeadsetFeatures& features = FeaturesFor(model_->family);
     if (features.linkQuery) {
-        SendQuery(features.linkQuery);
+        SendQuery(features.linkQuery, quiet);
         if (features.batteryAfterLink || !features.batteryQuery) {
             return;
         }
         Sleep(kCommandGapMs);
     }
     if (features.batteryQuery) {
-        SendQuery(features.batteryQuery);
+        SendQuery(features.batteryQuery, quiet);
+    }
+    if (features.probeQuery) {
+        Sleep(kCommandGapMs);
+        SendQuery(features.probeQuery, quiet);
     }
 }
 
@@ -370,7 +375,7 @@ bool ChatMixDevice::TakeLevels(Levels& levels) {
     return true;
 }
 
-bool ChatMixDevice::Send(std::span<const uint8_t> payload) {
+bool ChatMixDevice::Send(std::span<const uint8_t> payload, bool quiet) {
     if (command_ == INVALID_HANDLE_VALUE || outputLength_ <= payload.size()) {
         return false;
     }
@@ -378,7 +383,7 @@ bool ChatMixDevice::Send(std::span<const uint8_t> payload) {
     report[0] = reportId_;
     std::copy(payload.begin(), payload.end(), report.begin() + 1);
     // Status polls repeat several times a second; only their first failure and recovery are logged.
-    const bool poll = model_ && LayoutFor(*model_).polled && payload[0] == PollRequest(*model_);
+    const bool poll = quiet || (model_ && LayoutFor(*model_).polled && payload[0] == PollRequest(*model_));
     DWORD written = 0;
     if (!WriteFile(command_, report.data(), static_cast<DWORD>(report.size()), &written, nullptr)) {
         const DWORD error = GetLastError();
@@ -420,9 +425,11 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
     const bool state = model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[1] == 0x20;
     const bool full = state || LogsInFull(*model_);
     const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, full ? 32 : 8));
-    if (current != channel.last) {
+    // Arctis 7 replies name their query, so polls of the dial and the battery that take turns do not log each other.
+    const uint8_t kind = model_->protocol == DeviceProtocol::ArctisLegacy && size >= 2 ? data[1] : 0;
+    if (std::vector<uint8_t>& last = channel.last[kind]; current != last) {
         Log("rx %s", HexBytes(current.data(), current.size()).c_str());
-        channel.last = current;
+        last = current;
     }
 
     if (PushesEvents(*model_) && size >= 2 && data[0] == kNovaProEventReportId && data[1] != kNovaProLinkEvent &&
@@ -504,7 +511,8 @@ void ChatMixDevice::ReadLoop() {
 
     const HeadsetFeatures& features = FeaturesFor(model_->family);
     const bool batteryQuery = features.batteryQuery || features.linkQuery;
-    ULONGLONG nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
+    const ULONGLONG batteryPollMs = features.batteryPollMs ? features.batteryPollMs : kBatteryPollMs;
+    ULONGLONG nextBatteryPoll = GetTickCount64() + batteryPollMs;
     while (!lost) {
         const bool legacy = model_->protocol == DeviceProtocol::ArctisLegacy ||
                             model_->protocol == DeviceProtocol::Arctis9Legacy;
@@ -517,8 +525,8 @@ void ChatMixDevice::ReadLoop() {
         const DWORD wait = WaitForMultipleObjects(static_cast<DWORD>(waits.size()), waits.data(), FALSE, timeout);
         if (wait == WAIT_TIMEOUT) {
             if (batteryQuery && GetTickCount64() >= nextBatteryPoll) {
-                QueryBattery();
-                nextBatteryPoll = GetTickCount64() + kBatteryPollMs;
+                QueryBattery(true);
+                nextBatteryPoll = GetTickCount64() + batteryPollMs;
             }
             if (polled && !pushEventsSeen_) {
                 Send({PollRequest(*model_)});

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <initializer_list>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -77,16 +78,19 @@ private:
     struct Channel {
         HANDLE handle = INVALID_HANDLE_VALUE;
         std::vector<uint8_t> buffer;
-        std::vector<uint8_t> last;  // Previous report, used to keep the log free of repeats.
+        // Previous report of each kind, used to keep the log free of repeats: by the query an Arctis 7 reply names,
+        // otherwise all under 0.
+        std::map<uint8_t, std::vector<uint8_t>> last;
         OVERLAPPED overlapped{};
     };
 
     bool Send(std::initializer_list<uint8_t> payload) { return Send(std::span<const uint8_t>(payload.begin(), payload.size())); }
-    bool Send(std::span<const uint8_t> payload);
+    // quiet: a repeated query that, like status polls, logs only its first failure and recovery.
+    bool Send(std::span<const uint8_t> payload, bool quiet = false);
     // A query byte with the model's query argument, remembered for replies that do not name it.
-    bool SendQuery(uint8_t query);
-    // The battery, and whether the headset is on where the model tells that apart.
-    void QueryBattery();
+    bool SendQuery(uint8_t query, bool quiet = false);
+    // The battery, and whether the headset is on where the model tells that apart; quiet when repeated.
+    void QueryBattery(bool quiet = false);
     void QueueHeadsetUpdates(std::vector<HeadsetUpdate> updates);
     static DWORD WINAPI ReaderProc(void* self);
     void ReadLoop();
