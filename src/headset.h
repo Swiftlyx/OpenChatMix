@@ -40,6 +40,10 @@ enum class SettingWire : uint8_t {
     Prefixed,       // [prefix] [value] (the Arctis Pro Wireless' AA, the Arctis 7 lights' 01, the Arctis 9's 00).
     PaddedLevel,    // [on] 00 [level]: 0 is off (sidetone of the Arctis 7 and Arctis 1).
     Seconds,        // [prefix] [seconds, 16 bits big-endian] of a value in minutes (Arctis 9 auto-off).
+    Trailing,       // [value] [prefix] [suffix]: two fixed bytes after it (Nova 4 mute light).
+    // A 16-bit register of the Arctis 5's chip: 40 02 [prefix: address high] [command: address low] [value scaled
+    // from 0-max to 0-7FFF, big-endian].
+    Register16,
 };
 
 struct SettingSpec {
@@ -52,7 +56,8 @@ struct SettingSpec {
     uint8_t shownWith = 0;  // Non-zero: shown only while that setting has the value below.
     uint8_t shownWithValue = 0;
     SettingWire wire = SettingWire::Byte;
-    uint8_t prefix = 0;  // Prefixed and Seconds: the byte between the command and the value.
+    uint8_t prefix = 0;  // Prefixed and Seconds: the byte between the command and the value; Trailing: after it.
+    uint8_t suffix = 0;  // Trailing: the last byte.
 };
 
 // The GameDAC's stream mix is one command for three sliders: 47 [main] 00 [aux] [mic]. The aux and
@@ -77,15 +82,27 @@ struct EqPreset {
 enum class ExtraEqualizer : uint8_t { Bluetooth, Microphone };
 inline constexpr int kExtraEqualizers = 2;
 
+// How a parametric filter's gain is written.
+enum class FilterGain : uint8_t {
+    Tenths,        // Signed, in 0.1 dB.
+    HalfDecibels,  // 20 plus two steps a decibel, ±10 dB (Nova 5).
+};
+
 // How the equalizer curve reaches the headset.
 enum class EqFormat : uint8_t {
     Graphic,     // [bandsCommand] [10 levels]: baseline plus half-decibel steps.
-    Parametric,  // Nova 7 Gen 2 protocol: a preset name, ten filters, then a commit (see EqualizerCommands).
+    Parametric,  // Ten filters after the bands command, as the spec's parametric fields say (see EqualizerCommands).
     Feature,     // Nova Elite: one feature report with the preset's names and ten filters.
     FeatureGains,  // Nova Elite Bluetooth: the same report with ten gains of fixed bands instead of filters.
-    // Arctis 7 and Arctis 1 Wireless: the computer works out the filter of each fixed band and writes it into the
-    // sound chip of the dongle, which keeps nothing when it is unplugged (see ChipBandCommands).
+    // Arctis 7, Arctis 1 Wireless and Arctis 5: the computer works out the filter of each fixed band and writes it
+    // into the sound chip, which keeps nothing over a reconnect (see ChipBandCommands).
     Chip,
+};
+
+// The sound chips of EqFormat::Chip.
+enum class SoundChip : uint8_t {
+    Av6x02,   // Arctis 7 and Arctis 1 Wireless dongles: six bands, float coefficients, both channels.
+    Cx20892,  // Arctis 5: five bands, 16-bit coefficients, then a commit.
 };
 
 struct EqualizerSpec {
@@ -105,6 +122,14 @@ struct EqualizerSpec {
     // Fixed bands of their own, as labelled under the sliders, in the first entries of a curve; empty: the ten
     // octave bands.
     std::span<const wchar_t* const> bandLabels = {};
+    // Parametric: the command that names the filters before they go out and the one that applies them after (0:
+    // none), whether the bands command carries the link byte, the byte order of the frequency and the gain's form.
+    uint8_t nameCommand = 0;
+    uint8_t applyCommand = 0;
+    bool linkByte = false;
+    bool bigEndianFrequency = false;
+    FilterGain filterGain = FilterGain::Tenths;
+    SoundChip chip = SoundChip::Av6x02;  // Chip.
     // The custom curve is preset index presets.size().
     int CustomIndex() const { return static_cast<int>(presets.size()); }
     int Bands() const { return bandLabels.empty() ? kEqBands : static_cast<int>(bandLabels.size()); }
@@ -131,7 +156,7 @@ struct EqualizerSpec {
 };
 
 struct SaveCommand {
-    uint8_t bytes[2];
+    uint8_t bytes[6];
     uint8_t length;
 };
 
@@ -157,6 +182,7 @@ struct HeadsetFeatures {
     bool bluetooth = false;              // The battery reply also tells the base station's Bluetooth.
     bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
     bool volumeKnob = false;             // A knob that sets the volume itself and reports it (07 25).
+    bool chargingCase = false;           // The spare battery is that of a charging case of its own (GameBuds).
 
     bool HasSettings() const { return !sections.empty() || equalizer.bandsCommand != 0; }
     const EqualizerSpec& Extra(ExtraEqualizer which) const {
@@ -224,8 +250,10 @@ inline constexpr uint8_t kNoiseControlCommand = 0xBD;
 // report (without its report ID) for the Nova Elite, those of every band for a sound chip. preset: the index of the
 // built-in preset the curve is, which the Nova Elite takes along by name; -1 for the custom curve.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqCurve& curve, int preset = -1);
-// The commands that set one band of a sound chip (EqFormat::Chip) to a gain in dB, both channels.
-std::vector<std::vector<uint8_t>> ChipBandCommands(int band, float gainDb);
+// The commands that set one band of a sound chip (EqFormat::Chip) to a gain in dB.
+std::vector<std::vector<uint8_t>> ChipBandCommands(const EqualizerSpec& spec, int band, float gainDb);
+// The command that makes the chip take the bands written, where it needs one; empty otherwise.
+std::vector<uint8_t> ChipCommit(const EqualizerSpec& spec);
 // The same for the filters of a parametric equalizer.
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters,
                                                     int preset = -1);

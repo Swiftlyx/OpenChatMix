@@ -17,8 +17,10 @@ using enum DeviceFamily;
 constexpr DeviceModel kModels[] = {
     {0x12CB, L"Arctis Nova Pro Wired", NovaPro, NovaProWired, 0, 0},
     {0x12CD, L"Arctis Nova Pro Wired", NovaPro, NovaProWired, 0, 0},
+    {0x12FA, L"Arctis Nova Pro Wired", NovaPro, NovaProWired, 0, 0},
     {0x12E0, L"Arctis Nova Pro Wireless", NovaPro, NovaProWireless, 0, 0},
     {0x12E5, L"Arctis Nova Pro Wireless", NovaPro, NovaProWireless, 0, 0},
+    {0x225D, L"Arctis Nova Pro Wireless", NovaPro, NovaProWireless, 0, 0},
     {0x2202, L"Arctis Nova 7", NovaStatus, Nova7, 4, 5, 4},
     {0x22A1, L"Arctis Nova 7", NovaStatus, Nova7Gen2, 4, 5},
     {0x227E, L"Arctis Nova 7 Gen 2", NovaStatus, Nova7Gen2, 4, 5},
@@ -32,16 +34,35 @@ constexpr DeviceModel kModels[] = {
     {0x22A9, L"Arctis Nova 7 Diablo IV", NovaStatus, Nova7Gen2, 4, 5},
     {0x227A, L"Arctis Nova 7 WoW Edition", NovaStatus, Nova7, 4, 5, 4},
     {0x22AB, L"Arctis Nova 7 WoW Edition", NovaStatus, Nova7Gen2, 4, 5},
+    // The Nova 7P's dial sets the sidetone in the headset, so its status carries no balance (offsets 0).
+    {0x220A, L"Arctis Nova 7P", NovaStatus, Nova7P, 0, 0, 4},
+    {0x22A7, L"Arctis Nova 7P", NovaStatus, Nova7PGen2, 0, 0},
+    {0x2298, L"Arctis Nova 7P Gen 2", NovaStatus, Nova7PGen2, 0, 0},
     {0x220E, L"Arctis 7+", NovaStatus, Arctis7Plus, 4, 5, 4},
     {0x2212, L"Arctis 7P+", NovaStatus, Arctis7Plus, 4, 5, 4},
     {0x2216, L"Arctis 7X+", NovaStatus, Arctis7Plus, 4, 5, 4},
     {0x2236, L"Arctis 7+ Destiny", NovaStatus, Arctis7Plus, 4, 5, 4},
-    // The Linux driver reads chat before game on the Nova 5X.
+    // Experimental: from Linux-Arctis-Manager. The status of the Nova 4 is laid out as the Nova 7's.
+    {0x12F2, L"Arctis Nova 4", NovaStatus, Nova4, 4, 5, 4},
+    {0x12F6, L"Arctis Nova 4X", NovaStatus, Nova4, 4, 5, 4},
+    // Experimental: from HeadsetControl. No ChatMix dial; the status is laid out as the Nova 5X's.
+    {0x2269, L"Arctis Nova 3P Wireless", NovaStatus, Nova3Wireless, 0, 0},
+    {0x226D, L"Arctis Nova 3X Wireless", NovaStatus, Nova3Wireless, 0, 0},
+    // Experimental: the battery as HeadsetControl reads it, the settings from Linux-Arctis-Manager.
+    {0x230A, L"Arctis GameBuds", NovaStatus, GameBuds, 0, 0},
+    {0x2317, L"Arctis GameBuds X", NovaStatus, GameBuds, 0, 0},
+    // Experimental: their charging cases, from Linux-Arctis-Manager; read for the case battery beside the GameBuds.
+    {0x230C, L"Arctis GameBuds Case", ChargingCase, GameBudsCase, 0, 0},
+    {0x231A, L"Arctis GameBuds X Case", ChargingCase, GameBudsCase, 0, 0},
+    // The Linux driver reads chat before game on the Nova 5X; HeadsetControl treats the Nova 5 the same.
+    {0x2232, L"Arctis Nova 5", NovaStatus, Nova5X, 6, 5},
     {0x2253, L"Arctis Nova 5X", NovaStatus, Nova5X, 6, 5},
     {0x2264, L"Arctis Nova 5X", NovaStatus, Nova5X, 6, 5},
     // Experimental: from HeadsetControl issue #481 (captures of a real base station) and Linux-Arctis-Manager.
     {0x2244, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
     {0x2270, L"Arctis Nova Elite", Elite, NovaElite, 0, 0},
+    // Experimental: SteelSeries describes the Nova Pro Omni with the Nova Elite's protocol (Linux-Arctis-Manager).
+    {0x2290, L"Arctis Nova Pro Omni", Elite, NovaElite, 0, 0},
     // Experimental: the protocols as HeadsetControl and the Linux hid-steelseries-arctis driver document them.
     {0x1260, L"Arctis 7", ArctisLegacy, Arctis7, 0, 0},
     {0x12AD, L"Arctis 7 (2019)", ArctisLegacy, Arctis7Rev2019, 0, 0},
@@ -49,11 +70,18 @@ constexpr DeviceModel kModels[] = {
     {0x1280, L"Arctis Pro + GameDAC", ArctisLegacy, ArctisPro, 0, 0},
     {0x12B3, L"Arctis 1 Wireless", Arctis1Legacy, Arctis1, 0, 0},
     {0x12B6, L"Arctis 1 Wireless Xbox", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12D0, L"Arctis 1 Wireless Cyberpunk 2077", Arctis1Legacy, Arctis1, 0, 0},
+    {0x12D2, L"Arctis 1 Wireless Xbox Cyberpunk 2077", Arctis1Legacy, Arctis1, 0, 0},
     {0x12D7, L"Arctis 7X", Arctis1Legacy, Arctis7XP, 0, 0},
     {0x12D5, L"Arctis 7P", Arctis1Legacy, Arctis7XP, 0, 0},
     {0x12C2, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
     {0x12C4, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
     {0x1290, L"Arctis Pro Wireless", ProWirelessLegacy, ArctisProWireless, 0, 0},
+    {0x12EC, L"Arctis Nova 3", Nova3Wired, Nova3, 0, 0},
+    {0x1250, L"Arctis 5", Arctis5Legacy, Arctis5, 0, 0},
+    {0x1251, L"Arctis 5 Dota 2 Edition", Arctis5Legacy, Arctis5, 0, 0},
+    {0x12A8, L"Arctis 5 PUBG Edition", Arctis5Legacy, Arctis5, 0, 0},
+    {0x12AA, L"Arctis 5 (2019)", Arctis5Legacy, Arctis5, 0, 0},
 };
 
 // The Arctis 7 reports each side's cut by its dial as a signed step count: 0 is full, about -64 silent.
@@ -134,6 +162,9 @@ std::optional<Levels> ParseChatMixReport(const DeviceModel& model, const uint8_t
         }
         break;
     case NovaStatus: {
+        if (!HasDial(model)) {
+            break;
+        }
         const size_t needed = std::max(model.statusGameOffset, model.statusChatOffset) + 1u;
         if (size >= needed && data[0] == 0xB0) {
             return Levels{Level(data[model.statusGameOffset]), Level(data[model.statusChatOffset])};
@@ -158,15 +189,31 @@ std::optional<Levels> ParseChatMixReport(const DeviceModel& model, const uint8_t
         break;
     case Arctis1Legacy:
     case ProWirelessLegacy:
+    case Nova3Wired:
+    case Arctis5Legacy:
+    case ChargingCase:
         break;
     }
     return std::nullopt;
 }
 
+bool IsChargingCase(const DeviceModel& model) {
+    return model.protocol == ChargingCase;
+}
+
 bool MixesInHeadset(const DeviceModel& model) {
-    return model.protocol == ArctisLegacy || model.protocol == Arctis9Legacy || model.protocol == ProWirelessLegacy;
+    return model.protocol == ArctisLegacy || model.protocol == Arctis9Legacy || model.protocol == ProWirelessLegacy ||
+           model.protocol == Arctis5Legacy;
 }
 
 bool ReportsDial(const DeviceModel& model) {
-    return model.protocol != Arctis1Legacy && model.protocol != ProWirelessLegacy;
+    return model.protocol != Arctis1Legacy && model.protocol != ProWirelessLegacy &&
+           model.protocol != Arctis5Legacy && HasDial(model);
+}
+
+bool HasDial(const DeviceModel& model) {
+    if (model.protocol == Nova3Wired || model.protocol == ChargingCase) {
+        return false;
+    }
+    return model.protocol != NovaStatus || model.statusGameOffset != 0 || model.statusChatOffset != 0;
 }

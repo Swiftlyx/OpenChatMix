@@ -32,6 +32,15 @@ enum class DeviceProtocol {
     // Arctis Pro Wireless base station (experimental): unnumbered reports on interface 0, each command followed by
     // AA, its replies without a header. The base station's knob mixes the Game and Chat devices; it is not read.
     ProWirelessLegacy,
+    // Arctis Nova 3, wired (experimental): commands as feature reports with report ID 0x06 on page FFC0 of interface
+    // 4 (HeadsetControl; Linux-Arctis-Manager assumes 3). Nothing to read and no dial.
+    Nova3Wired,
+    // Arctis 5 (experimental): register writes with report ID 0x04 on interface 3, page 000C. Nothing to read; the
+    // dial mixes the Game and Chat devices in the headset and is not read.
+    Arctis5Legacy,
+    // The charging case of the GameBuds (experimental), no headset of its own: unnumbered reports, commands on
+    // interface 0, events on interface 2. b7 asks for the batteries.
+    ChargingCase,
 };
 
 // Selects the set of native headset settings (see headset.h).
@@ -40,6 +49,14 @@ enum class DeviceFamily {
     NovaProWireless,
     Nova7,
     Nova7Gen2,  // Gen 2 hardware, and Nova 7 models on the Gen 2 firmware: parametric equalizer.
+    Nova7P,     // The Nova 7's commands; its dial sets the sidetone, which the app cannot (HeadsetControl #450).
+    Nova7PGen2, // The same on the Gen 2 firmware.
+    Nova3,          // Wired, commands as feature reports.
+    Nova3Wireless,  // Nova 3P and 3X Wireless.
+    Nova4,          // Nova 4 and 4X.
+    GameBuds,       // Arctis GameBuds and GameBuds X: two buds, no dial.
+    Arctis5,        // Arctis 5 and its editions, wired.
+    GameBudsCase,   // Their charging case, opened beside the GameBuds for its battery.
     Arctis7Plus,
     Nova5X,
     NovaElite,
@@ -68,6 +85,10 @@ const DeviceModel* FindDeviceModel(uint16_t productId);
 bool MixesInHeadset(const DeviceModel& model);
 // The position of that dial can be read; the Arctis Pro Wireless keeps its knob to itself.
 bool ReportsDial(const DeviceModel& model);
+// The headset has a ChatMix dial at all; the Nova 7P's dial sets the sidetone instead.
+bool HasDial(const DeviceModel& model);
+// A charging case rather than a headset (GameBuds).
+bool IsChargingCase(const DeviceModel& model);
 
 // Parses "vid_1038&pid_xxxx" and "&mi_xx" from a device path or hardware ID (case-insensitive).
 std::optional<uint16_t> ParseSteelSeriesProductId(std::wstring_view path);

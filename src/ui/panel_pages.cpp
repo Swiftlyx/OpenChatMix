@@ -145,7 +145,8 @@ void Panel::DrawHeadset() {
             }
         }
         if (headset_.spareBattery >= 0) {
-            text += std::wstring(L" · ") + T(Text::SpareBattery) + L" " + Percent(headset_.spareBattery);
+            const Text spare = features_->chargingCase ? Text::CaseBattery : Text::SpareBattery;
+            text += std::wstring(L" · ") + T(spare) + L" " + Percent(headset_.spareBattery);
         }
         const wchar_t glyph = static_cast<wchar_t>((headset_.charging ? kGlyphBatteryCharging0 : kGlyphBattery0) +
                                                    std::clamp(headset_.battery / 10, 0, 10));

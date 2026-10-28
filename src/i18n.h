@@ -578,6 +578,10 @@ enum class Text {
     OptSteady,
     OptBreathing,
     EqChipHint,
+    InEarDetection,
+    SurroundSound,
+    CaseBattery,
+    EqualizerPreset,
     Count,
 };
 

@@ -233,25 +233,50 @@ works with any headset.
 
 | Headset | USB product IDs | Status |
 | --- | --- | --- |
-| Arctis Nova Pro Wired (PC, Xbox) | `12CB`, `12CD` | ✅ Tested |
+| Arctis Nova Pro Wired (PC, Xbox, v2) | `12CB`, `12CD`, `12FA` | ✅ Tested |
 | Arctis 7+ / 7P+ / 7X+ / 7+ Destiny | `220E`, `2212`, `2216`, `2236` | ✅ Tested (Arctis 7+) |
-| Arctis Nova Pro Wireless (PC, Xbox) | `12E0`, `12E5` | ✅ Works, reported by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) |
+| Arctis Nova Pro Wireless (PC, Xbox, Xbox white) | `12E0`, `12E5`, `225D` | ✅ Works, reported by [@Katan21](https://github.com/Katan21) in [#5](https://github.com/Swiftlyx/OpenChatMix/issues/5) |
 | Arctis Nova 7 / 7 Gen 2 | `2202`, `22A1`, `227E` | ✅ Works, reported by [@zer0ed](https://github.com/zer0ed): Nova 7 `22A1` ([#1](https://github.com/Swiftlyx/OpenChatMix/issues/1)), Nova 7 Gen 2 `227E` ([#2](https://github.com/Swiftlyx/OpenChatMix/issues/2)); the Gen 2 protocol equalizer works on `22A1` and `227E` ([#7](https://github.com/Swiftlyx/OpenChatMix/issues/7)) |
 | Arctis Nova 7X / Diablo IV / WoW | `2206`, `2258`, `229E`, `22AD`, `22A4`, `22A5`, `223A`, `22A9`, `227A`, `22AB` | Untested — same protocol as Nova 7; `229E`, `22A5`, `22AD`, `22A9` and `22AB` use the Gen 2 protocol with the experimental equalizer |
-| Arctis Nova 5X | `2253`, `2264` | Untested — Game and Chat may be swapped |
+| Arctis Nova 5 / 5X | `2232`, `2253`, `2264` | Untested — Game and Chat may be swapped; the parametric equalizer as HeadsetControl sends it is experimental |
 | Arctis Nova Elite | `2244`, `2270` | ✅ ChatMix dial, battery, settings and output switching work, reported by [@liquidshadowfoxx](https://github.com/liquidshadowfoxx) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6); its own equalizers work, the main one, the Bluetooth one and the microphone's, reported by [@Lasfecas](https://github.com/Lasfecas) in [#6](https://github.com/Swiftlyx/OpenChatMix/issues/6) |
 | Arctis 7 (2017, 2019) | `1260`, `12AD` | Experimental: the battery, whether the headset is on, the six-band equalizer of the dongle's sound chip (only while OpenChatMix runs), microphone volume, sidetone, the mute light, earcup lights, auto power-off and the dial's position; the dial mixes in the headset, and OpenChatMix gives Game and Chat its two devices, also in virtual device mode without cables. Asked for by [@HaYToKoRaZ](https://github.com/HaYToKoRaZ) in [#9](https://github.com/Swiftlyx/OpenChatMix/issues/9) |
 | Arctis Pro, Arctis Pro + GameDAC | `1252`, `1280` | Experimental: sidetone, lights and the dial's position, as on the Arctis 7 |
-| Arctis 9 | `12C2`, `12C4` | Experimental: the battery and whether it charges, sidetone, auto power-off and the dial's position; Game and Chat on its two devices, as on the Arctis 7 |
+| Arctis 9 | `12C2`, `12C4` | Experimental: the battery and whether it charges, sidetone, surround sound, the choice of its five equalizer presets (numbered), auto power-off, Bluetooth with the headset and during calls, and the dial's position; Game and Chat on its two devices, as on the Arctis 7 |
 | Arctis Pro Wireless | `1290` | Experimental: the battery, whether the headset is on, sidetone and auto power-off; the base station's knob mixes Game and Chat but cannot be read, so the panel stays in the middle |
-| Arctis 1 Wireless / 1 Xbox / 7X / 7P | `12B3`, `12B6`, `12D7`, `12D5` | Experimental: the battery, whether the headset is on, sidetone and auto power-off; on the Arctis 1 Wireless also the microphone volume and the Arctis 7's equalizer; no dial, so the balance comes from the panel and the hotkeys |
+| Arctis 1 Wireless / 1 Xbox / Cyberpunk 2077 / 7X / 7P | `12B3`, `12B6`, `12D0`, `12D2`, `12D7`, `12D5` | Experimental: the battery, whether the headset is on, sidetone and auto power-off; on the Arctis 1 Wireless also the microphone volume and the Arctis 7's equalizer; no dial, so the balance comes from the panel and the hotkeys |
+| Arctis Nova 7P / 7P Gen 2 | `220A`, `22A7`, `2298` | Experimental: as the Nova 7 (on `22A7` and `2298` as the Nova 7 Gen 2), without the sidetone: its dial sets the sidetone in the headset (HeadsetControl #450), so the balance comes from the panel and the hotkeys |
+| Arctis Nova 3 (wired) | `12EC` | Experimental: the six-band equalizer (±6 dB; the bands are numbered, as no description gives their frequencies), microphone volume, sidetone and the mute light; no dial |
+| Arctis Nova 3P / 3X Wireless | `2269`, `226D` | Experimental: the battery, whether the headset is on, the parametric equalizer, microphone volume, sidetone, volume limiter and auto power-off; no dial |
+| Arctis Nova 4 / 4X | `12F2`, `12F6` | Experimental, from Linux-Arctis-Manager only: the battery, the dial, the equalizer, microphone volume, sidetone, the mute light, volume limiter and auto power-off |
+| Arctis Nova Pro Omni | `2290` | Experimental: as the Nova Elite, as SteelSeries describes it |
+| Arctis GameBuds / GameBuds X | `230A`, `2317` (cases `230C`, `231A`) | Experimental: the battery (the lower of the buds out of the case) and the case's, microphone volume, sidetone, noise control, volume limiter, in-ear detection and the parametric equalizer (peaks only for now); no dial |
+| Arctis 5 (2017, 2019, Dota 2, PUBG) | `1250`, `12AA`, `1251`, `12A8` | Experimental: the five-band equalizer of its chip (only while OpenChatMix runs) and sidetone; the dial mixes Game and Chat in the headset and is not read; wired, no battery |
 
-Not supported: the **Arctis Nova 7P** (its dial controls sidetone, not ChatMix). The Arctis models from
+The **Arctis 3** of every year plugs in by a 3.5 mm jack (or Bluetooth) and has nothing to control. The
+GameBuds' charging case (`230C`, `231A`) is read beside the GameBuds for its battery. The Arctis models from
 before the Nova follow what HeadsetControl and the Linux kernel's driver document; of them, only the Arctis 9
 reports whether it charges. A capture of what SteelSeries GG reads (Wireshark with USBPcap) can add more.
 
 Reports for other models are very welcome — see [Troubleshooting](#troubleshooting) for how to
 collect a log.
+
+### Help wanted: data from your headset
+
+Most models above are marked experimental: their support follows public descriptions of the protocol that
+nobody has checked on that headset yet, so there is no guarantee every function works. If you own one, a log
+with a line on what worked (*Settings → General → Diagnostics → Write a log*) already helps a lot. Some things need more: a
+USB capture of SteelSeries GG or Engine doing them ([how to make one](https://github.com/Swiftlyx/OpenChatMix/issues/6#issuecomment-6323667127)).
+
+| Headset | What a capture would add |
+|---|---|
+| Arctis 9 | Its own equalizer (no source gives the conversion for its chip), and the names and curves of its five presets, which the app can only number |
+| Arctis 9X | Any support at all: it talks to the computer through another SteelSeries channel than plain HID |
+| Arctis Pro + GameDAC (`1280`) | A working connection: the GameDAC has a protocol of its own, described only in part (the units of its equalizer and microphone volume are unknown), so its support here is unverified |
+| Arctis Nova 7 Gen 2 | The filter types other than peaks, and the byte order of their frequency |
+| Arctis Pro Wireless | The equalizer: what one step of its values is in decibels |
+| Arctis 5 | Noise reduction and compression, as Engine set their levels |
+| Arctis GameBuds | The equalizer beyond peaks |
 
 ## Getting started
 
@@ -809,6 +834,11 @@ SteelSeries, Arctis, GameDAC, Sonar and ChatMix are trademarks of SteelSeries Ap
 OpenChatMix includes no SteelSeries software. A 3rd party add-on is a program you choose and run
 yourself; OpenChatMix starts the file you picked and understands GameSense, the protocol SteelSeries
 publishes for programs that talk to its devices.
+
+OpenChatMix is provided as is, without warranty of any kind (see the [license](LICENSE)). It sends
+commands to your headset, and those marked experimental follow protocol descriptions without being
+confirmed on that headset. You use it at your own risk: the author is not liable for any damage to
+devices, hearing or data. Try experimental features at a low volume first.
 
 ## License
 

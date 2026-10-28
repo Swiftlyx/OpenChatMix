@@ -79,6 +79,12 @@ const Choice kChoices[] = {
     {DeviceFamily::Arctis1, Other::None, true, L"Arctis 1 Wireless"},
     {DeviceFamily::Arctis9, Other::None, true, L"Arctis 9"},
     {DeviceFamily::ArctisProWireless, Other::None, true, L"Arctis Pro Wireless"},
+    {DeviceFamily::Nova7P, Other::None, true, L"Arctis Nova 7P"},
+    {DeviceFamily::Nova3, Other::None, true, L"Arctis Nova 3"},
+    {DeviceFamily::Nova3Wireless, Other::None, true, L"Arctis Nova 3P Wireless"},
+    {DeviceFamily::Nova4, Other::None, true, L"Arctis Nova 4"},
+    {DeviceFamily::GameBuds, Other::None, true, L"Arctis GameBuds"},
+    {DeviceFamily::Arctis5, Other::None, true, L"Arctis 5"},
     {DeviceFamily::NovaProWired, Other::UsbHeadset, false, L"Headset (USB Audio Device)"},
     {DeviceFamily::NovaProWired, Other::BluetoothHeadset, false, L"Headphones (Bluetooth)"},
     {DeviceFamily::NovaProWired, Other::Speakers, false, L"Speakers (High Definition Audio Device)"},
@@ -316,6 +322,18 @@ std::vector<ProcessApp> RunningApps() {
     return apps;
 }
 
+// Headsets whose balance the app sets alone: no dial, or one that sets something else.
+bool WithoutDial(DeviceFamily family) {
+    return family == DeviceFamily::Arctis1 || family == DeviceFamily::Arctis7XP || family == DeviceFamily::Nova7P ||
+           family == DeviceFamily::Nova7PGen2 || family == DeviceFamily::Nova3 || family == DeviceFamily::Nova3Wireless ||
+           family == DeviceFamily::GameBuds;
+}
+
+bool Wired(DeviceFamily family) {
+    return family == DeviceFamily::NovaProWired || family == DeviceFamily::ArctisPro || family == DeviceFamily::Nova3 ||
+           family == DeviceFamily::Arctis5;
+}
+
 void PushStatus() {
     const Choice& choice = Current();
     std::wstring device = choice.name;
@@ -323,8 +341,8 @@ void PushStatus() {
     std::wstring connection;
     bool connected = true;
     if (choice.steelSeries) {
-        detail = T(choice.family == DeviceFamily::Arctis1 ? Text::HotkeysOnly : Text::DialChatMix);
-        if (choice.family == DeviceFamily::NovaProWired || choice.family == DeviceFamily::ArctisPro) {
+        detail = T(WithoutDial(choice.family) ? Text::HotkeysOnly : Text::DialChatMix);
+        if (Wired(choice.family)) {
             connection = L"USB";
         } else if (!g.headsetOff) {
             connection = T(Text::Link24Ghz);
@@ -358,16 +376,19 @@ void PushStatus() {
 void PushHeadset() {
     const HeadsetFeatures* features = Features();
     g.headset.battery = BatteryShown() ? g.battery : -1;
-    // The base stations of the Nova Pro Wireless and Nova Elite hold a spare battery, shown full.
-    const bool station = Current().family == DeviceFamily::NovaElite || Current().family == DeviceFamily::NovaProWireless;
+    // The base stations of the Nova Pro Wireless and Nova Elite hold a spare battery, shown full, as the GameBuds'
+    // case does.
+    const bool station = Current().family == DeviceFamily::NovaElite ||
+                         Current().family == DeviceFamily::NovaProWireless || Current().family == DeviceFamily::GameBuds;
     g.headset.spareBattery = BatteryShown() && station ? 100 : -1;
     g.headset.charging = g.charging && !BluetoothBattery();
     g.headset.headsetOff = features && features->batteryQuery && g.headsetOff;
     g.headset.bluetooth = features && features->bluetooth ? g.bluetooth : BluetoothState::Unknown;
     const bool visible = features && features->HasSettings();
     g.panel->SetHeadset(Current().steelSeries ? Current().name : L"", visible ? features : nullptr, g.headset);
-    g.panel->SetBalanceDial(Current().steelSeries && Current().family != DeviceFamily::Arctis1 &&
-                            Current().family != DeviceFamily::ArctisProWireless);
+    g.panel->SetBalanceDial(Current().steelSeries && !WithoutDial(Current().family) &&
+                            Current().family != DeviceFamily::ArctisProWireless &&
+                            Current().family != DeviceFamily::Arctis5);
 }
 
 void PushRouting() {
@@ -388,7 +409,8 @@ void PushRouting() {
     const DeviceFamily family = Current().family;
     view.ownDevices = Current().steelSeries && (family == DeviceFamily::Arctis7 || family == DeviceFamily::Arctis7Rev2019 ||
                                                 family == DeviceFamily::ArctisPro ||
-                                                family == DeviceFamily::Arctis9 || family == DeviceFamily::ArctisProWireless);
+                                                family == DeviceFamily::Arctis9 || family == DeviceFamily::ArctisProWireless ||
+                                                family == DeviceFamily::Arctis5);
     if (view.ownDevices) {
         set(ui::RoutingSlot::Game, routing.game, routing.game.empty() ? L"" : named(routing.game, L""));
         set(ui::RoutingSlot::Chat, routing.chat, routing.chat.empty() ? L"" : named(routing.chat, L""));

@@ -31,6 +31,9 @@ struct DisplayCollection {
     uint8_t reportId = 0;
 };
 
+// The wParam of what a charging case posts, so its messages are told from the headset's.
+inline constexpr WPARAM kChargingCaseTag = 1;
+
 // HID link to the first connected headset from SupportedDevices().
 class ChatMixDevice {
 public:
@@ -40,8 +43,9 @@ public:
     ~ChatMixDevice();
 
     // Opens the command and event collections and starts the reader thread.
-    // Posts WM_APP_CHATMIX and WM_APP_DEVICE_LOST to notifyWindow.
-    bool Open(HWND notifyWindow);
+    // Posts WM_APP_CHATMIX and WM_APP_DEVICE_LOST to notifyWindow, with wParam kChargingCaseTag for a charging case.
+    // chargingCase: open a charging case (GameBuds) instead of a headset.
+    bool Open(HWND notifyWindow, bool chargingCase = false);
     void Close();
     bool IsOpen() const { return model_ != nullptr; }
     const DeviceModel* Model() const { return model_; }
@@ -99,6 +103,7 @@ private:
 
     const DeviceModel* model_ = nullptr;
     HWND notify_ = nullptr;
+    WPARAM notifyTag_ = 0;  // wParam of the posted messages.
     HANDLE command_ = INVALID_HANDLE_VALUE;  // Synchronous handle for output reports.
     USHORT outputLength_ = 0;
     std::wstring commandPath_;

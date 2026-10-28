@@ -579,7 +579,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Mute light",  // MuteLightStyle
     L"Steady",  // OptSteady
     L"Breathing",  // OptBreathing
-    L"Experimental, from SteelSeries' own description and not yet tried on a headset: start at a low volume. The dongle keeps no equalizer of its own, so it plays only while OpenChatMix runs; the app sets it again whenever the headset connects or turns on.",  // EqChipHint
+    L"Experimental, from SteelSeries' own description and not yet tried on a headset: start at a low volume. It plays only while OpenChatMix runs, which sets it again whenever the headset connects or turns on.",  // EqChipHint
+    L"In-ear detection",  // InEarDetection
+    L"Surround sound",  // SurroundSound
+    L"case",  // CaseBattery
+    L"Equalizer preset",  // EqualizerPreset
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1153,7 +1157,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Індикатор вимкнення мікрофона",
     L"Постійно",
     L"Пульсує",
-    L"Експериментально, за власним описом SteelSeries і ще без перевірки на гарнітурі: почніть із тихої гучності. Донгл не зберігає еквалайзер, тож він діє лише, поки працює OpenChatMix; програма задає його знову щоразу, коли гарнітура підключається чи вмикається.",
+    L"Експериментально, за власним описом SteelSeries і ще без перевірки на гарнітурі: почніть із тихої гучності. Він діє лише, поки працює OpenChatMix, а програма задає його знову щоразу, коли гарнітура підключається чи вмикається.",
+    L"Визначення, чи навушники у вухах",
+    L"Об'ємний звук",
+    L"кейс",
+    L"Пресет еквалайзера",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1727,7 +1735,11 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Sessize alma ışığı",
     L"Sabit",
     L"Nefes alan",
-    L"Deneysel, SteelSeries'in kendi tanımından ve henüz bir kulaklıkta denenmedi: düşük ses seviyesiyle başlayın. Dongle ekolayzırı saklamaz, bu yüzden yalnızca OpenChatMix çalışırken geçerlidir; uygulama kulaklık her bağlandığında veya açıldığında onu yeniden ayarlar.",
+    L"Deneysel, SteelSeries'in kendi tanımından ve henüz bir kulaklıkta denenmedi: düşük ses seviyesiyle başlayın. Yalnızca OpenChatMix çalışırken geçerlidir; uygulama kulaklık her bağlandığında veya açıldığında onu yeniden ayarlar.",
+    L"Kulak içi algılama",
+    L"Surround ses",
+    L"kutu",
+    L"Ekolayzır ön ayarı",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

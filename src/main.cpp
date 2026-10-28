@@ -255,6 +255,7 @@ struct App {
     std::wstring iniPath;
     Settings settings;
     ChatMixDevice device;
+    ChatMixDevice chargingCase;  // The GameBuds' case beside them, for its battery.
     HidProbe probe;  // Logs unsupported SteelSeries headsets while the log is on.
     HangWatch hangWatch;  // Writes a dump when the window's thread hangs, while the log is on.
     SessionMixer mixer;
@@ -626,8 +627,8 @@ std::wstring TrayDeviceText() {
             device += std::wstring(L" · ") + T(Text::Charging);
         }
         if (g_app.device.IsOpen() && g_app.headset.spareBattery >= 0) {
-            device += std::wstring(L" · ") + T(Text::SpareBattery) + L" " + std::to_wstring(g_app.headset.spareBattery) +
-                      L"%";
+            const Text spare = g_app.features && g_app.features->chargingCase ? Text::CaseBattery : Text::SpareBattery;
+            device += std::wstring(L" · ") + T(spare) + L" " + std::to_wstring(g_app.headset.spareBattery) + L"%";
         }
     }
     return device;
@@ -723,7 +724,8 @@ void RemoveTray() {
 std::wstring ConnectionText() {
     if (g_app.device.IsOpen()) {
         const DeviceFamily family = g_app.device.Model()->family;
-        if (family == DeviceFamily::NovaProWired || family == DeviceFamily::ArctisPro) {
+        if (family == DeviceFamily::NovaProWired || family == DeviceFamily::ArctisPro ||
+            family == DeviceFamily::Nova3 || family == DeviceFamily::Arctis5) {
             return L"USB";
         }
         if (g_app.headset.headsetOff) {
@@ -934,9 +936,12 @@ void SendChipEqualizer(const EqCurve& curve) {
             continue;
         }
         const int steps = std::clamp<int>(curve[band], -eq.range, eq.range);
-        for (const std::vector<uint8_t>& command : ChipBandCommands(band, steps / 2.0f)) {
+        for (const std::vector<uint8_t>& command : ChipBandCommands(eq, band, steps / 2.0f)) {
             g_app.device.SendCommand(command);
         }
+    }
+    if (const std::vector<uint8_t> commit = ChipCommit(eq); !commit.empty()) {
+        g_app.device.SendCommand(commit);
     }
     g_app.chipCurve = curve;
 }
@@ -2866,8 +2871,20 @@ void ApplyLogSetting() {
     }
 }
 
+// The charging case of a headset that has one (GameBuds), opened beside it for the case's battery.
+void ConnectChargingCase() {
+    if (!g_app.device.IsOpen() || !g_app.features || !g_app.features->chargingCase || g_app.chargingCase.IsOpen()) {
+        return;
+    }
+    if (g_app.chargingCase.Open(g_app.window, true)) {
+        Log("charging case: %ls", g_app.chargingCase.Model()->name);
+        g_app.chargingCase.Start(Levels{});
+    }
+}
+
 void ConnectDevice() {
     if (g_app.device.IsOpen()) {
+        ConnectChargingCase();
         return;
     }
     if (g_app.device.Open(g_app.window)) {
@@ -2884,6 +2901,7 @@ void ConnectDevice() {
         g_app.panel->SetLevels(g_app.levels);
         g_app.device.Start(g_app.levels);
         RestoreChipEqualizer();
+        ConnectChargingCase();
         StartIdleScreen(false);
         UpdateAddOns();
         SetTimer(g_app.window, kTimerProfileHeadset, kProfileHeadsetDelayMs, nullptr);
@@ -2934,6 +2952,7 @@ void ReconnectDevice() {
 
 void HandleDeviceLost() {
     Log("headset lost");
+    g_app.chargingCase.Close();
     KillTimer(g_app.window, kTimerProfileHeadset);
     g_app.chipCurve.reset();
     g_app.chipPending.reset();
@@ -4574,6 +4593,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         return 0;
 
     case WM_APP_HEADSET:
+        if (wParam == kChargingCaseTag) {
+            // The case's battery stands where a base station shows its spare one.
+            for (const auto& update : g_app.chargingCase.TakeHeadsetUpdates()) {
+                if (update.kind == HeadsetUpdate::Kind::Battery && g_app.device.IsOpen()) {
+                    g_app.headset.spareBattery = update.value;
+                }
+            }
+            PushHeadset();
+            UpdateTray(NIM_MODIFY);
+            return 0;
+        }
         if (g_app.features) {
             const bool wasOff = g_app.headset.headsetOff;
             for (const auto& update : g_app.device.TakeHeadsetUpdates()) {
@@ -4619,6 +4649,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         return 0;
 
     case WM_APP_DEVICE_LOST:
+        if (wParam == kChargingCaseTag) {
+            Log("charging case lost");
+            g_app.chargingCase.Close();
+            g_app.headset.spareBattery = -1;
+            PushHeadset();
+            UpdateTray(NIM_MODIFY);
+            return 0;
+        }
         HandleDeviceLost();
         return 0;
 
@@ -4785,11 +4823,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         }
         return 0;
 
-    case WM_DEVICECHANGE:
-        if (!g_app.device.IsOpen() && IsSupportedArrival(wParam, lParam)) {
+    case WM_DEVICECHANGE: {
+        // A headset, or the charging case of the one connected.
+        const bool caseWanted = g_app.features && g_app.features->chargingCase && !g_app.chargingCase.IsOpen();
+        if ((!g_app.device.IsOpen() || caseWanted) && IsSupportedArrival(wParam, lParam)) {
             SetTimer(window, kTimerReconnect, kReconnectDelayMs, nullptr);
         }
         return TRUE;
+    }
 
     case WM_POWERBROADCAST:
         if (wParam == PBT_APMSUSPEND) {
@@ -4798,6 +4839,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         } else if (wParam == PBT_APMRESUMEAUTOMATIC) {
             Log("resume from sleep");
             StopIdleScreen();
+            g_app.chargingCase.Close();
             g_app.device.Close();
             UpdateStatus();
             SetTimer(window, kTimerReconnect, kResumeDelayMs, nullptr);

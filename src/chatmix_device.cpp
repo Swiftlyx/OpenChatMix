@@ -38,10 +38,11 @@ constexpr DWORD kReaderStopTimeoutMs = 2000;
 struct ProtocolLayout {
     int commandInterface;
     uint8_t reportId;
-    int listenInterfaces[2];
+    int listenInterfaces[2];  // -1: none; a layout without any reads nothing.
     bool polled;
     USHORT commandPage = kCommandUsagePage;  // The collection preferred for commands.
     bool anyPage = false;  // Interface 0 of the older Arctis: the pages of its collections are not known.
+    bool featureCommands = false;  // Commands go out as feature reports (Nova 3, wired).
 };
 
 constexpr ProtocolLayout kNovaProLayout{4, 0x06, {4, -1}, false};
@@ -52,10 +53,18 @@ constexpr ProtocolLayout kArctis7Layout{5, 0x06, {5, -1}, true};
 constexpr ProtocolLayout kArctis1Layout{3, 0x06, {3, -1}, false, kArctis1UsagePage};
 constexpr ProtocolLayout kArctis9Layout{0, 0x00, {0, -1}, true, kCommandUsagePage, true};
 constexpr ProtocolLayout kProWirelessLayout{0, 0x00, {0, -1}, false, kCommandUsagePage, true};
+constexpr ProtocolLayout kNova3WiredLayout{4, 0x06, {-1, -1}, false, kCommandUsagePage, false, true};
+constexpr USHORT kConsumerUsagePage = 0x000C;
+constexpr ProtocolLayout kArctis5Layout{3, 0x04, {-1, -1}, false, kConsumerUsagePage};
+// Commands on interface 0, as found on a GameBuds X case; events on page FFC1 of interface 2.
+constexpr ProtocolLayout kGameBudsCaseLayout{0, 0x00, {2, 0}, false};
 
 const ProtocolLayout& LayoutFor(const DeviceModel& model) {
     switch (model.protocol) {
     case DeviceProtocol::NovaPro: return kNovaProLayout;
+    case DeviceProtocol::ChargingCase: return kGameBudsCaseLayout;
+    case DeviceProtocol::Nova3Wired: return kNova3WiredLayout;
+    case DeviceProtocol::Arctis5Legacy: return kArctis5Layout;
     case DeviceProtocol::Elite: return kEliteLayout;
     case DeviceProtocol::ArctisLegacy: return kArctis7Layout;
     case DeviceProtocol::Arctis1Legacy: return kArctis1Layout;
@@ -64,6 +73,11 @@ const ProtocolLayout& LayoutFor(const DeviceModel& model) {
     case DeviceProtocol::NovaStatus: break;
     }
     return kNovaStatusLayout;
+}
+
+// The status is polled for the dial; a dongle without one is asked for its battery like the others.
+bool PollsStatus(const DeviceModel& model) {
+    return LayoutFor(model).polled && (model.protocol != DeviceProtocol::NovaStatus || HasDial(model));
 }
 
 // What a polled device is asked for every poll.
@@ -82,7 +96,10 @@ bool LogsInFull(const DeviceModel& model) {
     case DeviceProtocol::ArctisLegacy:
     case DeviceProtocol::Arctis1Legacy:
     case DeviceProtocol::Arctis9Legacy:
-    case DeviceProtocol::ProWirelessLegacy: return true;
+    case DeviceProtocol::ProWirelessLegacy:
+    case DeviceProtocol::Nova3Wired:
+    case DeviceProtocol::Arctis5Legacy:
+    case DeviceProtocol::ChargingCase: return true;
     default: return false;
     }
 }
@@ -114,14 +131,18 @@ ChatMixDevice::~ChatMixDevice() {
     Close();
 }
 
-bool ChatMixDevice::Open(HWND notifyWindow) {
+bool ChatMixDevice::Open(HWND notifyWindow, bool chargingCase) {
     Close();
     notify_ = notifyWindow;
+    notifyTag_ = chargingCase ? kChargingCaseTag : 0;
 
     const std::vector<HidInterface> interfaces =
         EnumerateSteelSeriesInterfaces([](uint16_t productId) { return FindDeviceModel(productId) != nullptr; });
     const DeviceModel* model = nullptr;
     for (const auto& candidate : SupportedDevices()) {
+        if (IsChargingCase(candidate) != chargingCase) {
+            continue;
+        }
         if (std::any_of(interfaces.begin(), interfaces.end(),
                         [&](const HidInterface& hid) { return hid.productId == candidate.productId; })) {
             model = &candidate;
@@ -135,13 +156,24 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
     const ProtocolLayout& layout = LayoutFor(*model);
     const DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE;
     const HidInterface* command = nullptr;
+    auto takesCommands = [&](const HidInterface& hid) {
+        return hid.productId == model->productId && (layout.featureCommands ? hid.featureLength : hid.outputLength) != 0;
+    };
     for (const auto& hid : interfaces) {
-        if (hid.productId != model->productId || hid.interfaceNumber != layout.commandInterface ||
-            hid.outputLength == 0) {
+        if (!takesCommands(hid) || hid.interfaceNumber != layout.commandInterface) {
             continue;
         }
         if (!command || hid.usagePage == layout.commandPage) {
             command = &hid;
+        }
+    }
+    // The interface numbers of the newer models come from descriptions that do not confirm them; the command page
+    // on another interface stands in.
+    for (const auto& hid : interfaces) {
+        if (!command && takesCommands(hid) && hid.usagePage == layout.commandPage && !layout.anyPage) {
+            command = &hid;
+            Log("%ls: commands on interface %d instead of %d", model->name, hid.interfaceNumber,
+                layout.commandInterface);
         }
     }
     if (command) {
@@ -178,7 +210,8 @@ bool ChatMixDevice::Open(HWND notifyWindow) {
         Log("%ls events: %ls (in %u)", model->name, hid.path.c_str(), hid.inputLength);
         channels_.push_back(std::move(channel));
     }
-    if (channels_.empty()) {
+    const bool listens = layout.listenInterfaces[0] >= 0 || layout.listenInterfaces[1] >= 0;
+    if (channels_.empty() && listens) {
         Log("%ls: no readable event interface", model->name);
         Close();
         return false;
@@ -248,7 +281,7 @@ void ChatMixDevice::Start(Levels levels) {
         Send({kNovaProChatMixIcon, 1});
         Sleep(kCommandGapMs);
         Send({kNovaProChatMixEnable, 1});
-    } else if (LayoutFor(*model_).polled) {
+    } else if (PollsStatus(*model_)) {
         Send({PollRequest(*model_)});
     }
     // Read-only queries; their answers arrive as headset updates.
@@ -258,7 +291,7 @@ void ChatMixDevice::Start(Levels levels) {
         SendQuery(features.stateQuery);
     }
     // The battery of the dongles and the Arctis 9 comes with the status request sent above.
-    const bool polledBattery = LayoutFor(*model_).polled && features.batteryQuery == PollRequest(*model_);
+    const bool polledBattery = PollsStatus(*model_) && features.batteryQuery == PollRequest(*model_);
     if (!polledBattery) {
         Sleep(kCommandGapMs);
         QueryBattery();
@@ -341,7 +374,7 @@ void ChatMixDevice::QueueHeadsetUpdates(std::vector<HeadsetUpdate> updates) {
     headsetUpdates_.insert(headsetUpdates_.end(), updates.begin(), updates.end());
     ReleaseSRWLockExclusive(&updatesLock_);
     if (wasEmpty) {
-        PostMessageW(notify_, WM_APP_HEADSET, 0, 0);
+        PostMessageW(notify_, WM_APP_HEADSET, notifyTag_, 0);
     }
 }
 
@@ -372,6 +405,9 @@ bool ChatMixDevice::TakeLevels(Levels& levels) {
 }
 
 bool ChatMixDevice::Send(std::span<const uint8_t> payload, bool quiet) {
+    if (model_ && LayoutFor(*model_).featureCommands) {
+        return SendFeature(payload);
+    }
     if (command_ == INVALID_HANDLE_VALUE || outputLength_ <= payload.size()) {
         return false;
     }
@@ -379,7 +415,7 @@ bool ChatMixDevice::Send(std::span<const uint8_t> payload, bool quiet) {
     report[0] = reportId_;
     std::copy(payload.begin(), payload.end(), report.begin() + 1);
     // Status polls repeat several times a second; only their first failure and recovery are logged.
-    const bool poll = quiet || (model_ && LayoutFor(*model_).polled && payload[0] == PollRequest(*model_));
+    const bool poll = quiet || (model_ && PollsStatus(*model_) && payload[0] == PollRequest(*model_));
     DWORD written = 0;
     if (!WriteFile(command_, report.data(), static_cast<DWORD>(report.size()), &written, nullptr)) {
         const DWORD error = GetLastError();
@@ -404,7 +440,7 @@ bool ChatMixDevice::PublishLevels(Levels levels) {
     }
     pendingLevels_ = packed;
     if (!levelsPending_.exchange(true)) {
-        PostMessageW(notify_, WM_APP_CHATMIX, 0, 0);
+        PostMessageW(notify_, WM_APP_CHATMIX, notifyTag_, 0);
     }
     return true;
 }
@@ -437,11 +473,11 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         (data[1] == kNovaProVolume || data[1] == kNovaProChatMix)) {
         const DialMode mode = data[1] == kNovaProVolume ? DialMode::Volume : DialMode::ChatMix;
         if (dialMode_.exchange(mode) != mode) {
-            PostMessageW(notify_, WM_APP_DIAL_MODE, 0, 0);
+            PostMessageW(notify_, WM_APP_DIAL_MODE, notifyTag_, 0);
         }
         if (mode == DialMode::Volume && size >= 3) {
             volume_ = ((kVolumeSteps - std::min<int>(data[2], kVolumeSteps)) * 100 + kVolumeSteps / 2) / kVolumeSteps;
-            PostMessageW(notify_, WM_APP_HEADSET_VOLUME, 0, 0);
+            PostMessageW(notify_, WM_APP_HEADSET_VOLUME, notifyTag_, 0);
         }
     }
 
@@ -468,7 +504,7 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
 
     bool pushed = false;
     if (const auto levels = ParseChatMixReport(*model_, data, size, pushed)) {
-        if (pushed && !pushEventsSeen_.exchange(true) && LayoutFor(*model_).polled) {
+        if (pushed && !pushEventsSeen_.exchange(true) && PollsStatus(*model_)) {
             Log("device pushes ChatMix events, status polling stopped");
         }
         PublishLevels(*levels);
@@ -481,7 +517,7 @@ DWORD WINAPI ChatMixDevice::ReaderProc(void* self) {
 }
 
 void ChatMixDevice::ReadLoop() {
-    const bool polled = LayoutFor(*model_).polled;
+    const bool polled = PollsStatus(*model_);
     std::vector<HANDLE> waits{stopEvent_};
     for (auto& channel : channels_) {
         waits.push_back(channel.overlapped.hEvent);
@@ -551,6 +587,6 @@ void ChatMixDevice::ReadLoop() {
         GetOverlappedResult(channel.handle, &channel.overlapped, &ignored, TRUE);
     }
     if (lost) {
-        PostMessageW(notify_, WM_APP_DEVICE_LOST, 0, 0);
+        PostMessageW(notify_, WM_APP_DEVICE_LOST, notifyTag_, 0);
     }
 }

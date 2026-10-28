@@ -117,6 +117,17 @@ constexpr SettingSection kNova7Sections[] = {
     {Power, kMinutePower},
     {Bluetooth, kNova7Bluetooth},
 };
+// Nova 7P: without the sidetone, which its dial sets and the command does not (HeadsetControl #450).
+constexpr SettingSpec kNova7PMicrophone[] = {
+    kNova7Microphone[0],
+    kNova7Microphone[2],
+};
+constexpr SettingSection kNova7PSections[] = {
+    {Microphone, kNova7PMicrophone},
+    {Sound, kNova7Sound},
+    {Power, kMinutePower},
+    {Bluetooth, kNova7Bluetooth},
+};
 
 // Arctis 7+ family.
 constexpr SettingSpec kArctis7PlusMicrophone[] = {
@@ -140,6 +151,81 @@ constexpr SettingSection kNova5XSections[] = {
     {Microphone, kNova5XMicrophone},
     {Sound, kNova5XSound},
     {Power, kMinutePower},
+};
+
+// Nova 3P and 3X Wireless, as HeadsetControl sends them: microphone 37 [0-15], sidetone 39 [0-10], volume limiter
+// 27, auto-off a3 [minutes]; the status as on the Nova 5X.
+constexpr SettingSpec kNova3WirelessMicrophone[] = {
+    {0x37, MicVolume, SettingKind::Slider, 0, 15},
+    {0x39, Sidetone, SettingKind::Slider, 0, 10},
+};
+constexpr SettingSection kNova3WirelessSections[] = {
+    {Microphone, kNova3WirelessMicrophone},
+    {Sound, kNova5XSound},
+    {Power, kMinutePower},
+};
+
+// Arctis GameBuds and GameBuds X, as Linux-Arctis-Manager describes them: microphone 37 [1-10], sidetone 39 [0, 3,
+// 6 or 10 for off to high], noise control bd with the ANC level b8 [1-3] and the transparency level b9 [3, 6 or 10],
+// volume limiter 27, in-ear detection c5. The b0 status holds each bud's link at 3 and 4 (03 out of the case) and
+// battery at 5 and 6, as HeadsetControl reads them. The equalizer: 33 and ten filters, the frequency in SteelSeries'
+// usual little-endian (Linux-Arctis-Manager writes it big-endian, against the description's default and the other
+// sources), peaks only until a GameBuds owner confirms the rest.
+constexpr SettingOption kGameBudsSidetone[] = {{0, OptOff}, {3, OptLow}, {6, OptMedium}, {10, OptHigh}};
+constexpr SettingSpec kGameBudsMicrophone[] = {
+    {0x37, MicVolume, SettingKind::Slider, 1, 10},
+    {0x39, Sidetone, SettingKind::Choice, 0, 10, kGameBudsSidetone},
+};
+constexpr SettingOption kGameBudsLevels[] = {{1, OptLow}, {2, OptMedium}, {3, OptHigh}};
+constexpr SettingOption kGameBudsTransparency[] = {{3, OptLow}, {6, OptMedium}, {10, OptHigh}};
+constexpr SettingSpec kGameBudsNoise[] = {
+    {kNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kNoiseModes},
+    {0xB8, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kGameBudsLevels, kNoiseMode, kNoiseCancelling},
+    {kTransparencyLevel, TransparencyLevel, SettingKind::Choice, 3, 10, kGameBudsTransparency, kNoiseMode,
+     kNoiseTransparent},
+};
+constexpr SettingSpec kGameBudsSound[] = {
+    {0x27, VolumeLimiter, SettingKind::Toggle, 0, 1},
+    {0xC5, InEarDetection, SettingKind::Toggle, 0, 1},
+};
+constexpr SettingSection kGameBudsSections[] = {
+    {Microphone, kGameBudsMicrophone},
+    {NoiseControl, kGameBudsNoise},
+    {Sound, kGameBudsSound},
+};
+constexpr uint8_t kBudOutOfCase = 0x03;
+
+// Nova 4 and 4X, as Linux-Arctis-Manager describes them: the Nova 7's commands, the mute light as ae [0-3] 01 14 and
+// the volume limiter as 3a; the status as on the Nova 7, with the battery in five steps.
+constexpr SettingSpec kNova4Microphone[] = {
+    {0x37, MicVolume, SettingKind::Slider, 0, 7},
+    {0x39, Sidetone, SettingKind::Choice, 0, 3, kFourLevels},
+    {0xAE, MicLed, SettingKind::Choice, 0, 3, kFourLevels, 0, 0, SettingWire::Trailing, 0x01, 0x14},
+};
+constexpr SettingSection kNova4Sections[] = {
+    {Microphone, kNova4Microphone},
+    {Sound, kNova7Sound},
+    {Power, kMinutePower},
+};
+
+// Nova 3, wired, as HeadsetControl and Linux-Arctis-Manager describe it: feature reports 06 [command]; microphone 37
+// [0-10], sidetone 39 [0-3], mute light ae [0-3], six equalizer bands as 20 plus half decibels, ±6 dB.
+constexpr SettingSpec kNova3Microphone[] = {
+    {0x37, MicVolume, SettingKind::Slider, 0, 10},
+    {0x39, Sidetone, SettingKind::Choice, 0, 3, kFourLevels},
+    {0xAE, MicLed, SettingKind::Choice, 0, 3, kFourLevels},
+};
+constexpr SettingSection kNova3Sections[] = {
+    {Microphone, kNova3Microphone},
+};
+// The frequencies of its bands are in neither description, so they are numbered.
+constexpr const wchar_t* kNova3BandLabels[] = {L"1", L"2", L"3", L"4", L"5", L"6"};
+// HeadsetControl's presets, in half decibels from 0x14.
+constexpr EqPreset kNova3Presets[] = {
+    {L"Flat", {0, 0, 0, 0, 0, 0}},
+    {L"Bass Boost", {8, 5, -3, 0, 0, 0}},
+    {L"Smiley", {6, 3, -5, -2, 3, 6}},
+    {L"Focus", {-8, -7, -3, 4, 8, 0}},
 };
 
 // SteelSeries Engine EQ presets, as GG keeps them in Engine's database and sends them to the Nova Elite (both of
@@ -178,24 +264,50 @@ const HeadsetFeatures kNovaProWireless{
 };
 // The dongles answer the b0 status request with the battery too (see ParseStatusBattery).
 constexpr uint8_t kStatusRequest = 0xB0;
+// Dongles without a dial are not polled for it, so their status is asked for this often, for the output to follow a
+// switch-off.
+constexpr unsigned kNoDialStatusPollMs = 5000;
 
+constexpr EqualizerSpec kNova7Equalizer{
+    .bandsCommand = 0x33, .baseline = 0x14, .range = 20, .terminator = true, .presets = kNova7Presets};
+constexpr EqualizerSpec kNova7Gen2Equalizer{.bandsCommand = 0x33,
+                                            .range = 20,
+                                            .presets = kNova7Presets,
+                                            .format = EqFormat::Parametric,
+                                            .experimental = true,
+                                            .peaksOnly = true,
+                                            .nameCommand = 0xA7,
+                                            .applyCommand = 0x27,
+                                            .linkByte = true,
+                                            .bigEndianFrequency = true};
 const HeadsetFeatures kNova7{
     .sections = kNova7Sections,
-    .equalizer = {.bandsCommand = 0x33, .baseline = 0x14, .range = 20, .terminator = true, .presets = kNova7Presets},
+    .equalizer = kNova7Equalizer,
     .batteryQuery = kStatusRequest,
 };
 const HeadsetFeatures kNova7Gen2{
     .sections = kNova7Sections,
-    .equalizer = {.bandsCommand = 0x33,
-                  .range = 20,
-                  .presets = kNova7Presets,
-                  .format = EqFormat::Parametric,
-                  .experimental = true,
-                  .peaksOnly = true},
+    .equalizer = kNova7Gen2Equalizer,
     .save = kSaveState,
     // The sound pops while these headsets save (issue #7), so a run of changes is saved once, after it ends.
     .saveDelayMs = 3000,
     .batteryQuery = kStatusRequest,
+};
+const HeadsetFeatures kNova7P{
+    .sections = kNova7PSections,
+    .equalizer = kNova7Equalizer,
+    .batteryQuery = kStatusRequest,
+    .batteryPollMs = kNoDialStatusPollMs,
+    .experimental = true,
+};
+const HeadsetFeatures kNova7PGen2{
+    .sections = kNova7PSections,
+    .equalizer = kNova7Gen2Equalizer,
+    .save = kSaveState,
+    .saveDelayMs = 3000,
+    .batteryQuery = kStatusRequest,
+    .batteryPollMs = kNoDialStatusPollMs,
+    .experimental = true,
 };
 const HeadsetFeatures kArctis7Plus{
     .sections = kArctis7PlusSections,
@@ -203,10 +315,69 @@ const HeadsetFeatures kArctis7Plus{
     .save = kSaveState,
     .batteryQuery = kStatusRequest,
 };
+// The Nova 5's parametric equalizer as HeadsetControl sends it (experimental here).
 const HeadsetFeatures kNova5X{
     .sections = kNova5XSections,
+    .equalizer = {.bandsCommand = 0x33,
+                  .range = 20,
+                  .presets = kNova7Presets,
+                  .format = EqFormat::Parametric,
+                  .experimental = true,
+                  .filterGain = FilterGain::HalfDecibels},
     .save = kNova5XSave,
     .batteryQuery = kStatusRequest,
+};
+const HeadsetFeatures kNova3Wireless{
+    .sections = kNova3WirelessSections,
+    .equalizer = {.bandsCommand = 0x33,
+                  .range = 20,
+                  .presets = kNova7Presets,
+                  .format = EqFormat::Parametric,
+                  .experimental = true,
+                  .notch = true},
+    .save = kSaveState,
+    .batteryQuery = kStatusRequest,
+    .batteryPollMs = kNoDialStatusPollMs,
+    .experimental = true,
+};
+// The GameBuds' charging case, as Linux-Arctis-Manager describes it: b7 answered (and sent on its own) with the left
+// and right bud's battery, the case's, then their charging states (1 charging).
+constexpr uint8_t kCaseBatteryQuery = 0xB7;
+const HeadsetFeatures kGameBudsCase{
+    .batteryQuery = kCaseBatteryQuery,
+    .experimental = true,
+};
+const HeadsetFeatures kGameBuds{
+    .sections = kGameBudsSections,
+    .equalizer = {.bandsCommand = 0x33,
+                  .range = 20,
+                  .presets = kNova7Presets,
+                  .format = EqFormat::Parametric,
+                  .experimental = true,
+                  .peaksOnly = true},
+    .save = kSaveState,
+    .batteryQuery = kStatusRequest,
+    .batteryPollMs = kNoDialStatusPollMs,
+    .experimental = true,
+    .chargingCase = true,
+};
+const HeadsetFeatures kNova4{
+    .sections = kNova4Sections,
+    .equalizer = {.bandsCommand = 0x33, .baseline = 0x18, .range = 24, .presets = kNova7Presets, .experimental = true},
+    .save = kSaveState,
+    .batteryQuery = kStatusRequest,
+    .experimental = true,
+};
+const HeadsetFeatures kNova3{
+    .sections = kNova3Sections,
+    .equalizer = {.bandsCommand = 0x33,
+                  .baseline = 0x14,
+                  .range = 12,
+                  .presets = kNova3Presets,
+                  .experimental = true,
+                  .bandLabels = kNova3BandLabels},
+    .save = kSaveState,
+    .experimental = true,
 };
 // Nova Elite base station (experimental): the commands of Linux-Arctis-Manager's device description, with the
 // value ranges the base station reports in its own events (the log in issue #6). The stream mix and line out
@@ -299,11 +470,12 @@ constexpr uint8_t kSidetoneCommand = 0x39;
 
 // Nova 7 Gen 2 parametric equalizer, as Linux-Arctis-Manager describes the protocol: A7 [link] [kind] [name],
 // then 33 [link] and ten filters of six bytes each (see AppendFilter, frequency big-endian), then 27 to apply them.
-constexpr uint8_t kGen2EqName = 0xA7;
-constexpr uint8_t kGen2EqCommit = 0x27;
-constexpr uint8_t kGen2Radio = 0x00;         // The 2.4 GHz link; 1 is Bluetooth, 2 the microphone.
+// The Nova 5 and Nova 3 Wireless, as HeadsetControl sends them: 33 and the ten filters alone, frequency
+// little-endian (the spec's parametric fields).
+constexpr uint8_t kGen2Radio = 0x00;        // The 2.4 GHz link; 1 is Bluetooth, 2 the microphone.
 constexpr uint8_t kGen2CustomPreset = 0x01;  // 0 is a SteelSeries preset.
 constexpr char kGen2PresetName[] = "OpenChatMix";
+constexpr float kHalfDecibelsMaxGain = 10.0f;  // FilterGain::HalfDecibels: 0 is -10 dB, 20 flat, 40 +10 dB.
 // A curve's ten bands as filters: peaks at the usual octave centres with a Q of one octave.
 constexpr float kOctaveFrequencies[kEqBands] = {32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000};
 constexpr float kOctaveQ = 1.414f;
@@ -402,6 +574,89 @@ std::array<double, 5> ChipCoefficients(const ChipBand& band, double gainDb) {
     return {b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0};
 }
 
+// The Arctis 5's sound chip (Conexant CX20892), from the same description: five fixed bands written as 40 0b 10
+// [address] b0 b1 b2 a1 a2 03, each coefficient 16-bit big-endian in Q15 with a0 = 0.5 (b halved, a1 and a2 halved
+// and negated), rounded half up; for a1 and a2 the first pair of five candidates whose poles lie inside the unit
+// circle, as SteelSeries' own code picks them. 40 01 11 54 9b then commits what was written.
+struct CxBand {
+    ::FilterType type;
+    double frequency;
+    double q;
+    uint8_t address;
+};
+constexpr CxBand kCxBands[] = {
+    {::FilterType::LowShelf, 62.5, 1.1, 0x20},   {::FilterType::Peaking, 250.0, 0.8, 0x2B},
+    {::FilterType::Peaking, 1000.0, 0.8, 0x36},  {::FilterType::Peaking, 3600.0, 0.7, 0x41},
+    {::FilterType::HighShelf, 12000.0, 1.1, 0x4C},
+};
+constexpr const wchar_t* kCxBandLabels[] = {L"62", L"250", L"1k", L"3.6k", L"12k"};
+static_assert(std::size(kCxBands) == std::size(kCxBandLabels));
+constexpr uint8_t kCxWrite = 0x40;
+constexpr uint8_t kCxBandLength = 0x0B;
+constexpr uint8_t kCxAddressHigh = 0x10;
+constexpr uint8_t kCxBandEnd = 0x03;
+constexpr uint8_t kCxCommit[] = {kCxWrite, 0x01, 0x11, 0x54, 0x9B};
+constexpr EqualizerSpec kCxEqualizer{.bandsCommand = kCxWrite,
+                                     .range = 24,
+                                     .presets = kChipPresets,
+                                     .format = EqFormat::Chip,
+                                     .experimental = true,
+                                     .bandLabels = kCxBandLabels,
+                                     .chip = SoundChip::Cx20892};
+
+int16_t CxRounded(double value) {
+    return static_cast<int16_t>(std::clamp(std::floor(value * 32768.0 + 0.5), -32767.0, 32767.0));
+}
+
+int16_t CxTruncated(double value) {
+    return static_cast<int16_t>(std::clamp(std::floor(value * 32768.0), -32767.0, 32767.0));
+}
+
+// Both roots of 0.5 x² - a1 x - a2 (in Q15) inside the unit circle.
+bool CxStable(int16_t a1, int16_t a2) {
+    constexpr double a = 0x4000;
+    const double b = -static_cast<double>(a1);
+    const double c = -static_cast<double>(a2);
+    const double d = b * b - 4.0 * a * c;
+    if (d >= 0.0) {
+        const double r1 = (std::sqrt(d) - b) / (2.0 * a);
+        const double r2 = (-std::sqrt(d) - b) / (2.0 * a);
+        return r1 * r1 < 1.0 && r2 * r2 < 1.0;
+    }
+    const double real = -b / (2.0 * a);
+    const double imaginary = std::sqrt(-d) / (2.0 * a);
+    return real * real + imaginary * imaginary < 1.0;
+}
+
+std::vector<uint8_t> CxBandWrite(const CxBand& band, double gainDb) {
+    const ChipBand shape{band.type, band.frequency, band.q, 0};
+    const auto [b0, b1, b2, a1, a2] = ChipCoefficients(shape, gainDb);
+    const double a1Half = a1 / -2.0;
+    const double a2Half = a2 / -2.0;
+    // Wrapping, as on the 16-bit wire.
+    auto next = [](int16_t value) { return static_cast<int16_t>(static_cast<uint16_t>(value) + 1u); };
+    const int16_t t1 = CxTruncated(a1Half);
+    const int16_t t2 = CxTruncated(a2Half);
+    const std::pair<int16_t, int16_t> candidates[] = {
+        {CxRounded(a1Half), CxRounded(a2Half)}, {next(t1), t2}, {t1, next(t2)}, {t1, t2}, {next(t1), next(t2)},
+    };
+    std::pair<int16_t, int16_t> chosen = candidates[std::size(candidates) - 1];
+    for (const auto& candidate : candidates) {
+        if (CxStable(candidate.first, candidate.second)) {
+            chosen = candidate;
+            break;
+        }
+    }
+    std::vector<uint8_t> write{kCxWrite, kCxBandLength, kCxAddressHigh, band.address};
+    for (const int16_t value : {CxRounded(b0 / 2.0), CxRounded(b1 / 2.0), CxRounded(b2 / 2.0), chosen.first,
+                                chosen.second}) {
+        write.push_back(static_cast<uint8_t>(static_cast<uint16_t>(value) >> 8));
+        write.push_back(static_cast<uint8_t>(value & 0xFF));
+    }
+    write.push_back(kCxBandEnd);
+    return write;
+}
+
 std::vector<uint8_t> ChipWrite(uint8_t channel, uint8_t address, float value, uint8_t filterNumber) {
     const uint32_t bits = std::bit_cast<uint32_t>(value);
     return {kChipCommand,
@@ -426,27 +681,30 @@ uint8_t WireType(::FilterType type) {
     return kWirePeak;
 }
 
-// One filter in six bytes: frequency (u16), type, gain (signed, in 0.1 dB) and Q (x1000, u16 little-endian).
-// notchType: the headset has a notch type, which GG sends at the deepest cut; without one, like PresetFilters, the
-// deepest peak cut stands in for it.
-void AppendFilter(std::vector<uint8_t>& out, EqBand band, bool bigEndianFrequency, bool notchType) {
+// One filter in six bytes: frequency (u16, in the spec's byte order), type, gain (in the spec's form) and Q (x1000,
+// u16 little-endian). A headset with a notch type of its own gets it at the deepest cut, as GG sends it; without one,
+// like PresetFilters, the deepest peak cut stands in for it.
+void AppendFilter(std::vector<uint8_t>& out, EqBand band, const EqualizerSpec& spec) {
     const bool notch = band.type == ::FilterType::Notch;
-    if (notch && !notchType) {
+    if (notch && !spec.notch) {
         band.type = ::FilterType::Peaking;
     }
-    const float gain = notch ? -kHeadsetFilterMaxGain : UsesGain(band.type) ? band.gain : 0.0f;
+    const float maxGain = spec.filterGain == FilterGain::HalfDecibels ? kHalfDecibelsMaxGain : kHeadsetFilterMaxGain;
+    const float gain = band.enabled ? std::clamp(notch ? -maxGain : UsesGain(band.type) ? band.gain : 0.0f,
+                                                 -maxGain, maxGain)
+                                    : 0.0f;
     const uint16_t frequency =
         band.enabled ? static_cast<uint16_t>(std::lround(std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency)))
                      : kWireBandOff;
-    const int tenths =
-        band.enabled ? std::lround(std::clamp(gain, -kHeadsetFilterMaxGain, kHeadsetFilterMaxGain) * 10.0f) : 0;
     const uint16_t q = static_cast<uint16_t>(std::lround(std::clamp(band.q, kEqMinQ, kEqMaxQ) * 1000.0f));
     const uint8_t frequencyHigh = static_cast<uint8_t>(frequency >> 8);
     const uint8_t frequencyLow = static_cast<uint8_t>(frequency & 0xFF);
-    out.push_back(bigEndianFrequency ? frequencyHigh : frequencyLow);
-    out.push_back(bigEndianFrequency ? frequencyLow : frequencyHigh);
+    out.push_back(spec.bigEndianFrequency ? frequencyHigh : frequencyLow);
+    out.push_back(spec.bigEndianFrequency ? frequencyLow : frequencyHigh);
     out.push_back(band.enabled ? WireType(band.type) : kWirePeak);
-    out.push_back(static_cast<uint8_t>(static_cast<int8_t>(tenths)));
+    out.push_back(spec.filterGain == FilterGain::HalfDecibels
+                      ? static_cast<uint8_t>(std::lround((gain + kHalfDecibelsMaxGain) * 2.0f))
+                      : static_cast<uint8_t>(static_cast<int8_t>(std::lround(gain * 10.0f))));
     out.push_back(static_cast<uint8_t>(q & 0xFF));
     out.push_back(static_cast<uint8_t>(q >> 8));
 }
@@ -486,6 +744,9 @@ std::optional<HeadsetUpdate> ParseStatusBattery(const DeviceModel& model, const 
     switch (model.family) {
     case DeviceFamily::Nova7:
     case DeviceFamily::Nova7Gen2:
+    case DeviceFamily::Nova7P:
+    case DeviceFamily::Nova7PGen2:
+    case DeviceFamily::Nova4:
         level = data[2];
         update.headsetOff = data[3] == 0x00;
         update.charging = data[3] == 0x01 || data[3] == 0x02;
@@ -495,7 +756,23 @@ std::optional<HeadsetUpdate> ParseStatusBattery(const DeviceModel& model, const 
         update.headsetOff = data[1] == 0x01;
         update.charging = data[3] == 0x01;
         break;
+    case DeviceFamily::GameBuds: {
+        // The lower battery of the buds out of the case; in it, a bud reports 0%.
+        if (size < 7) {
+            return std::nullopt;
+        }
+        level = -1;
+        for (const size_t bud : {size_t{0}, size_t{1}}) {
+            if (data[3 + bud] == kBudOutOfCase) {
+                level = level < 0 ? data[5 + bud] : std::min<int>(level, data[5 + bud]);
+            }
+        }
+        update.headsetOff = level < 0;
+        level = std::max(level, 0);
+        break;
+    }
     case DeviceFamily::Nova5X:
+    case DeviceFamily::Nova3Wireless:
         level = data[3];
         update.headsetOff = data[1] == 0x02;
         update.charging = data[4] == 0x01;
@@ -706,6 +983,25 @@ const HeadsetFeatures kArctis7XP{
     .experimental = true,
 };
 
+// Arctis 5 (2017, 2019 and its editions), as SteelSeries describes it through Linux-Arctis-Manager: report ID 04 on
+// interface 3 (page 000C), writes to registers of its chip as 40 [length] [address, 2 bytes] [value], then
+// 40 01 11 54 9b to commit them. Sidetone at 12 c6 (0-7fff). Its dial mixes the Game and Chat devices in the headset
+// and is not read; there is no battery.
+constexpr uint8_t kRegisterWrite = 0x40;
+constexpr SettingSpec kArctis5Microphone[] = {
+    {0xC6, Sidetone, SettingKind::Slider, 0, 10, {}, 0, 0, SettingWire::Register16, 0x12},
+};
+constexpr SettingSection kArctis5Sections[] = {
+    {Microphone, kArctis5Microphone},
+};
+constexpr SaveCommand kArctis5Commit[] = {{{kRegisterWrite, 0x01, 0x11, 0x54, 0x9B}, 5}};
+const HeadsetFeatures kArctis5{
+    .sections = kArctis5Sections,
+    .equalizer = kCxEqualizer,
+    .save = kArctis5Commit,
+    .experimental = true,
+};
+
 // Arctis 9: sidetone 06 00 [c0 off up to fd], auto-off 04 00 [seconds, 16 bits], 90 00 to keep a setting. Its status
 // 20 is answered with aa 01 while the headset is on, the battery as 64-9a at 3, 01 at 4 while it charges and the dial
 // at 9 and 10; 55 or 03 first while it is off.
@@ -716,9 +1012,26 @@ constexpr SettingSpec kArctis9Microphone[] = {
 constexpr SettingSpec kArctis9Power[] = {
     {0x04, AutoOff, SettingKind::Choice, 0, 90, kMinuteTimeouts, 0, 0, SettingWire::Seconds, 0x00},
 };
+// From SteelSeries' description through Linux-Arctis-Manager: surround 07 00 [0-1], one of the headset's five
+// equalizer presets 0b 00 [0-4] (their curves and names are described nowhere, so they are numbered), Bluetooth with
+// the headset 2b 00 [0-1] and during calls 2c 00 [0 as is, 1 mute, 2 12 dB lower].
+constexpr SettingOption kArctis9CallMute[] = {{0, OptOff}, {1, OptMute}, {2, OptOff, 0, L"−12 dB"}};
+constexpr SettingOption kArctis9EqPresets[] = {
+    {0, OptOff, 0, L"1"}, {1, OptOff, 0, L"2"}, {2, OptOff, 0, L"3"}, {3, OptOff, 0, L"4"}, {4, OptOff, 0, L"5"},
+};
+constexpr SettingSpec kArctis9Sound[] = {
+    {0x0B, EqualizerPreset, SettingKind::Choice, 0, 4, kArctis9EqPresets, 0, 0, SettingWire::Prefixed, 0x00},
+    {0x07, SurroundSound, SettingKind::Toggle, 0, 1, {}, 0, 0, SettingWire::Prefixed, 0x00},
+};
+constexpr SettingSpec kArctis9Bluetooth[] = {
+    {0x2B, BluetoothPowerOn, SettingKind::Toggle, 0, 1, {}, 0, 0, SettingWire::Prefixed, 0x00},
+    {0x2C, BluetoothAutoMute, SettingKind::Choice, 0, 2, kArctis9CallMute, 0, 0, SettingWire::Prefixed, 0x00},
+};
 constexpr SettingSection kArctis9Sections[] = {
     {Microphone, kArctis9Microphone},
+    {Sound, kArctis9Sound},
     {Power, kArctis9Power},
+    {Bluetooth, kArctis9Bluetooth},
 };
 constexpr SaveCommand kArctis9Save[] = {{{0x90, 0x00}, 2}};
 constexpr uint8_t kArctis9Status = 0x20;
@@ -768,6 +1081,14 @@ const HeadsetFeatures& FeaturesFor(DeviceFamily family) {
     case DeviceFamily::NovaProWireless: return kNovaProWireless;
     case DeviceFamily::Nova7: return kNova7;
     case DeviceFamily::Nova7Gen2: return kNova7Gen2;
+    case DeviceFamily::Nova7P: return kNova7P;
+    case DeviceFamily::Nova7PGen2: return kNova7PGen2;
+    case DeviceFamily::Nova3: return kNova3;
+    case DeviceFamily::Nova3Wireless: return kNova3Wireless;
+    case DeviceFamily::Nova4: return kNova4;
+    case DeviceFamily::GameBuds: return kGameBuds;
+    case DeviceFamily::Arctis5: return kArctis5;
+    case DeviceFamily::GameBudsCase: return kGameBudsCase;
     case DeviceFamily::Arctis7Plus: return kArctis7Plus;
     case DeviceFamily::NovaElite: return kNovaElite;
     case DeviceFamily::Arctis7: return kArctis7;
@@ -789,6 +1110,12 @@ std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const ui
     switch (model.protocol) {
     case DeviceProtocol::Elite:
         return ParseEliteReport(data, size);
+    case DeviceProtocol::ChargingCase:
+        // b7 [left] [right] [case] [left, right and case charging]: the case's battery.
+        if (size >= 7 && data[0] == kCaseBatteryQuery) {
+            updates.push_back({.kind = Kind::Battery, .value = std::min<int>(data[3], 100), .charging = data[6] == 1});
+        }
+        return updates;
     case DeviceProtocol::NovaStatus:
         if (const auto battery = ParseStatusBattery(model, data, size)) {
             updates.push_back(*battery);
@@ -980,6 +1307,13 @@ std::vector<uint8_t> SettingCommand(const HeadsetFeatures& features, const Heads
             const int seconds = std::max(value, 0) * 60;
             return {command, spec->prefix, static_cast<uint8_t>(seconds >> 8), static_cast<uint8_t>(seconds & 0xFF)};
         }
+        case SettingWire::Trailing:
+            return {command, byte, spec->prefix, spec->suffix};
+        case SettingWire::Register16: {
+            const int scaled = std::clamp(value, 0, static_cast<int>(spec->max)) * 0x7FFF / std::max<int>(spec->max, 1);
+            return {kRegisterWrite, 0x02, spec->prefix, command, static_cast<uint8_t>(scaled >> 8),
+                    static_cast<uint8_t>(scaled & 0xFF)};
+        }
         case SettingWire::Byte:
             break;
         }
@@ -1010,9 +1344,12 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
         std::vector<std::vector<uint8_t>> commands;
         for (int band = 0; band < spec.Bands(); ++band) {
             const int steps = std::clamp<int>(curve[band], -spec.range, spec.range);
-            for (auto& command : ChipBandCommands(band, steps / 2.0f)) {
+            for (auto& command : ChipBandCommands(spec, band, steps / 2.0f)) {
                 commands.push_back(std::move(command));
             }
+        }
+        if (std::vector<uint8_t> commit = ChipCommit(spec); !commit.empty()) {
+            commands.push_back(std::move(commit));
         }
         return commands;
     }
@@ -1027,10 +1364,16 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
     return EqualizerCommands(spec, builtin ? BuiltinPresetFilters(spec, preset) : CurveFilters(curve, spec.range), preset);
 }
 
-// A band without gain gets the filter that changes nothing written too, rather than only its closing write, as
-// whether that write alone turns the band off is not known.
-std::vector<std::vector<uint8_t>> ChipBandCommands(int band, float gainDb) {
+// On the AV6X02 a band without gain gets the filter that changes nothing written too, rather than only its closing
+// write, as whether that write alone turns the band off is not known.
+std::vector<std::vector<uint8_t>> ChipBandCommands(const EqualizerSpec& equalizer, int band, float gainDb) {
     std::vector<std::vector<uint8_t>> commands;
+    if (equalizer.chip == SoundChip::Cx20892) {
+        if (band >= 0 && band < static_cast<int>(std::size(kCxBands))) {
+            commands.push_back(CxBandWrite(kCxBands[band], gainDb));
+        }
+        return commands;
+    }
     if (band < 0 || band >= static_cast<int>(std::size(kChipBands))) {
         return commands;
     }
@@ -1050,6 +1393,13 @@ std::vector<std::vector<uint8_t>> ChipBandCommands(int band, float gainDb) {
     return commands;
 }
 
+std::vector<uint8_t> ChipCommit(const EqualizerSpec& spec) {
+    if (spec.chip == SoundChip::Cx20892) {
+        return {std::begin(kCxCommit), std::end(kCxCommit)};
+    }
+    return {};
+}
+
 std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, const EqFilters& filters, int preset) {
     if (!spec.Parametric()) {
         // Not used by the app: these equalizers take curves. The closest curve stands in.
@@ -1065,17 +1415,28 @@ std::vector<std::vector<uint8_t>> EqualizerCommands(const EqualizerSpec& spec, c
     if (spec.format == EqFormat::Feature) {
         std::vector<uint8_t> report = EliteReportHead(spec, preset);
         for (const EqBand& band : filters) {
-            AppendFilter(report, band, false, spec.notch);
+            AppendFilter(report, band, spec);
         }
         return {report};
     }
-    std::vector<uint8_t> name{kGen2EqName, kGen2Radio, kGen2CustomPreset};
-    name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);
-    std::vector<uint8_t> bands{spec.bandsCommand, kGen2Radio};
-    for (const EqBand& band : filters) {
-        AppendFilter(bands, band, true, spec.notch);
+    std::vector<std::vector<uint8_t>> commands;
+    if (spec.nameCommand) {
+        std::vector<uint8_t> name{spec.nameCommand, kGen2Radio, kGen2CustomPreset};
+        name.insert(name.end(), std::begin(kGen2PresetName), std::end(kGen2PresetName) - 1);
+        commands.push_back(std::move(name));
     }
-    return {name, bands, {kGen2EqCommit}};
+    std::vector<uint8_t> bands{spec.bandsCommand};
+    if (spec.linkByte) {
+        bands.push_back(kGen2Radio);
+    }
+    for (const EqBand& band : filters) {
+        AppendFilter(bands, band, spec);
+    }
+    commands.push_back(std::move(bands));
+    if (spec.applyCommand) {
+        commands.push_back({spec.applyCommand});
+    }
+    return commands;
 }
 
 EqFilters CurveFilters(const EqCurve& curve, int8_t range, bool shelves) {
