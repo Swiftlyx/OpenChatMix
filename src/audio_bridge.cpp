@@ -34,6 +34,7 @@ constexpr DWORD kWaitMs = 200;
 constexpr UINT32 kMarginMs = 6;             // Render headroom beyond one capture packet and one period.
 constexpr UINT32 kStallAllowanceMs = 80;    // Beyond the target, after a stall, old audio is skipped.
 constexpr ULONGLONG kUnderrunLogMs = 30000; // Underruns are logged at most this often.
+constexpr ULONGLONG kOutputStuckMs = 500;    // An output that takes no audio this long is logged.
 // Render wakeups (one period each) without a capture packet after which the source counts as silent:
 // loopback capture delivers nothing while no app plays on the device.
 constexpr int kSilentWakeups = 6;
@@ -273,6 +274,10 @@ void AudioBridge::Run() {
     unsigned underruns = 0;
     unsigned captureGaps = 0;
     ULONGLONG underrunLogged = GetTickCount64();
+    // When the output last took audio from its buffer, and how full the buffer was left after the last write.
+    ULONGLONG outputTook = GetTickCount64();
+    UINT32 paddingLeft = 0;
+    bool outputStuck = false;
     bool playing = false;
     int quietWakeups = 0;  // Wakeups since the last capture packet.
     bool holding = true;   // The source is silent or has just come back; nothing is played.
@@ -328,6 +333,18 @@ void AudioBridge::Run() {
             Log("bridge: stream stopped, hr 0x%08lx", static_cast<unsigned long>(hr));
             Fail(BridgeError::Stopped);
             break;
+        }
+        // A device that stops taking audio while its stream runs leaves the buffer as full as it was.
+        if (const ULONGLONG now = GetTickCount64(); padding == 0 || padding < paddingLeft) {
+            if (outputStuck) {
+                Log("bridge: output takes audio again after %llu ms", now - outputTook);
+                outputStuck = false;
+            }
+            outputTook = now;
+        } else if (!outputStuck && now - outputTook >= kOutputStuckMs) {
+            Log("bridge: output took no audio for %llu ms, %u of %u frames queued", now - outputTook, padding,
+                bufferFrames);
+            outputStuck = true;
         }
 
         uint64_t generation = 0;
@@ -434,6 +451,7 @@ void AudioBridge::Run() {
             }
         }
         playing = frames > 0 || padding > 0;
+        paddingLeft = padding + frames;
         plugins.reset();
         plugins_.Release(generation);
         if ((underruns > 0 || captureGaps > 0) && GetTickCount64() - underrunLogged > kUnderrunLogMs) {

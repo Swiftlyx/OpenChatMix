@@ -28,6 +28,9 @@ constexpr DWORD kStopTimeoutMs = 5000;
 constexpr DWORD kHandBackTimeoutMs = 250;
 // The GameDAC redraws its interface after the hand-back; commands sooner may not show on it.
 constexpr DWORD kHandBackSettleMs = 20;
+// A report usually takes about 30 ms; slower ones and failures are logged, up to this many per takeover.
+constexpr ULONGLONG kSlowReportMs = 150;
+constexpr int kReportsLogged = 10;
 constexpr uint8_t kBadgeShown = 0x01;
 constexpr int kBadgeCornerShift = 2;
 constexpr int kBadgeBlinkShift = 4;
@@ -269,6 +272,8 @@ void OledDisplay::Run() {
         }
         if (!drawn) {
             ResetEvent(released_);
+            stats_ = {};
+            stats_.since = frameStart;
         }
         drawn = true;
         bool interrupted = false;
@@ -376,9 +381,24 @@ bool OledDisplay::SendRegion(const OledBitmap& frame, int left, int top, int wid
         }
     }
     for (int attempt = 1; attempt <= kSendAttempts; ++attempt) {
-        if (HidD_SetFeature(handle_, report.data(), featureLength_)) {
+        const ULONGLONG before = GetTickCount64();
+        const bool sent = HidD_SetFeature(handle_, report.data(), featureLength_);
+        const DWORD error = sent ? ERROR_SUCCESS : GetLastError();
+        const ULONGLONG took = GetTickCount64() - before;
+        stats_.slowestMs = std::max(stats_.slowestMs, took);
+        if ((!sent || took >= kSlowReportMs) && stats_.logged < kReportsLogged) {
+            ++stats_.logged;
+            if (sent) {
+                Log("display: report took %llu ms", took);
+            } else {
+                Log("display: report failed after %llu ms, error %lu, attempt %d", took, error, attempt);
+            }
+        }
+        if (sent) {
+            ++stats_.reports;
             return true;
         }
+        ++stats_.retries;
         if (stop_) {
             break;
         }
@@ -425,6 +445,8 @@ DWORD OledDisplay::DrawBadge(OledBitmap& frame, uint8_t badge, ULONGLONG now) {
 }
 
 bool OledDisplay::ReturnToDevice() {
+    Log("display: back to the device after %llu ms: %d reports, %d failed, slowest %llu ms",
+        GetTickCount64() - stats_.since, stats_.reports, stats_.retries, stats_.slowestMs);
     std::vector<uint8_t> report(outputLength_, 0);
     report[0] = reportId_;
     report[1] = kReturnCommand;

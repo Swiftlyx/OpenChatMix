@@ -452,14 +452,20 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         ++data;
         --size;
     }
+    const HeadsetFeatures& features = FeaturesFor(model_->family);
+    std::vector<HeadsetUpdate> updates = ParseHeadsetReport(*model_, data, size, lastQuery_);
+    // An event the app does not read is logged in full each time it comes, repeats included, so the log shows
+    // what the device reports and when.
+    const bool unknownEvent = PushesEvents(*model_) && size >= 2 && data[0] == kNovaProEventReportId &&
+                              data[1] != kNovaProVolume && data[1] != kNovaProChatMix && updates.empty();
     // Settings replies are logged in full, other reports by their first bytes; everything from an experimental
     // model in full, so its log shows what it sends.
     const bool state = model_->protocol == DeviceProtocol::NovaPro && size >= 2 && data[1] == 0x20;
-    const bool full = state || LogsInFull(*model_);
+    const bool full = state || unknownEvent || LogsInFull(*model_);
     const std::vector<uint8_t> current(data, data + std::min<DWORD>(size, full ? 32 : 8));
     // Arctis 7 replies name their query, so polls of the dial and the battery that take turns do not log each other.
     const uint8_t kind = model_->protocol == DeviceProtocol::ArctisLegacy && size >= 2 ? data[1] : 0;
-    if (std::vector<uint8_t>& last = channel.last[kind]; current != last) {
+    if (std::vector<uint8_t>& last = channel.last[kind]; current != last || unknownEvent) {
         Log("rx %s", HexBytes(current.data(), current.size()).c_str());
         last = current;
     }
@@ -481,8 +487,6 @@ void ChatMixDevice::HandleReport(Channel& channel, DWORD size) {
         }
     }
 
-    const HeadsetFeatures& features = FeaturesFor(model_->family);
-    std::vector<HeadsetUpdate> updates = ParseHeadsetReport(*model_, data, size, lastQuery_);
     // A headset found on is asked for its battery next where the two replies cannot be told apart.
     const bool headsetOn = std::any_of(updates.begin(), updates.end(), [](const HeadsetUpdate& update) {
         return update.kind == HeadsetUpdate::Kind::Link && !update.headsetOff;

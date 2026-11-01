@@ -110,4 +110,13 @@ private:
     SRWLOCK lock_ = SRWLOCK_INIT;
     std::shared_ptr<IdleAnimation> requested_;
     std::shared_ptr<IdleAnimation> overlay_;  // Under lock_.
+    // Reports since the display was taken over, logged when it goes back to the device. Display thread only.
+    struct SendStats {
+        ULONGLONG since = 0;
+        int reports = 0;
+        int retries = 0;
+        ULONGLONG slowestMs = 0;
+        int logged = 0;  // Failed or slow reports logged one by one.
+    };
+    SendStats stats_;
 };
