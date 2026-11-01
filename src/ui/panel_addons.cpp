@@ -4,11 +4,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../addon_events.h"
 #include "../addon_icons.h"
+#include "../addon_options.h"
+#include "../app.h"
 #include "../app_info.h"
 #include "../reorder.h"
 #include "panel.h"
@@ -29,6 +33,7 @@ constexpr float kIconPixel = 3.0f;       // Size of an icon pixel in the picker.
 constexpr float kRowIconPixel = 2.0f;    // Size of an icon pixel in lists.
 constexpr float kFieldHeight = 36.0f;    // An editable text below its label.
 constexpr float kChipHeight = 28.0f;
+constexpr ULONGLONG kChoicesFreshMs = 10000;  // Choices a program listed are asked for again when older.
 
 bool IsFile(const std::wstring& path) {
     const DWORD attributes = GetFileAttributesW(path.c_str());
@@ -213,6 +218,8 @@ void Panel::DrawAddOnEdit() {
                             id});
         }
         y = DrawCard(y, rows) + design::kSectionGap;
+    } else if (!AddOnOptions(path).empty()) {
+        y = DrawAddOnOptions(*addOn, y);
     } else {
         y = PageHint(T(Text::AddOnGenericHint), y);
     }
@@ -237,6 +244,282 @@ void Panel::DrawAddOnEdit() {
                    kIdRemoveAddOn};
     y = DrawCard(y, {remove});
     EndScroll(Page::AddOnEdit, kHeaderHeight, y);
+}
+
+float Panel::DrawAddOnOptions(const AddOnSettings& addOn, float y) {
+    const Palette& p = P();
+    const std::vector<AddOnOption>& options = AddOnOptions(addOn.path);
+    std::vector<CardRow> rows;
+    auto flush = [&] {
+        if (!rows.empty()) {
+            y = DrawCard(y, rows) + design::kSectionGap;
+            rows.clear();
+        }
+    };
+    auto set = [this](const std::wstring& key, std::wstring value) {
+        EditAddOn([key, value = std::move(value)](AddOnSettings& item) { item.options[key] = value; });
+    };
+    for (const AddOnOption& option : options) {
+        if (!AddOnOptionShown(addOn, options, option)) {
+            continue;
+        }
+        const uint32_t id = HashId(kKindAddOn, L"option:" + option.key);
+        const std::wstring value = AddOnOptionValue(addOn, option);
+        const wchar_t* hint = option.hint.empty() ? nullptr : option.hint.c_str();
+        switch (option.kind) {
+        case AddOnOption::Kind::Section:
+            flush();
+            y = SectionTitle(option.label.c_str(), y);
+            if (hint) {
+                y = PageHint(hint, y);
+            }
+            break;
+        case AddOnOption::Kind::Hint:
+            flush();
+            y = PageHint(option.label.c_str(), y);
+            break;
+        case AddOnOption::Kind::Switch: {
+            const bool on = value == L"1";
+            rows.push_back(SwitchItem(id, option.label.c_str(), on,
+                                      [set, key = option.key, on] { set(key, on ? L"0" : L"1"); }, hint));
+            break;
+        }
+        case AddOnOption::Kind::Choice: {
+            const auto chosen = std::find_if(option.choices.begin(), option.choices.end(),
+                                             [&](const AddOnOption::Choice& choice) { return choice.value == value; });
+            const int selected = chosen == option.choices.end() ? 0 : static_cast<int>(chosen - option.choices.begin());
+            std::vector<std::wstring> values;
+            std::vector<std::wstring> labels;
+            for (const AddOnOption::Choice& choice : option.choices) {
+                values.push_back(choice.value);
+                labels.push_back(choice.label);
+            }
+            auto select = [set, key = option.key, values](int index) { set(key, values[index]); };
+            if (labels.size() <= 4) {
+                rows.push_back(ChoiceItem(id, option.label.c_str(), std::move(labels), selected, select, hint));
+            } else {
+                const int count = static_cast<int>(labels.size());
+                rows.push_back(DropdownItem(
+                    id, option.label.c_str(), selected, count, [labels](int index) { return labels[index]; }, select,
+                    hint));
+            }
+            break;
+        }
+        case AddOnOption::Kind::Multi: {
+            // A dropdown of checkmarks; the field lists what is ticked.
+            const std::wstring path = addOn.path;
+            const std::wstring stateKey = path + L"\n" + option.key;
+            if (option.query && addOnQueries_[stateKey].answeredAt == 0 && !addOnQueries_[stateKey].pending) {
+                StartAddOnQuery(path, option.key, {});
+            }
+            const std::vector<std::wstring> ticked = TickedValues(value);
+            std::wstring shown;
+            for (const std::wstring& item : ticked) {
+                shown += (shown.empty() ? L"" : L", ") + item;
+            }
+            if (shown.empty()) {
+                shown = option.empty.empty() ? std::wstring(L"\u2014") : option.empty;
+            }
+            const float hintHeight = hint ? HintHeight(hint) : 0.0f;
+            rows.push_back({hint ? design::kHintTopInRow + hintHeight : kRowHeight,
+                            [this, &option, id, shown, ticked, hint, hintHeight, path, stateKey](float top) {
+                                const D2D1_RECT_F field = DrawDropdown(
+                                    id, kWidth - kInset, top + kRowHeight / 2.0f, shown, 200.0f,
+                                    [this, option, ticked, path, stateKey](const D2D1_RECT_F& anchor) {
+                                        AddOnQueryState& state = addOnQueries_[stateKey];
+                                        if (option.query && !state.pending &&
+                                            GetTickCount64() - state.answeredAt > kChoicesFreshMs) {
+                                            StartAddOnQuery(path, option.key, {});
+                                        }
+                                        // What the program lists, then what is ticked but not listed now.
+                                        std::vector<AddOnOption::Choice> choices =
+                                            option.query ? state.answer.choices : option.choices;
+                                        for (const std::wstring& item : ticked) {
+                                            const bool listed = std::any_of(
+                                                choices.begin(), choices.end(),
+                                                [&](const AddOnOption::Choice& choice) { return choice.value == item; });
+                                            if (!listed) {
+                                                choices.push_back({item, item});
+                                            }
+                                        }
+                                        std::vector<MenuItem> items;
+                                        std::vector<std::wstring> values;
+                                        if (option.query && state.answeredAt == 0) {
+                                            items.push_back({T(Text::AddOnLoading), true});
+                                            values.emplace_back();
+                                        }
+                                        for (const AddOnOption::Choice& choice : choices) {
+                                            MenuItem item{choice.label};
+                                            item.checked =
+                                                std::find(ticked.begin(), ticked.end(), choice.value) != ticked.end();
+                                            items.push_back(std::move(item));
+                                            values.push_back(choice.value);
+                                        }
+                                        if (choices.empty() && state.answeredAt) {
+                                            items.push_back({T(Text::NothingFound), true});
+                                            values.emplace_back();
+                                        }
+                                        OpenCheckMenu(anchor, std::move(items), [this, key = option.key, values](int index) {
+                                            const std::wstring chosen = values[static_cast<size_t>(index)];
+                                            EditAddOn([key, chosen](AddOnSettings& item) {
+                                                std::vector<std::wstring> list = TickedValues(item.options[key]);
+                                                const auto found = std::find(list.begin(), list.end(), chosen);
+                                                if (found == list.end()) {
+                                                    list.push_back(chosen);
+                                                } else {
+                                                    list.erase(found);
+                                                }
+                                                std::wstring joined;
+                                                for (const std::wstring& value : list) {
+                                                    joined += (joined.empty() ? L"" : L"\n") + value;
+                                                }
+                                                item.options[key] = joined;
+                                            });
+                                        });
+                                    });
+                                DrawRowLabel(option.label.c_str(),
+                                             {kInset, top, field.left - design::kSpace3, top + kRowHeight}, P().onSurface);
+                                if (hint) {
+                                    DrawHint(hint, top + design::kHintTopInRow, hintHeight);
+                                }
+                            },
+                            id});
+            break;
+        }
+        case AddOnOption::Kind::Search: {
+            // The label, the field with the picked place, and below it the search's state or the supporting text.
+            // Enter searches; the places found open as a menu under the field.
+            const std::wstring path = addOn.path;
+            const auto label = addOn.options.find(option.key + L".label");
+            const std::wstring picked = label != addOn.options.end() && !label->second.empty() ? label->second : value;
+            const AddOnQueryState* state = nullptr;
+            if (const auto found = addOnQueries_.find(path + L"\n" + option.key); found != addOnQueries_.end()) {
+                state = &found->second;
+            }
+            std::wstring status;
+            if (state && state->pending) {
+                status = T(Text::AddOnSearching);
+            } else if (state && state->answeredAt && !state->answer.answered) {
+                status = T(Text::AddOnNoAnswer);
+            } else if (state && state->answeredAt && state->answer.choices.empty()) {
+                status = state->answer.error.empty() ? std::wstring(T(Text::NothingFound)) : state->answer.error;
+            }
+            const std::wstring below = status.empty() ? option.hint : status;
+            const float belowHeight = below.empty() ? 0.0f : HintHeight(below.c_str());
+            rows.push_back({kRowHeight - 8.0f + kFieldHeight + design::kSpace3 +
+                                (below.empty() ? 0.0f : belowHeight + design::kSpace1),
+                            [this, &p, &option, id, picked, below, belowHeight, path](float top) {
+                                canvas_.Text(option.label.c_str(), {kInset, top, kWidth - kInset, top + kRowHeight - 8.0f},
+                                             TextStyle::BodyLarge, p.onSurface);
+                                const float fieldTop = top + kRowHeight - 8.0f;
+                                const D2D1_RECT_F field{kInset, fieldTop, kWidth - kInset, fieldTop + kFieldHeight};
+                                addOnFields_[option.key] = field;
+                                DrawEditableValue(id, field, picked,
+                                                  [this, path, key = option.key, picked](const std::wstring& text) {
+                                                      if (text != picked) {
+                                                          StartAddOnQuery(path, key, text);
+                                                      }
+                                                      return true;
+                                                  },
+                                                  false);
+                                if (!below.empty()) {
+                                    DrawHint(below.c_str(), fieldTop + kFieldHeight + design::kSpace1, belowHeight);
+                                }
+                            },
+                            id});
+            break;
+        }
+        case AddOnOption::Kind::Text: {
+            // The label, the editable value below it, then the supporting text.
+            const float hintHeight = hint ? HintHeight(hint) : 0.0f;
+            rows.push_back({kRowHeight - 8.0f + kFieldHeight + design::kSpace3 + (hint ? hintHeight + design::kSpace1 : 0.0f),
+                            [this, &p, &option, id, value, hint, hintHeight, set](float top) {
+                                canvas_.Text(option.label.c_str(), {kInset, top, kWidth - kInset, top + kRowHeight - 8.0f},
+                                             TextStyle::BodyLarge, p.onSurface);
+                                const float fieldTop = top + kRowHeight - 8.0f;
+                                DrawEditableValue(id, {kInset, fieldTop, kWidth - kInset, fieldTop + kFieldHeight}, value,
+                                                  [set, key = option.key](const std::wstring& text) {
+                                                      set(key, text);
+                                                      return true;
+                                                  },
+                                                  false);
+                                if (hint) {
+                                    DrawHint(hint, fieldTop + kFieldHeight + design::kSpace1, hintHeight);
+                                }
+                            },
+                            id});
+            break;
+        }
+        }
+    }
+    flush();
+    return y;
+}
+
+std::vector<std::wstring> Panel::TickedValues(const std::wstring& value) {
+    std::vector<std::wstring> values;
+    for (size_t start = 0; start < value.size();) {
+        size_t end = value.find(L'\n', start);
+        if (end == std::wstring::npos) {
+            end = value.size();
+        }
+        if (end > start) {
+            values.push_back(value.substr(start, end - start));
+        }
+        start = end + 1;
+    }
+    return values;
+}
+
+void Panel::StartAddOnQuery(const std::wstring& path, const std::wstring& key, const std::wstring& text) {
+    AddOnQueryState& state = addOnQueries_[path + L"\n" + key];
+    state.pending = true;
+    state.asked = text;
+    const HWND owner = window_;
+    std::thread([owner, path, key, text] {
+        auto result = std::make_unique<AddOnQueryResult>(QueryAddOn(path, key, text));
+        if (PostMessageW(owner, WM_APP_ADDON_QUERY, 0, reinterpret_cast<LPARAM>(result.get()))) {
+            result.release();
+        }
+    }).detach();
+    Invalidate();
+}
+
+void Panel::OnAddOnQueryDone(AddOnQueryResult* result) {
+    std::unique_ptr<AddOnQueryResult> answer(result);
+    AddOnQueryState& state = addOnQueries_[answer->path + L"\n" + answer->key];
+    if (answer->text != state.asked) {
+        return;  // A newer query is on its way.
+    }
+    state.pending = false;
+    state.answeredAt = GetTickCount64();
+    state.answer = std::move(*answer);
+    Invalidate();
+    // A search's results open under its field, for one of them to be picked.
+    const AddOnQueryResult& found = state.answer;
+    if (page_ != Page::AddOnEdit || _wcsicmp(addOnPath_.c_str(), found.path.c_str()) != 0 || found.choices.empty() ||
+        menu_.open) {
+        return;
+    }
+    const std::vector<AddOnOption>& options = AddOnOptions(found.path);
+    const bool search = std::any_of(options.begin(), options.end(), [&](const AddOnOption& option) {
+        return option.key == found.key && option.kind == AddOnOption::Kind::Search;
+    });
+    const auto field = addOnFields_.find(found.key);
+    if (!search || field == addOnFields_.end()) {
+        return;
+    }
+    std::vector<MenuItem> items;
+    for (const AddOnOption::Choice& choice : found.choices) {
+        items.push_back({choice.label});
+    }
+    OpenMenu(field->second, std::move(items), -1, [this, key = found.key, choices = found.choices](int index) {
+        const AddOnOption::Choice& choice = choices[static_cast<size_t>(index)];
+        EditAddOn([key, choice](AddOnSettings& item) {
+            item.options[key] = choice.value;
+            item.options[key + L".label"] = choice.label;
+        });
+    });
 }
 
 std::wstring Panel::ScreenSummary(const AddOnEventScreen& screen) const {

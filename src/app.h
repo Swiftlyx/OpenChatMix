@@ -28,6 +28,7 @@ constexpr UINT WM_APP_GG_HEARTBEAT = WM_APP + 19;     // The GG watch learned a 
 constexpr UINT WM_APP_GAMESENSE = WM_APP + 20;        // An add-on sent GameSense requests.
 constexpr UINT WM_APP_PLUGIN_STATUS = WM_APP + 21;    // A plugin's model finished loading or failed.
 constexpr UINT WM_APP_HEADSET_VOLUME = WM_APP + 22;   // The volume knob of a GameDAC or base station turned.
+constexpr UINT WM_APP_ADDON_QUERY = WM_APP + 23;      // An add-on answered the panel; lParam owns an AddOnQueryResult*.
 
 inline constexpr wchar_t kAppName[] = L"OpenChatMix";
 inline constexpr wchar_t kMainWindowClass[] = L"OpenChatMix.Main";

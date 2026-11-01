@@ -230,7 +230,9 @@ void GameSenseServer::Serve(uintptr_t handle, const std::shared_ptr<std::atomic<
         }
         PostMessageW(notify_, message_, 0, 0);
         const std::string connection = HeaderValue(head, "Connection");
-        open = SendAll(client, Response(200, "OK", "{}")) && _stricmp(connection.c_str(), "close") != 0;
+        // GameSense clients ignore the body; OpenChatMix's own add-ons read whether their idle screen shows.
+        const char* reply = idleShown_ ? R"({"openchatmix-shown":true})" : "{}";
+        open = SendAll(client, Response(200, "OK", reply)) && _stricmp(connection.c_str(), "close") != 0;
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);

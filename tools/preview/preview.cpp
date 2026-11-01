@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 
+#include "../../src/addon_options.h"
 #include "../../src/app_info.h"
 #include "../../src/audio_devices.h"
 #include "../../src/balance.h"
@@ -535,6 +536,10 @@ void PushIdleScreen() {
     const HeadsetFeatures* features = Features();
     view.bluetooth = features && features->bluetooth;
     view.bluetoothIcon = idle.bluetoothIcon;
+    // Add-ons do not run here; one that describes settings stands for one with an idle screen.
+    view.addOnScreen = std::any_of(g.settings.addOns.begin(), g.settings.addOns.end(), [](const AddOnSettings& addOn) {
+        return addOn.enabled && !AddOnOptions(addOn.path).empty();
+    });
     g.panel->SetIdleScreen(view);
 }
 

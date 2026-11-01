@@ -52,7 +52,7 @@ such as a voice cleaner, can take hundreds of megabytes.
 
 - [Works with any headset](#works-with-any-headset) · [SteelSeries Arctis](#steelseries-arctis-one-app-instead-of-steelseries-gg) · [Features](#features) · [Supported headsets](#supported-headsets) · [Help wanted](#help-wanted-data-from-your-headset)
 - [Getting started](#getting-started) · [Quick guide](#quick-guide) · [Usage](#usage)
-- Guides: [Virtual device mode](#virtual-device-mode) · [Equalizer](#equalizer) · [Microphone](#microphone) · [Screensaver and visualizer](#screensaver-and-visualizer-arctis-nova-pro)
+- Guides: [Virtual device mode](#virtual-device-mode) · [Equalizer](#equalizer) · [Microphone](#microphone) · [Screensaver and visualizer](#screensaver-and-visualizer-arctis-nova-pro) · [Info Screen add-on](#info-screen-add-on-arctis-nova-pro)
 - [How it works](#how-it-works) · [Building from source](#building-from-source) · [Troubleshooting](#troubleshooting) · [Acknowledgements](#acknowledgements) · [Disclaimer](#disclaimer) · [License](#license)
 
 ## Works with any headset
@@ -153,6 +153,17 @@ native settings, so GG and Sonar can stay closed:
   <img src="docs/screenshots/addons.png" width="260" alt="Discord add-on events">
   &nbsp;
   <img src="docs/screenshots/addon-display.png" width="260" alt="One display of a Discord event">
+</p>
+
+- **Info Screen add-on** (Nova Pro, optional). A separate download,
+  [`OpenChatMix-InfoScreen.exe`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/OpenChatMix-InfoScreen.exe),
+  that puts what plays, the weather and the PC's figures on one GameDAC screen while the headset is idle: the track,
+  CPU and GPU temperature and load, memory in use, fan speeds (in %, RPM or RPM with % in brackets, each fan's icon turning while it spins) and the weather
+  from [Open-Meteo](https://open-meteo.com/). Each item turns on and off on its own, and the picture keeps drifting by
+  a few pixels so the OLED does not burn in. See [Info Screen add-on](#info-screen-add-on-arctis-nova-pro).
+
+<p align="center">
+  <img src="docs/screenshots/info-screen.png" width="600" alt="The Info Screen on the GameDAC: track, CPU, GPU, memory, fans and weather">
 </p>
 
 - **Virtual device mode (optional).** Instead of changing app volumes, mix Game and Chat from two
@@ -382,6 +393,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | App profiles (balance and equalizers per app, presets per device) | *Settings* → *App profiles* → *Add*. |
 | Visualizer on the GameDAC screen | *Headset* → *Visualizer* → *Show while something plays*. |
 | 3rd party add-ons for the GameDAC screen | Close SteelSeries GG, then *Settings* → *3rd party add-ons* → *Add* and pick the program, e.g. `C:\Program Files\SteelSeries\GG\apps\engine\engineApps\discord\gamesense-discord-x64.exe`. |
+| Track, weather and PC figures on the GameDAC | Download [`OpenChatMix-InfoScreen.exe`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/OpenChatMix-InfoScreen.exe), add it under *Settings* → *3rd party add-ons* → *Add*, and choose what it shows on its page ([Info Screen](#info-screen-add-on-arctis-nova-pro)). |
 
 When OpenChatMix exits, every app it lowered plays at its own volume again and the GameDAC dial
 returns to plain volume control. An app that exits while ChatMix lowers it also starts at its own
@@ -653,7 +665,103 @@ Turning the knob or a change made in OpenChatMix shows the usual screen for thre
 turned on by the hotkey goes first.
 
 **Add-on screens** ([3rd party add-ons](#features)) go over the screensaver, the visualizer or the
-GameDAC's own screen for as long as they last; then the screen they covered comes back.
+GameDAC's own screen for as long as they last; then the screen they covered comes back. An add-on with a
+screen for idle times, such as the [Info Screen](#info-screen-add-on-arctis-nova-pro), shows in the
+screensaver's place instead, after the same delay, and in the visualizer's while the visualizer is off.
+
+</details>
+
+### Info Screen add-on (Arctis Nova Pro)
+
+<details>
+<summary>Show what it shows, where the figures come from and how to set it up</summary>
+
+The Info Screen is an optional add-on: a small program of its own, not part of `OpenChatMix.exe`, that puts
+what plays, the weather and the PC's figures on the GameDAC screen while the headset is idle.
+
+1. Download [`OpenChatMix-InfoScreen.exe`](https://github.com/Swiftlyx/OpenChatMix/releases/latest/download/OpenChatMix-InfoScreen.exe)
+   from the latest release and keep it in a folder of your choice, for example next to `OpenChatMix.exe`.
+2. With SteelSeries GG closed, open *Settings* → *3rd party add-ons* → *Add* and pick the file.
+3. Its page in that list has the settings: each item on or off, the place for the weather (type a city, press
+   Enter and pick yours from the list, which names the region, and the district where names repeat), °C or °F for
+   the weather, labels or icons, GB or % for the memory, the format of the fan speeds and which fans (tick them in a
+   list of the fans the sensors find). A change starts the add-on again with the new settings.
+
+<p align="center">
+  <img src="docs/screenshots/info-screen-settings.png" width="260" alt="The Info Screen's settings in OpenChatMix: now playing and weather">
+  <img src="docs/screenshots/info-screen-settings-pc.png" width="260" alt="The Info Screen's settings in OpenChatMix: memory and fans">
+</p>
+
+**When it shows.** In the screensaver's place: after the screensaver's delay without sound and without the
+headset or OpenChatMix being used (the delay shows on the *Headset* tab even with no animation chosen), and while
+the *Screensaver on/off* hotkey keeps it on. While music or a video plays, the visualizer shows when it is on, and
+the Info Screen takes its place when it is off. When the music ends, the Info Screen comes back at once: sound
+that the visualizer or the Info Screen showed for does not count toward the delay. Turning the knob or a change
+made in OpenChatMix shows the GameDAC's own screen, as with the screensaver, and screens of other add-ons, such as
+Discord messages, still go over it. *Test* on the *Headset* tab tries the animation, not the Info Screen.
+
+**What it shows**, all on one screen, each item only when it is on and has a value:
+
+- **Now playing**: artist and title, as players and browsers tell the media controls of Windows; a long one
+  scrolls.
+- **CPU** and **GPU**: temperature, always in °C as hardware is, and load. **RAM**: memory in use in GB, in
+  percent or both.
+- **Fans**: the GPU's fan, labelled GPU, and every other fan that spins, numbered; with *Which fans* the fans you
+  tick, numbered in the order you ticked them. In %, in RPM or as RPM (%).
+- **Weather**: an icon, the temperature and the place, from Open-Meteo every 15 minutes.
+
+*Labels* names the figures CPU:, GPU:, RAM: and FAN1: or puts icons in their place: a chip, a graphics card, a memory
+stick and a fan, whose icon turns while the fan spins, faster at higher speeds. Icons take less room. The figures
+fill two columns; one too wide for a column, such as a fan in RPM (%) with its name, takes the whole row. The rows of
+the track and the weather leave their room to the figures while they are off or nothing plays, and fans that still
+do not fit take turns every 4 seconds.
+
+**Where the figures come from.** The add-on installs no driver of its own.
+
+| Figure | Source |
+|---|---|
+| CPU load, memory | Windows |
+| GPU temperature, load and fan | Windows, as Task Manager shows them (D3DKMT performance data and the *GPU Engine* counters); NVIDIA's [NVML](https://developer.nvidia.com/management-library-nvml), part of the NVIDIA driver, only for what Windows does not tell |
+| CPU temperature, case fans | [HWiNFO](https://www.hwinfo.com/) or [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (or [Open Hardware Monitor](https://openhardwaremonitor.org/)), while one of them runs; else [PawnIO](https://pawnio.eu/) when it is installed and the add-on runs as administrator |
+| Weather | [Open-Meteo](https://open-meteo.com/), no account or key needed |
+
+Only a kernel driver can read the CPU temperature and the motherboard's fans. Instead of shipping one (the
+WinRing0 driver that many tools used is flagged by antivirus software), the add-on reads them from the sensor tool
+you run: HWiNFO with *Shared Memory Support* on (*Settings* → *General*; the free version turns it off after
+12 hours) or with *Report value in Gadget* turned on for the readings you want (no time limit), or
+LibreHardwareMonitor.
+
+Without them the add-on can read these itself through [PawnIO](https://pawnio.eu/), the signed driver
+LibreHardwareMonitor uses, when PawnIO is installed. PawnIO opens only to programs run as administrator: tick *Run
+this program as an administrator* under *Properties* → *Compatibility* for both `OpenChatMix.exe` and
+`OpenChatMix-InfoScreen.exe` (OpenChatMix starts the add-on with its own rights, and Windows does not let a program
+without them start one marked this way). The add-on then reads the temperature of AMD Ryzen processors (Tctl) and of
+Intel processors, and the fans of the motherboard's Nuvoton chip (NCT6779D to NCT6799D and NCT6701D, found on many
+ASUS, MSI and ASRock boards; the ITE chips of Gigabyte boards are not read), with their duty in percent. The chip
+does not know which header of the board each of its seven channels serves; that is the board's own wiring. For
+boards the add-on knows, so far the ASUS ROG STRIX B850-E GAMING WIFI, it names them as the board does (CPU Fan,
+Chassis Fan 1 to 5, AIO Pump; on the screen CPU, the chassis header's number and PUMP), as HWiNFO and
+LibreHardwareMonitor do from their tables of boards; on other boards they are Fan 1 to Fan 7. It uses three signed modules of [PawnIO.Modules](https://github.com/namazso/PawnIO.Modules)
+(LGPL-2.1), embedded in the add-on, and only reads: it shares the hardware with other monitoring tools through the
+mutexes they use. Without PawnIO, or without administrator rights, those items stay off the screen.
+
+A percentage needs the fan's control value: LibreHardwareMonitor pairs each fan with its control, a Nuvoton chip
+gives each fan's duty, and the GPU's fan is shown as a share of its highest speed; a fan without one shows RPM.
+
+**Burn-in.** The whole picture drifts by up to 3 pixels sideways and 2 up and down, one pixel at a time, over a few
+minutes; a long track scrolls and extra fans take turns.
+
+**Privacy and cost.** The name you search for goes to Open-Meteo's geocoding when you press Enter, and the picked
+place's coordinates to Open-Meteo's forecast every 15 minutes; nothing else leaves the PC, and the add-on talks to
+OpenChatMix on 127.0.0.1 only. It takes about 9 MB of memory. While its screen shows it reads the sensors every
+second and sends a frame when the picture changes, at most 4 a second (more while a long track scrolls; a spinning
+fan's icon changes it every time); otherwise it reads them every 5 seconds and sends a frame every 2. Searching
+for a place and opening the list of fans start the add-on once more for its answer.
+
+`OpenChatMix-InfoScreen.exe --sources sources.txt` writes every source and reading it finds to a file, to see why an
+item is missing; `--png screen.png --demo` draws a picture like the one above.
+
+Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 </details>
 
@@ -737,6 +845,21 @@ talk to a GameSense receiver on 127.0.0.1 with a free port, whose address goes i
 afterwards; requests a web page could send are refused. Add-ons run in a job object, so they end with
 OpenChatMix.
 
+**For add-on authors.** Besides text, add-ons can send whole bitmaps as GameSense image frames: `image-data` in
+the handler, or `image-data-128x64` in an event's frame (the GameSense sizes 128×36 to 128×52 show centered). A few
+additions of OpenChatMix's own, which other GameSense receivers ignore: a handler with `"openchatmix-show": "idle"`
+makes its event's latest display the idle screen (in the screensaver's place, and in the visualizer's while the
+visualizer is off, for as long as the program sends it again within 10 seconds), and replies are
+`{"openchatmix-shown":true}` while it is on the display, so the program can draw less often while it is not. A
+program can describe its settings for its page in the panel as an RCDATA resource named `OPENCHATMIX_OPTIONS` (JSON
+with switches, choices, lists of checkmarks, text fields, searches, sections and hints, labels by language; see
+[`tools/infoscreen/options.json`](tools/infoscreen/options.json) and `src/addon_options.h`). OpenChatMix reads it
+without running the program, keeps the values in its own settings and starts the program with
+`--openchatmix-options "key=value;key=value"`, with `%`, `;`, `=`, `"`, `\` and control characters written as `%XX`.
+For a list the program fills itself and for a search, OpenChatMix runs it with `--openchatmix-query <key>`
+(`--openchatmix-text` with what was typed, `--openchatmix-language` with the panel's language) and reads
+`{"choices": [{"value", "label"}]}` from its standard output.
+
 **Settings** live in `%APPDATA%\OpenChatMix\OpenChatMix.ini`. In portable mode (*Settings → General → Keep
 settings next to the app*) they live next to the executable instead, with the presets and plugin states; an
 `OpenChatMix.ini` placed there by hand does the same.
@@ -754,9 +877,10 @@ under `third_party/` (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 ```bat
 build.bat                      :: builds build\OpenChatMix.exe
-powershell -File package.ps1   :: builds and packages dist\OpenChatMix.exe and the release zip
+powershell -File package.ps1   :: builds and packages dist\OpenChatMix.exe, the Info Screen and the release zip
 tools\icongen\build.bat        :: regenerates assets\OpenChatMix.ico from code
 tools\preview\build.bat        :: builds build\preview\OpenChatMixPreview.exe (after build.bat)
+tools\infoscreen\build.bat     :: builds build\infoscreen\OpenChatMix-InfoScreen.exe, the Info Screen add-on
 ```
 
 `OpenChatMixPreview.exe` shows the real panel with a simulated headset, to look at every page without
@@ -773,6 +897,7 @@ third_party/    RNNoise and the VST 3 SDK interfaces
 assets/         app icon
 tools/icongen/  icon generator
 tools/preview/  the panel with a simulated headset
+tools/infoscreen/  the Info Screen add-on for the GameDAC screen
 tools/drift_sim.cpp  simulation of the audio queue between two device clocks
 docs/           screenshots and the design system (docs/design-system.md)
 ```
@@ -836,6 +961,11 @@ writes `OpenChatMix-hang-<time>.dmp` there; please attach that as well.
 - **An add-on shows nothing.** Add-ons run only while SteelSeries GG is closed and a GameDAC with its
   display is connected; the *3rd party add-ons* page says what is missing. Some add-ons read GG's address
   only when they start: turn *Start with OpenChatMix* off and on again on the add-on's page.
+- **The Info Screen has no CPU temperature or case fans, or no weather.** The CPU temperature and the case fans
+  need HWiNFO or LibreHardwareMonitor running, or PawnIO with both programs run as administrator
+  ([where the figures come from](#info-screen-add-on-arctis-nova-pro)),
+  and the weather a place it can find. `OpenChatMix-InfoScreen.exe --sources sources.txt` lists what the add-on
+  finds, with the answer for the place you set.
 - **A plugin "could not be loaded".** Only 64-bit effect plugins work; instruments and 32-bit plugins
   do not. For a VST 3 bundle, choose the `.vst3` folder's inner file
   (`Contents\x86_64-win\Name.vst3`) or the bundle itself.
@@ -869,6 +999,18 @@ protocol details they documented:
   inspired the screensaver.
 - The [GameSense SDK](https://github.com/SteelSeries/gamesense-sdk) by SteelSeries — the protocol that
   3rd party add-ons speak, as documented there.
+- [Open-Meteo](https://open-meteo.com/) — the weather and the place search of the Info Screen add-on. Weather data
+  by Open-Meteo.com, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- [HWiNFO](https://www.hwinfo.com/) by Martin Malík and [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) —
+  the sensor tools the Info Screen add-on reads the CPU temperature and the fans from while they run (HWiNFO's
+  shared memory as its documentation describes it, LibreHardwareMonitor's WMI classes), and from
+  LibreHardwareMonitor's motherboard tables the headers a known board wires to its chip's fan channels; NVIDIA's
+  [NVML](https://developer.nvidia.com/management-library-nvml) — the function names the add-on calls for an NVIDIA
+  card that Windows tells nothing about.
+- [PawnIO](https://pawnio.eu/) and [PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) by namazso — the
+  driver and the signed modules (AMDFamily17, IntelMSR, LpcIO; LGPL-2.1, in `tools/infoscreen/pawnio`) the Info
+  Screen add-on reads the CPU temperature and the motherboard's fans through. The registers follow the Linux
+  k10temp, coretemp and nct6775 drivers.
 - [EarTrumpet](https://github.com/File-New-Project/EarTrumpet) by File-New-Project — the layout and
   interface IDs of `IAudioPolicyConfigFactory` for per-app playback devices.
 - Robert Bristow-Johnson's *[Audio EQ Cookbook](https://www.w3.org/TR/audio-eq-cookbook/)* — the filter formulas of the equalizer.

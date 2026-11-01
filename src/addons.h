@@ -28,10 +28,12 @@ public:
     bool CheckProcesses();
     bool IsRunning(const std::wstring& path) const;
     std::vector<GameSenseRequest> TakeRequests() { return server_.TakeRequests(); }
+    void SetIdleShown(bool shown) { server_.SetIdleShown(shown); }
 
 private:
     struct Process {
         std::wstring path;
+        std::wstring options;  // As the program gets them; a change starts it again.
         HANDLE handle = nullptr;
         ULONGLONG started = 0;
         int restarts = 0;

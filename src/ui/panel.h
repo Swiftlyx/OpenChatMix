@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../addon_options.h"
 #include "../audio_devices.h"
 #include "../balance.h"
 #include "../eq_presets.h"
@@ -49,6 +50,7 @@ struct MenuItem {
     bool header = false;  // Section title; cannot be chosen.
     wchar_t glyph = 0;    // Leading icon; 0 for none.
     bool action = false;  // Opens a page instead of choosing an entry: set apart by a line, primary color, a chevron.
+    bool checked = false; // In a menu of checkmarks: ticked.
 };
 
 // A connected playback device or microphone in the order of preference.
@@ -148,6 +150,7 @@ struct IdleScreenView {
     std::wstring ggApps;     // SteelSeries GG's apps that draw on the display, which the screensaver gives way to.
     bool bluetooth = false;  // The headset tells its base station's Bluetooth, which the screensaver can show.
     IconCorner bluetoothIcon = IconCorner::TopRight;
+    bool addOnScreen = false;  // An add-on's idle screen shows in the animation's place, after the same delay.
 };
 
 // Receives user actions from the panel. Calls arrive on the UI thread.
@@ -443,6 +446,8 @@ private:
     // searchable: typing filters the items, and a row at the top says so (long lists such as presets).
     void OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int selected, std::function<void(int)> choose,
                   bool searchable = false);
+    // A menu of checkmarks: choosing an item ticks or unticks it, toggle gets its index, and the menu stays open.
+    void OpenCheckMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, std::function<void(int)> toggle);
     // The items of the open menu that match its search, by index, with the titles of their sections.
     std::vector<size_t> MenuMatches() const;
     void CloseMenu();
@@ -648,6 +653,13 @@ private:
     void EditAddOnScreen(std::function<void(AddOnEventScreen&)> change);
     void DrawPixelIcon(int icon, D2D1_POINT_2F center, float pixel, D2D1_COLOR_F color);
     std::wstring AddOnStatus(size_t index) const;
+    // The settings the add-on program describes, in cards under their sections; returns the bottom.
+    float DrawAddOnOptions(const AddOnSettings& addOn, float y);
+    // Runs the add-on to list an option's choices or search for text, on a thread of its own.
+    void StartAddOnQuery(const std::wstring& path, const std::wstring& key, const std::wstring& text);
+    void OnAddOnQueryDone(AddOnQueryResult* result);
+    // The ticked values of a multi option, one per line in the setting.
+    static std::vector<std::wstring> TickedValues(const std::wstring& value);
     std::wstring ScreenSummary(const AddOnEventScreen& screen) const;
     std::wstring DisplaySummary(const AddOnDisplay& display) const;
     void Edit(const std::function<void(Settings&)>& edit);
@@ -767,10 +779,20 @@ private:
         bool searchable = false;
         std::wstring search;   // Typed while it is open.
         bool searchSelected = false;  // Ctrl+A selected the whole search; the next key replaces it.
+        bool checks = false;   // Opened by OpenCheckMenu.
     } menu_;
     std::wstring profileExe_;               // Profile being edited.
     std::wstring profileDevice_;            // Its device whose settings are shown (SoundDeviceKey); empty: all.
     std::wstring addOnPath_;                // Add-on being edited.
+    // What the add-on programs answered the panel, by path and option key joined by a line break.
+    struct AddOnQueryState {
+        bool pending = false;
+        std::wstring asked;      // The text of the latest query; older answers are dropped.
+        ULONGLONG answeredAt = 0;
+        AddOnQueryResult answer;
+    };
+    std::map<std::wstring, AddOnQueryState> addOnQueries_;
+    std::map<std::wstring, D2D1_RECT_F> addOnFields_;  // Where each search field of the add-on page drew last.
     std::wstring addOnEvent_;               // Its event whose screen is being edited.
     size_t addOnDisplay_ = 0;               // The display of that screen being edited.
     std::wstring hexInput_;                 // Typed custom color.

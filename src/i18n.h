@@ -593,6 +593,10 @@ enum class Text {
     TipNeverPlayHere,
     TipPlayHereAgain,
     DongleLightBlink,
+    IdleAddOnHint,
+    AddOnLoading,
+    AddOnSearching,
+    AddOnNoAnswer,
     Count,
 };
 

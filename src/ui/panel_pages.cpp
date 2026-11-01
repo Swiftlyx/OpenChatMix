@@ -767,7 +767,10 @@ float Panel::DrawIdleScreen(float y) {
         [](int i) { return std::wstring(T(kIdleAnimationLabels[i])); },
         [this](int i) { host_.OnIdleAnimation(kIdleAnimations[i]); }));
 
-    if (on) {
+    if (idle_.addOnScreen) {
+        rows.push_back(HintItem(T(Text::IdleAddOnHint)));
+    }
+    if (on || idle_.addOnScreen) {
         const int delays = static_cast<int>(std::size(kIdleDelays));
         // The nearest listed delay, so values edited in the ini file still show sensibly.
         int delay = 0;

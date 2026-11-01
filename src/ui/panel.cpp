@@ -396,6 +396,9 @@ LRESULT Panel::HandleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lP
     case WM_APP_BROWSE_DONE:
         OnFileDialogDone(static_cast<FileDialog>(wParam), reinterpret_cast<std::wstring*>(lParam));
         return 0;
+    case WM_APP_ADDON_QUERY:
+        OnAddOnQueryDone(reinterpret_cast<AddOnQueryResult*>(lParam));
+        return 0;
     case WM_DESTROY:
         frames_.Stop();
         lastFrame_.QuadPart = 0;
@@ -1214,6 +1217,11 @@ void Panel::OpenMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, int
     Invalidate();
 }
 
+void Panel::OpenCheckMenu(const D2D1_RECT_F& anchor, std::vector<MenuItem> items, std::function<void(int)> toggle) {
+    OpenMenu(anchor, std::move(items), -1, std::move(toggle));
+    menu_.checks = true;
+}
+
 void Panel::CloseMenu() {
     if (menu_.open) {
         menu_ = {};
@@ -1397,7 +1405,7 @@ void Panel::DrawMenu() {
         }
         const D2D1_RECT_F row{rect.left + 6.0f, y, rect.right - 6.0f, y + kItemHeight};
         const uint32_t id = PartId(kIdMenu, static_cast<uint32_t>(i) + 1);
-        const bool chosen = static_cast<int>(i) == menu_.selected;
+        const bool chosen = menu_.checks ? item.checked : static_cast<int>(i) == menu_.selected;
         if (chosen) {
             canvas_.FillRound(row, design::kRadiusMenuItem, Alpha(p.secondaryContainer, appear));
         }
@@ -1422,6 +1430,14 @@ void Panel::DrawMenu() {
         }
         if (row.bottom > listRect.top && row.top < listRect.bottom) {
             AddHit({row, id, [this, i] {
+                        if (menu_.checks) {
+                            menu_.items[i].checked = !menu_.items[i].checked;
+                            if (menu_.choose) {
+                                menu_.choose(static_cast<int>(i));
+                            }
+                            Invalidate();
+                            return;
+                        }
                         std::function<void(int)> choose = std::move(menu_.choose);
                         CloseMenu();
                         if (choose) {

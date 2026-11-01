@@ -318,9 +318,9 @@ struct App {
     GgScreenApps ggScreen;          // GG's apps that may draw on the headset display.
     std::vector<GgHelperProcess> ggHelpers;  // Their running helpers.
     GgScreenWatch ggWatch;
-    // What OpenChatMix puts on the headset display: nothing (the GameDAC's own screen), the screensaver or the
-    // visualizer. Add-on screens go over any of them.
-    enum class DisplayShows { Device, Screensaver, Visualizer } displayShows = DisplayShows::Device;
+    // What OpenChatMix puts on the headset display: nothing (the GameDAC's own screen), the screensaver, the
+    // visualizer or an add-on's idle screen. Add-on screens of events go over any of them.
+    enum class DisplayShows { Device, Screensaver, Visualizer, AddOn } displayShows = DisplayShows::Device;
     std::shared_ptr<AudioTap> audioTap = std::make_shared<AudioTap>();
     std::shared_ptr<IdleAnimation> visualizer;
     MediaSessions media;
@@ -329,6 +329,14 @@ struct App {
     AddOnHost addOns;
     AddOnScreens addOnScreens;
     std::optional<AddOnCard> addOnCard;  // On the display now.
+    std::shared_ptr<AddOnIdleScreen> addOnIdleScreen = std::make_shared<AddOnIdleScreen>();
+    bool addOnIdle = false;          // An add-on keeps an idle screen up to date.
+    // The display shows the visualizer, or the add-on's screen in its place, for what plays; sound meanwhile does
+    // not keep the add-on's screen waiting afterwards.
+    bool playbackShown = false;
+    ULONGLONG lastHeardSoundTick = 0;  // Sound while the display did not show for what plays.
+    bool soundRun = false;             // Sound at every check since the last silence...
+    ULONGLONG heardBeforeRun = 0;      // ...and lastHeardSoundTick before that run began.
     AddOnCard noticeCard;                // A notice of the app's own, shown over add-on screens until noticeUntil.
     ULONGLONG noticeUntil = 0;
     bool idleShowing = false;
@@ -2481,6 +2489,7 @@ void PushIdleScreen() {
     view.ggApps = g_app.ggScreen.names;
     view.bluetooth = g_app.features && g_app.features->bluetooth;
     view.bluetoothIcon = idle.bluetoothIcon;
+    view.addOnScreen = g_app.addOnIdle;
     g_app.panel->SetIdleScreen(view);
 }
 
@@ -2578,17 +2587,21 @@ void ShowOnDisplay(App::DisplayShows shows) {
     if (shows == App::DisplayShows::Screensaver) {
         g_app.display.Play(g_app.idleAnimation);
         Log("screensaver on");
+    } else if (shows == App::DisplayShows::AddOn) {
+        g_app.display.Play(g_app.addOnIdleScreen);
+        Log("add-on idle screen on");
     } else {
         g_app.display.Pause();
         Log("display back to the headset");
     }
 }
 
-// The visualizer shows while something plays: any sound, or media an app tells Windows about. For a moment after
-// the headset or the app is used it gives way to the GameDAC's own screen, so a volume change shows there.
-bool VisualizerWanted(ULONGLONG now, ULONGLONG deviceEvent) {
+// Something plays that the visualizer shows for, or an add-on's idle screen in its place while the visualizer is
+// off: any sound, or media an app tells Windows about. For a moment after the headset or the app is used it gives
+// way to the GameDAC's own screen, so a volume change shows there.
+bool PlaybackWanted(ULONGLONG now, ULONGLONG deviceEvent, bool addOn) {
     const VisualizerSettings& visualizer = g_app.settings.visualizer;
-    if (!visualizer.enabled || !g_app.features || !g_app.features->oled) {
+    if (!(visualizer.enabled || addOn) || !g_app.features || !g_app.features->oled) {
         return false;
     }
     if (visualizer.mediaOnly && now - g_app.mediaCheckTick >= kMediaCheckMs) {
@@ -2609,6 +2622,8 @@ void StopIdleScreen() {
     KillTimer(g_app.window, kTimerIdleScreen);
     g_app.audioTap->Stop();
     g_app.displayShows = App::DisplayShows::Device;
+    g_app.playbackShown = false;
+    g_app.addOns.SetIdleShown(false);
     g_app.display.Close();
     UpdateGgWatch();
     g_app.idleAnimation.reset();
@@ -2627,6 +2642,17 @@ void CheckIdleScreen() {
     const bool sound = g_app.mixer.PeakLevel() > kSilencePeak;
     if (sound) {
         g_app.lastSoundTick = now;
+        if (!g_app.soundRun) {
+            g_app.soundRun = true;
+            g_app.heardBeforeRun = g_app.lastHeardSoundTick;
+        }
+    } else {
+        g_app.soundRun = false;
+    }
+    // An add-on that stopped sending its idle screen leaves the display to the rest.
+    if (g_app.addOnIdle && !g_app.addOnScreens.IdleCard(now)) {
+        g_app.addOnIdle = false;
+        PushIdleScreen();
     }
     const ULONGLONG deviceEvent = g_app.device.LastEventTick();
     // While one of SteelSeries GG's apps may show something, the screensaver holds still instead of drawing
@@ -2674,17 +2700,51 @@ void CheckIdleScreen() {
     const bool pinned = g_app.idlePinned && !(lastUse && now - lastUse < kDisplayYieldMs);
     // SteelSeries GG may draw on the same display too; the screensaver runs regardless.
     const bool byHand = g_app.idleManual || pinned || now < g_app.idlePreviewUntil;
+    // An add-on's idle screen takes the screensaver's place, except while the animation is tested.
+    const bool testing = g_app.idleAnimation && (g_app.idleManual || now < g_app.idlePreviewUntil);
+    const bool addOn = g_app.addOnIdle && !testing;
     const bool idle = g_app.idleAnimation && (byHand || now - activity >= delay);
-    // The visualizer while something plays; a screensaver started by hand goes first.
-    const bool visualize = !byHand && VisualizerWanted(now, deviceEvent);
-    ShowOnDisplay(visualize ? App::DisplayShows::Visualizer
-                  : idle    ? App::DisplayShows::Screensaver
-                            : App::DisplayShows::Device);
-    if (idle != g_app.idleShowing) {
-        g_app.idleShowing = idle;
+    // While something plays the visualizer shows, or with the visualizer off the add-on's screen; a screensaver
+    // started by hand goes first.
+    const bool playback = !byHand && PlaybackWanted(now, deviceEvent, addOn);
+    const bool visualize = playback && g_app.settings.visualizer.enabled;
+    const bool addOnPlayback = playback && !visualize && addOn;
+    // Once what they showed for ends, the add-on's screen comes back without waiting the delay again: sound counts
+    // for it only while the display showed nothing for it, and the sound that led up to the music, before Windows
+    // told it plays, counts as the music.
+    if ((visualize || addOnPlayback) && !g_app.playbackShown && g_app.soundRun) {
+        g_app.lastHeardSoundTick = g_app.heardBeforeRun;
+    } else if (sound && !visualize && !addOnPlayback) {
+        g_app.lastHeardSoundTick = now;
+    }
+    const ULONGLONG addOnActivity = std::max({g_app.lastHeardSoundTick, g_app.lastActivityTick, deviceEvent});
+    const bool addOnIdle = addOn && (byHand || now - addOnActivity >= delay);
+    const App::DisplayShows shows = visualize                    ? App::DisplayShows::Visualizer
+                                    : addOnPlayback || addOnIdle ? App::DisplayShows::AddOn
+                                    : idle && !addOn             ? App::DisplayShows::Screensaver
+                                                                 : App::DisplayShows::Device;
+    g_app.playbackShown = visualize || addOnPlayback;
+    ShowOnDisplay(shows);
+    g_app.addOns.SetIdleShown(shows == App::DisplayShows::AddOn);
+    const bool animation = idle && !addOn;
+    if (animation != g_app.idleShowing) {
+        g_app.idleShowing = animation;
         PushIdleScreen();
     }
     UpdateGgWatch();
+}
+
+// Gives the display the add-on's latest idle screen; when one comes or goes, the display follows.
+void UpdateAddOnIdle() {
+    const std::optional<AddOnCard> card = g_app.addOnScreens.IdleCard(GetTickCount64());
+    if (card) {
+        g_app.addOnIdleScreen->Show(*card);
+    }
+    if (card.has_value() != g_app.addOnIdle) {
+        g_app.addOnIdle = card.has_value();
+        PushIdleScreen();
+        CheckIdleScreen();
+    }
 }
 
 // Discord flashing on the taskbar has a message that GG's Discord app puts on the display: the screensaver
@@ -2716,14 +2776,15 @@ void OnWindowFlash(HWND window) {
 // The screensaver hotkey: turns it on until the hotkey is pressed again, or off when it is on or shows.
 // Without a chosen animation the popup says where to pick one.
 void ToggleScreensaver() {
-    if (!g_app.display.IsOpen() || !g_app.idleAnimation) {
+    if (!g_app.display.IsOpen() || (!g_app.idleAnimation && !g_app.addOnIdle)) {
         if (g_app.settings.showPopup) {
             g_app.osd->ShowMessage(kGlyphScreensaver, T(Text::ScreensaverOffTitle), T(Text::ScreensaverOffText));
         }
         return;
     }
     const ULONGLONG now = GetTickCount64();
-    if (g_app.idlePinned || g_app.displayShows == App::DisplayShows::Screensaver) {
+    if (g_app.idlePinned || g_app.displayShows == App::DisplayShows::Screensaver ||
+        g_app.displayShows == App::DisplayShows::AddOn) {
         g_app.idlePinned = false;
         g_app.idleManual = false;
         g_app.idleManualUntil = 0;
@@ -2813,6 +2874,8 @@ void UpdateDisplayUse() {
     } else if (g_app.display.IsOpen() && !wanted) {
         g_app.audioTap->Stop();
         g_app.displayShows = App::DisplayShows::Device;
+        g_app.playbackShown = false;
+        g_app.addOns.SetIdleShown(false);
         g_app.display.Close();
     }
     if (g_app.display.IsOpen()) {
@@ -2843,6 +2906,7 @@ void UpdateAddOns() {
     if (serving != g_app.addOns.IsServing()) {
         if (!g_app.addOns.IsServing()) {
             g_app.addOnScreens.Clear();
+            UpdateAddOnIdle();
         }
         UpdateDisplayUse();
     }
@@ -4867,6 +4931,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             g_app.addOnScreens.Handle(request, g_app.settings.addOns, now);
         }
         UpdateAddOnScreen();
+        UpdateAddOnIdle();
         return 0;
     }
 

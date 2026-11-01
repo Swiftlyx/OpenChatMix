@@ -34,6 +34,9 @@ public:
     bool IsRunning() const { return port_ != 0; }
     int Port() const { return port_; }
     std::vector<GameSenseRequest> TakeRequests();
+    // Whether an add-on's idle screen is on the display; replies tell its program, which may then draw less often
+    // while it is not.
+    void SetIdleShown(bool shown) { idleShown_ = shown; }
 
 private:
     struct Worker {
@@ -47,6 +50,7 @@ private:
     HWND notify_ = nullptr;
     UINT message_ = 0;
     int port_ = 0;
+    std::atomic<bool> idleShown_{false};
     bool winsock_ = false;
     uintptr_t listener_ = 0;
     std::thread acceptor_;

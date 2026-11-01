@@ -41,6 +41,15 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+## PawnIO.Modules (in the optional Info Screen add-on, separate download)
+
+`OpenChatMix-InfoScreen.exe`, published next to OpenChatMix but not part of it, embeds three signed modules from
+PawnIO.Modules 0.2.11 by namazso, unchanged: `AMDFamily17.bin`, `IntelMSR.bin` and `LpcIO.bin`
+(https://github.com/namazso/PawnIO.Modules, release 0.2.11; source in that repository at the same tag). They are in
+`tools/infoscreen/pawnio` with their license, the GNU Lesser General Public License 2.1 or later (`COPYING` there).
+They run inside the PawnIO driver (https://pawnio.eu/), which the user installs; the add-on talks to it only through
+its published library, `PawnIOLib.dll`, installed with the driver.
+
 ## DeepFilterNet (optional plugin, separate download)
 
 `DeepFilterNet-OpenChatMix.dll`, published next to OpenChatMix but not part of it, is built from

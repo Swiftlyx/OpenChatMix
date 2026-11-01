@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cwchar>
 
 #include "addon_events.h"
 #include "addon_icons.h"
@@ -22,6 +23,12 @@ constexpr ULONGLONG kTalkingFrameMs = 140;
 constexpr wchar_t kFace[] = L"Tahoma";
 constexpr int kFontPixels = 11;
 constexpr const wchar_t* kFrameFields[] = {L"title", L"message", L"user", L"channel"};
+constexpr wchar_t kOwnScreen[] = L"screened-128x64";
+// Sizes of the GameSense bitmaps, after the display's own; smaller ones show centered.
+constexpr const wchar_t* kBitmapKeys[] = {L"image-data-128x64", L"image-data-128x52", L"image-data-128x48",
+                                          L"image-data-128x40", L"image-data-128x36"};
+constexpr ULONGLONG kIdleStaleMs = 10000;  // An idle screen not sent again for this long is gone.
+constexpr DWORD kIdlePollMs = 100;         // How soon a new frame of the idle screen shows.
 
 std::wstring JsonText(const JsonValue* field) {
     if (!field) {
@@ -63,6 +70,63 @@ const AddOnSettings* DiscordAddOn(const std::vector<AddOnSettings>& addOns) {
         return addOn.enabled && AddOnKindOf(addOn.path) == AddOnKind::Discord;
     });
     return found == addOns.end() ? nullptr : &*found;
+}
+
+// The size of a GameSense bitmap from its key or device type, e.g. "image-data-128x40" or "screened-128x40".
+bool BitmapSize(const std::wstring& name, int& width, int& height) {
+    const size_t dash = name.find_last_of(L'-');
+    if (dash == std::wstring::npos || swscanf_s(name.c_str() + dash + 1, L"%dx%d", &width, &height) != 2) {
+        return false;
+    }
+    return width > 0 && width <= kOledWidth && height > 0 && height <= kOledHeight;
+}
+
+// Pixels packed one bit each, row by row from the top left, the most significant bit first; a smaller bitmap
+// shows centered. Null when there are too few bytes.
+std::shared_ptr<const OledBitmap> UnpackBitmap(const JsonValue& bytes, int width, int height) {
+    const size_t needed = (static_cast<size_t>(width) * height + 7) / 8;
+    if (bytes.type != JsonValue::Type::Array || bytes.array.size() < needed) {
+        return nullptr;
+    }
+    auto bitmap = std::make_shared<OledBitmap>();
+    const int left = (kOledWidth - width) / 2;
+    const int top = (kOledHeight - height) / 2;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const size_t bit = static_cast<size_t>(y) * width + x;
+            const auto byte = static_cast<unsigned>(bytes.array[bit / 8].NumberOr(0.0));
+            if (byte & (0x80u >> (bit % 8))) {
+                bitmap->Set(left + x, top + y);
+            }
+        }
+    }
+    return bitmap;
+}
+
+// A bitmap frame of a handler: the event's own image of the handler's size or another size when it sent one,
+// else the handler's fixed image.
+std::shared_ptr<const OledBitmap> FrameBitmap(const JsonValue& frame, const JsonValue& data, const std::wstring& type) {
+    int width = kOledWidth;
+    int height = kOledHeight;
+    const bool sized = BitmapSize(type, width, height);
+    if (const JsonValue* sent = data.Find(L"frame")) {
+        std::vector<std::wstring> keys;
+        if (sized) {
+            keys.push_back(L"image-data-" + std::to_wstring(width) + L"x" + std::to_wstring(height));
+        }
+        keys.insert(keys.end(), std::begin(kBitmapKeys), std::end(kBitmapKeys));
+        for (const std::wstring& key : keys) {
+            int w = 0;
+            int h = 0;
+            if (const JsonValue* bytes = sent->Find(key); bytes && BitmapSize(key, w, h)) {
+                if (std::shared_ptr<const OledBitmap> bitmap = UnpackBitmap(*bytes, w, h)) {
+                    return bitmap;
+                }
+            }
+        }
+    }
+    const JsonValue* fixed = frame.Find(L"image-data");
+    return fixed ? UnpackBitmap(*fixed, width, height) : nullptr;
 }
 
 ULONGLONG DisplayLength(const AddOnDisplay& display) {
@@ -264,6 +328,9 @@ public:
     explicit AddOnScreen(AddOnCard card) : card_(std::move(card)) {}
 
     bool Load(const std::atomic<bool>& cancel) override {
+        if (card_.bitmap) {
+            return true;
+        }
         if (!card_.image.empty()) {
             image_ = CreateIdleAnimation(IdleAnimationKind::Image, card_.image);
             return image_ && image_->Load(cancel);
@@ -296,6 +363,10 @@ public:
     }
 
     DWORD Render(ULONGLONG elapsedMs, OledBitmap& frame) override {
+        if (card_.bitmap) {
+            frame = *card_.bitmap;
+            return 500;
+        }
         if (image_) {
             return image_->Render(elapsedMs, frame);
         }
@@ -360,16 +431,27 @@ void AddOnScreens::Handle(const GameSenseRequest& request, const std::vector<Add
     } else if (request.endpoint == L"bind_game_event") {
         const std::wstring key = game + L"/" + StringOf(body, L"event");
         if (const JsonValue* handlers = body.Find(L"handlers"); handlers && handlers->type == JsonValue::Type::Array) {
+            // Of several screens bound for displays of different sizes, the one of this display's size wins.
+            const JsonValue* chosen = nullptr;
             for (const JsonValue& handler : handlers->array) {
-                if (StringOf(handler, L"device-type").starts_with(L"screened")) {
-                    handlers_[key] = handler;
+                const std::wstring type = StringOf(handler, L"device-type");
+                if (type.starts_with(L"screened") &&
+                    (!chosen || type == kOwnScreen || StringOf(*chosen, L"device-type") != kOwnScreen)) {
+                    chosen = &handler;
                 }
+            }
+            if (chosen) {
+                handlers_[key] = *chosen;
             }
         }
     } else if (request.endpoint == L"remove_game" || request.endpoint == L"stop_game") {
         const std::wstring prefix = game + L"/";
         std::erase_if(handlers_, [&](const auto& entry) { return entry.first.starts_with(prefix); });
         std::erase_if(runs_, [&](const Run& run) { return run.key.starts_with(prefix); });
+        if (idleKey_.starts_with(prefix)) {
+            idleKey_.clear();
+            idleUpdated_ = 0;
+        }
     }
 }
 
@@ -459,8 +541,24 @@ void AddOnScreens::HandleBound(const std::wstring& key, const JsonValue& handler
         }
     }
     AddOnEventScreen screen;
+    std::vector<std::shared_ptr<const OledBitmap>> bitmaps;
+    auto lengthOf = [](const JsonValue& frame) {
+        const JsonValue* length = frame.Find(L"length-millis");
+        const int millis = length ? static_cast<int>(length->NumberOr(0.0)) : 0;
+        return millis > 0 ? std::min(millis, kAppLongestMs) : kAppDefaultMs;
+    };
     if (frames && frames->type == JsonValue::Type::Array) {
         for (const JsonValue& frame : frames->array) {
+            if (const JsonValue* hasText = frame.Find(L"has-text"); hasText && !hasText->BoolOr(true)) {
+                if (std::shared_ptr<const OledBitmap> bitmap =
+                        FrameBitmap(frame, data, StringOf(handler, L"device-type"))) {
+                    AddOnDisplay display;
+                    display.lengthMs = lengthOf(frame);
+                    screen.displays.push_back(std::move(display));
+                    bitmaps.push_back(std::move(bitmap));
+                }
+                continue;
+            }
             std::vector<std::wstring> texts;
             const JsonValue* lines = frame.Find(L"lines");
             const std::vector<JsonValue> single{frame};
@@ -491,25 +589,39 @@ void AddOnScreens::HandleBound(const std::wstring& key, const JsonValue& handler
             for (size_t i = texts.size() > 1 ? 1 : 0; i < texts.size(); ++i) {
                 display.text += (display.text.empty() ? L"" : L"\n") + texts[i];
             }
-            const JsonValue* length = frame.Find(L"length-millis");
-            const int millis = length ? static_cast<int>(length->NumberOr(0.0)) : 0;
-            display.lengthMs = millis > 0 ? std::min(millis, kAppLongestMs) : kAppDefaultMs;
+            display.lengthMs = lengthOf(frame);
             screen.displays.push_back(std::move(display));
+            bitmaps.push_back(nullptr);
         }
+    }
+    if (StringOf(handler, L"openchatmix-show") == L"idle") {
+        // Only the first display: the program sends the next one when it changes.
+        if (screen.displays.empty()) {
+            if (idleKey_ == key) {
+                idleKey_.clear();
+                idleUpdated_ = 0;
+            }
+            return;
+        }
+        const AddOnDisplay& display = screen.displays.front();
+        idleKey_ = key;
+        idle_ = AddOnCard{display.icon, display.heading, display.text, {}, bitmaps.front()};
+        idleUpdated_ = now;
+        return;
     }
     if (screen.displays.empty()) {
         End(key);
         std::erase_if(runs_, [&](const Run& run) { return run.key == key; });
         return;
     }
-    Start(key, std::move(screen), {}, now);
+    Start(key, std::move(screen), {}, now, std::move(bitmaps));
 }
 
 void AddOnScreens::Start(std::wstring key, AddOnEventScreen screen, std::map<std::wstring, std::wstring> fields,
-                         ULONGLONG now) {
+                         ULONGLONG now, std::vector<std::shared_ptr<const OledBitmap>> bitmaps) {
     std::erase_if(runs_, [&](const Run& run) { return run.key == key; });
     screen.times = std::max(1, screen.times);
-    runs_.push_back({std::move(key), std::move(screen), std::move(fields), now});
+    runs_.push_back({std::move(key), std::move(screen), std::move(fields), now, std::move(bitmaps)});
 }
 
 void AddOnScreens::End(const std::wstring& key) {
@@ -555,7 +667,7 @@ std::optional<AddOnCard> AddOnScreens::Current(ULONGLONG now, ULONGLONG& next) c
         }
         const AddOnDisplay& display = displays[index];
         return AddOnCard{display.icon, FillTemplate(display.heading, run.fields), FillTemplate(display.text, run.fields),
-                         display.image};
+                         display.image, index < run.bitmaps.size() ? run.bitmaps[index] : nullptr};
     };
     // Screens that end on their own go first, the newest of them; then those that last while their event does.
     for (bool lasting : {false, true}) {
@@ -571,10 +683,58 @@ std::optional<AddOnCard> AddOnScreens::Current(ULONGLONG now, ULONGLONG& next) c
     return std::nullopt;
 }
 
+std::optional<AddOnCard> AddOnScreens::IdleCard(ULONGLONG now) const {
+    if (idleKey_.empty() || now - idleUpdated_ >= kIdleStaleMs) {
+        return std::nullopt;
+    }
+    return idle_;
+}
+
 void AddOnScreens::Clear() {
     *this = AddOnScreens{};
 }
 
 std::shared_ptr<IdleAnimation> CreateAddOnScreen(const AddOnCard& card) {
     return std::make_shared<AddOnScreen>(card);
+}
+
+void AddOnIdleScreen::Show(const AddOnCard& card) {
+    AcquireSRWLockExclusive(&lock_);
+    if (!(card == card_)) {
+        card_ = card;
+        ++version_;
+    }
+    ReleaseSRWLockExclusive(&lock_);
+}
+
+DWORD AddOnIdleScreen::Render(ULONGLONG elapsedMs, OledBitmap& frame) {
+    bool changed = false;
+    AcquireSRWLockShared(&lock_);
+    if (version_ != drawnVersion_) {
+        drawn_ = card_;
+        drawnVersion_ = version_;
+        changed = true;
+    }
+    ReleaseSRWLockShared(&lock_);
+    // Played again from the start, e.g. after the visualizer's turn.
+    if (elapsedMs < lastElapsed_) {
+        cardStart_ = elapsedMs;
+    }
+    lastElapsed_ = elapsedMs;
+    if (changed) {
+        cardStart_ = elapsedMs;
+        text_.reset();
+        if (!drawn_.bitmap) {
+            const std::atomic<bool> never{false};
+            text_ = CreateAddOnScreen(drawn_);
+            if (!text_->Load(never)) {
+                text_.reset();
+            }
+        }
+    }
+    if (drawn_.bitmap) {
+        frame = *drawn_.bitmap;
+        return kIdlePollMs;
+    }
+    return text_ ? std::min(kIdlePollMs, text_->Render(elapsedMs - cardStart_, frame)) : kIdlePollMs;
 }

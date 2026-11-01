@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <utility>
 
+#include "addon_options.h"
 #include "app.h"
 #include "app_info.h"
 #include "log.h"
@@ -48,17 +50,18 @@ AddOnHost::~AddOnHost() {
 }
 
 void AddOnHost::Update(bool run, const std::vector<AddOnSettings>& addOns, HWND notify, UINT message) {
-    std::vector<std::wstring> wanted;
+    std::vector<std::pair<std::wstring, std::wstring>> wanted;  // Path and options.
     if (run) {
         for (const AddOnSettings& addOn : addOns) {
             if (addOn.enabled && IsFile(addOn.path)) {
-                wanted.push_back(addOn.path);
+                wanted.emplace_back(addOn.path, EncodeAddOnOptions(addOn.options));
             }
         }
     }
+    // A program whose options changed starts again with the new ones.
     std::erase_if(processes_, [&](Process& process) {
-        const bool keep = std::any_of(wanted.begin(), wanted.end(), [&](const std::wstring& path) {
-            return _wcsicmp(path.c_str(), process.path.c_str()) == 0;
+        const bool keep = std::any_of(wanted.begin(), wanted.end(), [&](const auto& item) {
+            return _wcsicmp(item.first.c_str(), process.path.c_str()) == 0 && item.second == process.options;
         });
         if (!keep) {
             End(process);
@@ -84,13 +87,14 @@ void AddOnHost::Update(bool run, const std::vector<AddOnSettings>& addOns, HWND 
             job_ = nullptr;
         }
     }
-    for (const std::wstring& path : wanted) {
+    for (const auto& [path, options] : wanted) {
         const bool known = std::any_of(processes_.begin(), processes_.end(), [&](const Process& process) {
             return _wcsicmp(path.c_str(), process.path.c_str()) == 0;
         });
         if (!known) {
             Process process;
             process.path = path;
+            process.options = options;
             if (!Launch(process)) {
                 process.restarts = kMaxRestarts;
             }
@@ -147,6 +151,10 @@ bool AddOnHost::Launch(Process& process) {
     const size_t slash = process.path.find_last_of(L"\\/");
     const std::wstring folder = slash == std::wstring::npos ? L"." : process.path.substr(0, slash);
     std::wstring command = L"\"" + process.path + L"\"";
+    if (!process.options.empty()) {
+        // The encoding leaves no quotes or backslashes, so the value is one argument as it stands.
+        command += L" --openchatmix-options \"" + process.options + L"\"";
+    }
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESHOWWINDOW;
@@ -155,7 +163,14 @@ bool AddOnHost::Launch(Process& process) {
     // Suspended until it is in the job, so not even its first moments run outside it.
     if (!CreateProcessW(process.path.c_str(), command.data(), nullptr, nullptr, FALSE,
                         CREATE_SUSPENDED | CREATE_NO_WINDOW, nullptr, folder.c_str(), &startup, &info)) {
-        Log("add-on could not start: %s, error %lu", Utf8(FileNameOf(process.path)).c_str(), GetLastError());
+        const DWORD error = GetLastError();
+        if (error == ERROR_ELEVATION_REQUIRED) {
+            // Marked to run as administrator while OpenChatMix runs without: Windows does not elevate a child.
+            Log("add-on could not start: %s asks for administrator rights; OpenChatMix needs them too",
+                Utf8(FileNameOf(process.path)).c_str());
+        } else {
+            Log("add-on could not start: %s, error %lu", Utf8(FileNameOf(process.path)).c_str(), error);
+        }
         return false;
     }
     if (job_) {

@@ -595,6 +595,10 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Never play here",  // TipNeverPlayHere
     L"Play here again",  // TipPlayHereAgain
     L"Blink the dongle's light while the headset is off",  // DongleLightBlink
+    L"While an add-on with a screen of its own runs, that screen shows instead of the animation.",  // IdleAddOnHint
+    L"Loading…",  // AddOnLoading
+    L"Searching…",  // AddOnSearching
+    L"The add-on did not answer.",  // AddOnNoAnswer
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1184,6 +1188,10 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Ніколи не відтворювати тут",
     L"Знову відтворювати тут",
     L"Блимати індикатором донгла, поки гарнітура вимкнена",
+    L"Поки працює доповнення з власним екраном, замість анімації показується його екран.",
+    L"Завантаження…",
+    L"Пошук…",
+    L"Доповнення не відповіло.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1773,6 +1781,10 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Burada asla çalma",
     L"Burada yeniden çal",
     L"Kulaklık kapalıyken alıcının ışığı yanıp sönsün",
+    L"Kendi ekranı olan bir eklenti çalışırken animasyon yerine o ekran gösterilir.",
+    L"Yükleniyor…",
+    L"Aranıyor…",
+    L"Eklenti yanıt vermedi.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {
