@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.0.0 — 2026-11-01
+
+- **Info Screen add-on** (Nova Pro, optional): `OpenChatMix-InfoScreen.exe`, a separate download with each release,
+  shows what plays, the weather and the PC's figures on one GameDAC screen while the headset is idle: the track,
+  CPU and GPU temperature and load, memory in use (GB, % or both), fan speeds in %, RPM or RPM with % in brackets,
+  and the weather from Open-Meteo. Each item turns on and off on its own; the figures are labelled CPU:, GPU:, RAM:
+  and FAN1: or with icons, a fan's icon turning while it spins; the fans to show are ticked in a list; the place is
+  searched for and picked by its region; and the picture keeps drifting by a few pixels against burn-in. Without the
+  track or the weather more figures fit. Add it under *Settings* → *3rd party add-ons*. GPU figures come from
+  Windows (NVML only where Windows tells nothing); the CPU temperature and the case fans from HWiNFO or
+  LibreHardwareMonitor while they run, else through PawnIO when it is installed and the add-on runs as administrator
+  (AMD Ryzen and Intel temperature, the fans of Nuvoton chips), with no driver of its own.
+- An add-on can have a screen for idle times: it shows in the screensaver's place, after the same delay, and while
+  music plays in the visualizer's place when the visualizer is off. When the music ends it comes back at once. The
+  screensaver's delay now shows on the *Headset* tab whenever such an add-on runs, also with no animation chosen.
+- Add-ons can send whole 128×64 bitmaps (GameSense image frames), and a program can describe its settings, which
+  then show on its page under *3rd party add-ons* (switches, choices, lists of checkmarks, text and searches) and are
+  passed to it when it starts; it starts again when they change.
+- The log tells more for when the GameDAC's sound stops until its knob is turned: GameDAC events it does not know,
+  how long each takeover of the screen took and its slow or failed updates, and a playback device that takes no
+  audio for half a second or longer.
+
 ## 2.9.4 — 2026-10-29
 
 - The exported settings ZIP shows the time as hours and minutes, for example
