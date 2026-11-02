@@ -449,7 +449,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Shows for",  // VisualizerFor
     L"Music and video",  // VisualizerMedia
     L"Any sound",  // VisualizerSound
-    L"While an app tells Windows it plays, as the media controls in Windows show it: players, YouTube in the browser and the like.",  // VisualizerMediaHint
+    L"While an app tells Windows it plays, as the media controls in Windows show it: players, YouTube in the browser and the like. The bars follow only that app, without Discord or the game.",  // VisualizerMediaHint
     L"Whenever the headset plays sound, games and calls too.",  // VisualizerSoundHint
     L"2.4 GHz",  // Link24Ghz
     L"3.5 mm",  // LinkJack
@@ -1042,7 +1042,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Показувати для",
     L"Музики й відео",
     L"Будь-якого звуку",
-    L"Поки програма повідомляє Windows про відтворення, як у медіаелементах керування Windows: плеєри, YouTube у браузері тощо.",
+    L"Поки програма повідомляє Windows про відтворення, як у медіаелементах керування Windows: плеєри, YouTube у браузері тощо. Стовпчики показують лише цю програму, без Discord і гри.",
     L"Щоразу, коли гарнітура відтворює звук, зокрема в іграх і дзвінках.",
     L"2,4 ГГц",
     L"3,5 мм",
@@ -1635,7 +1635,7 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Ne zaman gösterilir",
     L"Müzik ve video",
     L"Herhangi bir ses",
-    L"Bir uygulama Windows'a çaldığını bildirdiği sürece, Windows medya denetimlerinin gösterdiği gibi: oynatıcılar, tarayıcıdaki YouTube ve benzerleri.",
+    L"Bir uygulama Windows'a çaldığını bildirdiği sürece, Windows medya denetimlerinin gösterdiği gibi: oynatıcılar, tarayıcıdaki YouTube ve benzerleri. Çubuklar yalnızca o uygulamayı gösterir, Discord'u ve oyunu değil.",
     L"Kulaklık ne zaman ses çalsa, oyunlar ve aramalar da dahil.",
     L"2,4 GHz",
     L"3,5 mm",

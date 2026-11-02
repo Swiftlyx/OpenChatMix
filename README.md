@@ -136,7 +136,8 @@ native settings, so GG and Sonar can stay closed:
 - **Visualizer for the GameDAC screen** (Nova Pro). Bars that follow the sound fill the whole screen while
   music or a video plays, or for any sound if you like. Music and video are told apart the way Windows
   knows them: an app that plays tells the media controls of Windows, as players and YouTube in the
-  browser do. Turning the knob shows the usual screen for a moment.
+  browser do, and the bars then follow only those apps, without a voice in Discord. Turning the knob
+  shows the usual screen for a moment.
 - **3rd party add-ons for the GameDAC screen** (Nova Pro). Programs made for SteelSeries GameSense can
   show messages and more on the GameDAC while SteelSeries GG is closed. OpenChatMix includes no such
   programs: you add one you already have by choosing its file, and OpenChatMix starts it and shows what
@@ -660,9 +661,11 @@ When OpenChatMix exits or the PC goes to sleep, the display is handed back to th
 
 **Visualizer.** *Headset → Visualizer* fills the screen with 32 bars from 20 Hz to 20 kHz, with falling
 peak marks, while something plays: music and video (an app that tells the media controls of Windows it
-plays) or any sound. It runs at about 17 to 23 frames a second, as fast as the GameDAC takes them.
-Turning the knob or a change made in OpenChatMix shows the usual screen for three seconds; a screensaver
-turned on by the hotkey goes first.
+plays) or any sound. With *Music and video* the bars follow only the apps that play, so a voice in
+Discord, the game or a notification sound stays out of them; with *Any sound* they follow everything the
+headset plays. It runs at about 17 to 23 frames a second, as fast as the GameDAC takes them. Turning the
+knob or a change made in OpenChatMix shows the usual screen for three seconds; a screensaver turned on
+by the hotkey goes first.
 
 **Add-on screens** ([3rd party add-ons](#features)) go over the screensaver, the visualizer or the
 GameDAC's own screen for as long as they last; then the screen they covered comes back. An add-on with a
@@ -838,13 +841,17 @@ Windows' communications ducking (`IAudioSessionControl2::SetDuckingPreference`).
 
 **GameDAC screen.** The screensaver, the visualizer and add-on screens are drawn by a thread of their
 own through a handle of its own to the GameDAC's HID interface, so drawing never holds up ChatMix
-commands. The visualizer listens to the headset with WASAPI loopback only while it shows and splits the
-sound into 32 bands from 20 Hz to 20 kHz with a 4096-point FFT; whether music or video plays comes from
-the media sessions Windows lists (`GlobalSystemMediaTransportControlsSessionManager`). To give way to
-SteelSeries GG's own apps for the display, OpenChatMix watches the I/O of their helper processes while
-GG runs and the screensaver is on (`GetProcessIoCounters`): the moment a helper hands GG something to
-show, the screensaver stops; the regular heartbeat each helper sends is learned and ignored. Add-ons
-talk to a GameSense receiver on 127.0.0.1 with a free port, whose address goes into
+commands. The visualizer listens only while it shows and splits the sound into 32 bands from 20 Hz to
+20 kHz with a 4096-point FFT. Whether music or video plays comes from the media sessions Windows lists
+(`GlobalSystemMediaTransportControlsSessionManager`); with *Music and video* the visualizer hears the
+apps of all sessions that play, added together, through process loopback of their process trees, each
+found by the program of the app's Start menu entry or by its package. With *Any sound*, or when none
+of them is found, it hears the headset with WASAPI loopback (with *Music and video* the Game device
+while virtual devices run). To give way to SteelSeries GG's own apps for the display, OpenChatMix
+watches the I/O of their helper processes while GG runs and the screensaver is on
+(`GetProcessIoCounters`): the moment a helper hands GG something to show, the screensaver stops; the
+regular heartbeat each helper sends is learned and ignored. Add-ons talk to a GameSense receiver on
+127.0.0.1 with a free port, whose address goes into
 `%ProgramData%\SteelSeries\SteelSeries Engine 3\coreProps.json` while they run and is put back
 afterwards; requests a web page could send are refused. Add-ons run in a job object, so they end with
 OpenChatMix.
@@ -962,6 +969,9 @@ writes `OpenChatMix-hang-<time>.dmp` there; please attach that as well.
 - **The visualizer does not show.** With *Music and video* it shows only while an app tells Windows it
   plays — its controls then appear in the Windows media flyout next to the volume. Some games and apps
   do not; choose *Any sound* for them.
+- **The visualizer shows, but its bars stay still.** With *Music and video* the bars follow the apps
+  that say they play in the Windows media flyout. When the sound comes from another program than the
+  one shown there, choose *Any sound*.
 - **An add-on shows nothing.** Add-ons run only while SteelSeries GG is closed and a GameDAC with its
   display is connected; the *3rd party add-ons* page says what is missing. Some add-ons read GG's address
   only when they start: turn *Start with OpenChatMix* off and on again on the add-on's page.

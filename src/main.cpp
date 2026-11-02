@@ -322,6 +322,7 @@ struct App {
     // visualizer or an add-on's idle screen. Add-on screens of events go over any of them.
     enum class DisplayShows { Device, Screensaver, Visualizer, AddOn } displayShows = DisplayShows::Device;
     std::shared_ptr<AudioTap> audioTap = std::make_shared<AudioTap>();
+    std::string audioTapHears;  // What the log last said the visualizer hears.
     std::shared_ptr<IdleAnimation> visualizer;
     MediaSessions media;
     ULONGLONG mediaPlayingTick = 0;  // Last check that found media playing.
@@ -2566,6 +2567,29 @@ void HoldIdleScreen(ULONGLONG now, ULONGLONG until, const char* reason) {
     g_app.idleHoldUntil = std::max(g_app.idleHoldUntil, until);
 }
 
+// What the visualizer hears. For music and video only the apps that play it, so voices on Chat, the game and
+// notification sounds stay out of the bars. When none of them is found, the Game device while virtual devices run,
+// since Chat plays into a device of its own, else the headset. For any sound the headset, which hears all of it.
+void ListenForVisualizer() {
+    const bool media = g_app.settings.visualizer.mediaOnly;
+    const RoutingSettings& routing = g_app.settings.routing;
+    const bool game = media && routing.enabled && g_app.router.IsRunning() && !routing.game.empty();
+    const std::wstring endpoint = game ? routing.game : g_app.mixer.OutputEndpointId();
+    const std::vector<DWORD> processes = media ? g_app.media.PlayingProcesses() : std::vector<DWORD>{};
+    if (g_app.audioTap->Listens(endpoint, processes)) {
+        return;
+    }
+    g_app.audioTap->Start(endpoint, processes);
+    std::string hears = processes.empty() ? (game ? "the Game device" : "the output device") : "processes";
+    for (const DWORD pid : processes) {
+        hears += " " + std::to_string(pid);
+    }
+    if (hears != g_app.audioTapHears) {
+        g_app.audioTapHears = hears;
+        Log("visualizer hears %s", hears.c_str());
+    }
+}
+
 // What goes on the display when no add-on screen is over it.
 void ShowOnDisplay(App::DisplayShows shows) {
     if (shows == g_app.displayShows) {
@@ -2573,9 +2597,7 @@ void ShowOnDisplay(App::DisplayShows shows) {
     }
     g_app.displayShows = shows;
     if (shows == App::DisplayShows::Visualizer) {
-        if (!g_app.audioTap->IsRunning()) {
-            g_app.audioTap->Start(g_app.mixer.OutputEndpointId());
-        }
+        ListenForVisualizer();
         if (!g_app.visualizer) {
             g_app.visualizer = CreateVisualizer(g_app.audioTap);
         }
@@ -2725,6 +2747,10 @@ void CheckIdleScreen() {
                                                                  : App::DisplayShows::Device;
     g_app.playbackShown = visualize || addOnPlayback;
     ShowOnDisplay(shows);
+    if (shows == App::DisplayShows::Visualizer) {
+        // Another app may start playing, or the devices change, while the visualizer shows.
+        ListenForVisualizer();
+    }
     g_app.addOns.SetIdleShown(shows == App::DisplayShows::AddOn);
     const bool animation = idle && !addOn;
     if (animation != g_app.idleShowing) {
