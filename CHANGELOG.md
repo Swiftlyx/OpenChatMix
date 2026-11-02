@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.1 — 2026-11-02
+
+- OpenChatMix run as administrator (for the Info Screen's PawnIO readings) starts with Windows again. Windows
+  starts no program marked this way from its list of startup apps, so *Start with Windows* now goes through a
+  Task Scheduler task, *OpenChatMix (user name)*, while OpenChatMix runs as administrator. The task starts it as
+  soon as you sign in, without the delay Windows gives startup apps.
+- While OpenChatMix runs as administrator, starting it again without those rights no longer starts a second copy.
+
 ## 3.0.0 — 2026-11-01
 
 - **Info Screen add-on** (Nova Pro, optional): `OpenChatMix-InfoScreen.exe`, a separate download with each release,
