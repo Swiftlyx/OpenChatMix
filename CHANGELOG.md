@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.2 — 2026-11-02
+
+- The visualizer with *Music and video* follows only the apps that play: a voice in Discord, the game or a
+  notification sound no longer gets into its bars. It listens to the processes of every app that tells Windows
+  it plays (Windows 10 2004 and later); when none of them is found, to the Game device while virtual devices
+  run, so Chat stays out, else to the headset as before. With *Any sound* it follows everything the headset
+  plays, as before.
+
 ## 3.0.1 — 2026-11-02
 
 - OpenChatMix run as administrator (for the Info Screen's PawnIO readings) starts with Windows again. Windows
