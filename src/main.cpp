@@ -5147,7 +5147,8 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     CleanUpAfterUpdate();
 
     HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\OpenChatMix.Instance");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    // An instance running as administrator owns a mutex this process may not open.
+    if (const DWORD error = GetLastError(); error == ERROR_ALREADY_EXISTS || (!mutex && error == ERROR_ACCESS_DENIED)) {
         // A second launch opens the panel of the running instance.
         if (HWND running = FindWindowW(kMainWindowClass, nullptr)) {
             DWORD pid = 0;

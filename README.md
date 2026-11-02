@@ -745,6 +745,10 @@ LibreHardwareMonitor do from their tables of boards; on other boards they are Fa
 (LGPL-2.1), embedded in the add-on, and only reads: it shares the hardware with other monitoring tools through the
 mutexes they use. Without PawnIO, or without administrator rights, those items stay off the screen.
 
+Windows starts no program marked to run as administrator from its list of startup apps, so with *Start with
+Windows* on, OpenChatMix run as administrator starts through a Task Scheduler task instead, *OpenChatMix (your
+user name)*. The task starts it as soon as you sign in, with no delay, and goes when the switch is turned off.
+
 A percentage needs the fan's control value: LibreHardwareMonitor pairs each fan with its control, a Nuvoton chip
 gives each fan's duty, and the GPU's fan is shown as a share of its highest speed; a fan without one shows RPM.
 
@@ -966,6 +970,10 @@ writes `OpenChatMix-hang-<time>.dmp` there; please attach that as well.
   ([where the figures come from](#info-screen-add-on-arctis-nova-pro)),
   and the weather a place it can find. `OpenChatMix-InfoScreen.exe --sources sources.txt` lists what the add-on
   finds, with the answer for the place you set.
+- **OpenChatMix does not start with Windows.** Check *Settings* → *General* → *Start with Windows*, and that
+  *OpenChatMix* is on under *Task Manager* → *Startup apps*. Run as administrator, it starts through the Task
+  Scheduler task *OpenChatMix (your user name)* instead, which OpenChatMix sets up the first time it runs as
+  administrator.
 - **A plugin "could not be loaded".** Only 64-bit effect plugins work; instruments and 32-bit plugins
   do not. For a VST 3 bundle, choose the `.vst3` folder's inner file
   (`Contents\x86_64-win\Name.vst3`) or the bundle itself.

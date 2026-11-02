@@ -376,7 +376,8 @@ void LoadHeadsetState(const std::wstring& path, uint16_t productId, const Headse
 void SaveHeadsetState(const std::wstring& path, uint16_t productId, const HeadsetFeatures& features,
                       const HeadsetState& state);
 
-// Autostart via HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
+// Autostart via HKCU\Software\Microsoft\Windows\CurrentVersion\Run, or via the sign-in task of
+// autostart_task.h while OpenChatMix runs as administrator.
 bool IsAutostartEnabled();
 bool SetAutostart(bool enable);
 // Replaces the Run entry of the NovaChatMix prototype; returns true if it existed.

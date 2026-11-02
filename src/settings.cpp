@@ -11,6 +11,9 @@
 #include <iterator>
 #include <vector>
 
+#include "autostart_task.h"
+#include "log.h"
+
 namespace {
 
 constexpr wchar_t kMainSection[] = L"ChatMix";
@@ -1438,12 +1441,9 @@ bool RemoveLegacyAutostart() {
     return removed;
 }
 
-bool IsAutostartEnabled() {
-    return RegGetValueW(HKEY_CURRENT_USER, kRunKey, kRunValue, RRF_RT_REG_SZ, nullptr, nullptr, nullptr) ==
-           ERROR_SUCCESS;
-}
+namespace {
 
-bool SetAutostart(bool enable) {
+bool SetRunEntry(bool enable) {
     HKEY key = nullptr;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr) !=
         ERROR_SUCCESS) {
@@ -1462,6 +1462,24 @@ bool SetAutostart(bool enable) {
     }
     RegCloseKey(key);
     return status == ERROR_SUCCESS;
+}
+
+}  // namespace
+
+bool IsAutostartEnabled() {
+    return RegGetValueW(HKEY_CURRENT_USER, kRunKey, kRunValue, RRF_RT_REG_SZ, nullptr, nullptr, nullptr) ==
+               ERROR_SUCCESS ||
+           AutostartTaskExists();
+}
+
+bool SetAutostart(bool enable) {
+    // Elevated, OpenChatMix starts through the sign-in task, since Windows skips Run entries that need
+    // administrator rights; otherwise through the Run entry. The other one is removed, so only one starts it.
+    const bool task = enable && IsElevated();
+    const bool run = SetRunEntry(enable && !task);
+    const bool done = SetAutostartTask(task) && run;
+    Log("autostart: %s%s", task ? "sign-in task" : enable ? "Run entry" : "off", done ? "" : ", not fully applied");
+    return done;
 }
 
 AddOnKind AddOnKindOf(const std::wstring& path) {
