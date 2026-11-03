@@ -782,11 +782,10 @@ float Panel::DrawIdleScreen(float y) {
         rows.push_back(DropdownItem(
             HashId(kKindIdle, L"delay"), T(Text::IdleDelay), delay, delays,
             [](int i) { return DelayLabel(kIdleDelays[i]); }, [this](int i) { host_.OnIdleDelay(kIdleDelays[i]); }));
-    }
-
-    if (on) {
-        rows.push_back(SwitchItem(HashId(kKindIdle, L"whilesound"), T(Text::IdleWhileSound), idle_.whileSound,
-                                  [this] { host_.OnIdleWhileSound(); }, T(Text::IdleWhileSoundHint)));
+        rows.push_back(SwitchItem(HashId(kKindIdle, L"whilesound"), T(Text::IdleWhileSound),
+                                  settings_.idleScreen.whileSound, [this] {
+            Edit([](Settings& s) { s.idleScreen.whileSound = !s.idleScreen.whileSound; });
+        }, T(Text::IdleWhileSoundHint)));
     }
 
     if (on && idle_.bluetooth) {
@@ -826,7 +825,7 @@ float Panel::DrawIdleScreen(float y) {
                                        0, T(Text::IdleTestButton), true, [this] { host_.OnIdleTest(); });
                         }});
     }
-    rows.push_back(HintItem(T(idle_.whileSound ? Text::IdleHintWhileSound : Text::IdleHint)));
+    rows.push_back(HintItem(T(settings_.idleScreen.whileSound ? Text::IdleHintWhileSound : Text::IdleHint)));
     const std::wstring gg = std::wstring(T(Text::IdleGgApps)) + idle_.ggApps;
     if (on && !idle_.ggApps.empty()) {
         rows.push_back(HintItem(gg.c_str()));

@@ -145,7 +145,6 @@ struct AddOnsView {
 struct IdleScreenView {
     IdleAnimationKind animation = IdleAnimationKind::Off;
     int delaySeconds = 60;
-    bool whileSound = false;  // The screensaver keeps running while sound plays.
     std::wstring imageName;  // File name of the chosen image.
     bool showing = false;    // The animation is on the display right now.
     std::wstring ggApps;     // SteelSeries GG's apps that draw on the display, which the screensaver gives way to.
@@ -193,7 +192,6 @@ public:
     // Shows the chosen screensaver on the headset for a few seconds.
     virtual void OnIdleTest() = 0;
     virtual void OnIdleBluetoothIcon(IconCorner corner) = 0;
-    virtual void OnIdleWhileSound() = 0;
     // Shows the add-on's screen for the event on the headset once, with sample fields.
     virtual void OnAddOnPreview(const std::wstring& path, const std::wstring& event) = 0;
     // Any other setting: the edit runs on the host's settings, which then reach the panel again.

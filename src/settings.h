@@ -220,7 +220,7 @@ struct VisualizerSettings {
 struct IdleScreenSettings {
     IdleAnimationKind animation = IdleAnimationKind::Off;
     int delaySeconds = 60;
-    bool whileSound = false;  // The screensaver runs while sound plays, too; only using the headset or the app shows the usual screen.
+    bool whileSound = false;  // Sound does not hold the screensaver back; only using the headset or the app does.
     std::wstring image;  // Image or GIF for IdleAnimationKind::Image.
     IconCorner bluetoothIcon = IconCorner::TopRight;  // While the base station's Bluetooth is on.
 };
