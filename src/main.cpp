@@ -198,6 +198,7 @@ public:
     void OnIdleImage(const std::wstring& path) override;
     void OnIdleTest() override;
     void OnIdleBluetoothIcon(IconCorner corner) override;
+    void OnIdleWhileSound() override;
     void OnAddOnPreview(const std::wstring& path, const std::wstring& event) override;
     void OnSettingsEdit(const std::function<void(Settings&)>& edit) override;
     std::vector<AudioEndpoint> PlaybackDevices() override;
@@ -2485,6 +2486,7 @@ void PushIdleScreen() {
     ui::IdleScreenView view;
     view.animation = idle.animation;
     view.delaySeconds = idle.delaySeconds;
+    view.whileSound = idle.whileSound;
     view.imageName = idle.image.empty() ? L"" : FileNameOf(idle.image);
     view.showing = g_app.idleShowing;
     view.ggApps = g_app.ggScreen.names;
@@ -2714,7 +2716,10 @@ void CheckIdleScreen() {
         g_app.idleManual = false;
         g_app.idleManualUntil = 0;
     }
-    const ULONGLONG activity = std::max({g_app.lastSoundTick, g_app.lastActivityTick, deviceEvent});
+    // With the screensaver kept on while sound plays, sound does not delay it; only using the headset or the app does.
+    const ULONGLONG activity = g_app.settings.idleScreen.whileSound
+                                   ? std::max(g_app.lastActivityTick, deviceEvent)
+                                   : std::max({g_app.lastSoundTick, g_app.lastActivityTick, deviceEvent});
     const ULONGLONG delay = static_cast<ULONGLONG>(g_app.settings.idleScreen.delaySeconds) * 1000;
     // Turned on by the hotkey, the screensaver stays; using the headset or the app shows the GameDAC's own screen
     // for a moment, so a volume change shows there.
@@ -2739,7 +2744,9 @@ void CheckIdleScreen() {
     } else if (sound && !visualize && !addOnPlayback) {
         g_app.lastHeardSoundTick = now;
     }
-    const ULONGLONG addOnActivity = std::max({g_app.lastHeardSoundTick, g_app.lastActivityTick, deviceEvent});
+    const ULONGLONG addOnActivity = g_app.settings.idleScreen.whileSound
+                                        ? std::max(g_app.lastActivityTick, deviceEvent)
+                                        : std::max({g_app.lastHeardSoundTick, g_app.lastActivityTick, deviceEvent});
     const bool addOnIdle = addOn && (byHand || now - addOnActivity >= delay);
     const App::DisplayShows shows = visualize                    ? App::DisplayShows::Visualizer
                                     : addOnPlayback || addOnIdle ? App::DisplayShows::AddOn
@@ -3854,6 +3861,12 @@ void Host::OnIdleBluetoothIcon(IconCorner corner) {
 
 void Host::OnIdleDelay(int seconds) {
     g_app.settings.idleScreen.delaySeconds = seconds;
+    Save();
+    PushIdleScreen();
+}
+
+void Host::OnIdleWhileSound() {
+    g_app.settings.idleScreen.whileSound = !g_app.settings.idleScreen.whileSound;
     Save();
     PushIdleScreen();
 }

@@ -597,6 +597,9 @@ enum class Text {
     AddOnLoading,
     AddOnSearching,
     AddOnNoAnswer,
+    IdleWhileSound,
+    IdleWhileSoundHint,
+    IdleHintWhileSound,
     Count,
 };
 
