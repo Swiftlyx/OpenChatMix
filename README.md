@@ -124,15 +124,16 @@ native settings, so GG and Sonar can stay closed:
   sends them; on the Nova 7 Gen 2 with its shelves and passes as peaks), so it works without virtual
   devices too.
 - **EQ presets as files.** Save the current curve, import presets from others, keep backups.
-- **Screensaver for the GameDAC display** (Nova Pro). While no sound plays, an animation, a clock
-  or your own image or GIF keeps the OLED from burning in. Any sound brings the usual screen back.
-  The *Screensaver on/off* hotkey keeps it on until you press it again, and *Test* on
-  the *Headset* tab shows it for a few seconds. It also runs while SteelSeries GG is open and gives
-  way to GG's own apps for the display (Discord, Now Playing, Spotify, Audio Visualizer) that are
-  switched on: the moment one of them hands GG a message, a track or its animation, even without sound,
-  the screensaver stops drawing over it until GG is done. With the Nova Pro Wireless it can show a
-  Bluetooth icon in a corner while the base station's Bluetooth is on: steady with a device connected,
-  blinking slowly while it waits for one and fast while it pairs.
+- **Screensaver for the GameDAC display** (Nova Pro). While no sound plays, an animation, a clock or
+  your own image or GIF keeps the OLED from burning in. Any sound brings the usual screen back; with
+  *Keep on while sound plays* only turning the knob or a change in OpenChatMix does, so the screensaver
+  runs during games and music too. The *Screensaver on/off* hotkey keeps it on until you press it
+  again, and *Test* on the *Headset* tab shows it for a few seconds. It also runs while SteelSeries GG
+  is open and gives way to GG's own apps for the display (Discord, Now Playing, Spotify, Audio
+  Visualizer) that are switched on: the moment one of them hands GG a message, a track or its
+  animation, even without sound, the screensaver stops drawing over it until GG is done. With the Nova
+  Pro Wireless it can show a Bluetooth icon in a corner while the base station's Bluetooth is on:
+  steady with a device connected, blinking slowly while it waits for one and fast while it pairs.
 - **Visualizer for the GameDAC screen** (Nova Pro). Bars that follow the sound fill the whole screen while
   music or a video plays, or for any sound if you like. Music and video are told apart the way Windows
   knows them: an app that plays tells the media controls of Windows, as players and YouTube in the
@@ -377,7 +378,7 @@ positives to your antivirus vendor; for Microsoft Defender use the
 | Headset settings and EQ | *Headset* tab (shown when a supported headset is connected). |
 | Rename, copy or delete saved headset presets | *Headset* tab → the buttons beside each preset under *My presets*. Deleted presets go to the Recycle Bin. |
 | Save, import or back up EQ presets | *Headset* tab → *Save* / *Import* / *Folder*. Presets live in `%APPDATA%\OpenChatMix\Presets`. |
-| Screensaver on the GameDAC | *Headset* tab → *Screensaver* → pick an animation and the delay; the *Screensaver on/off* hotkey keeps it on until pressed again. |
+| Screensaver on the GameDAC | *Headset* tab → *Screensaver* → pick an animation and the delay, and turn on *Keep on while sound plays* to run it during games and music too; the *Screensaver on/off* hotkey keeps it on until pressed again. |
 | Line out: speakers or a stream mix | *Headset* tab → *Line out* (GameDAC); in *Streaming* set the main sound, aux input and microphone levels. |
 | Virtual device mode, Media and Aux groups, equalizer, ducking | *Settings* → *Audio*. |
 | Equalizer for Game and Chat | *Equalizer* tab (virtual device mode), once turned on in *Settings* → *Audio*. |
@@ -636,12 +637,15 @@ Sound → All sound devices*. The output and microphone pickers also leave out v
 <details>
 <summary>Show the screensaver and the visualizer</summary>
 
-The GameDAC and the Nova Pro Wireless base station have a 128×64 OLED that shows the same screen
-for hours when nothing plays. The screensaver replaces it after a chosen delay (15 s to 10 min)
-without sound. Any sound, turning the knob or a change made in OpenChatMix brings the usual
-screen back at once, so the level meters still show while audio plays. The *Screensaver on/off* hotkey
-keeps it on until you press it again, sound or not; turning the knob or a change made in OpenChatMix
-then shows the usual screen for three seconds.
+The GameDAC and the Nova Pro Wireless base station have a 128×64 OLED that shows the same screen for
+hours when nothing plays. The screensaver replaces it after a chosen delay (15 s to 10 min) without
+sound. Any sound, turning the knob or a change made in OpenChatMix brings the usual screen back at
+once, so the level meters still show while audio plays. The *Screensaver on/off* hotkey keeps it on
+until you press it again, sound or not; turning the knob or a change made in OpenChatMix then shows
+the usual screen for three seconds. With *Keep on while sound plays* sound does not count toward the
+delay: the screensaver starts after it while a game or music plays too, and turning the knob or a
+change made in OpenChatMix shows the usual screen until the delay passes again. The visualizer, when
+it is on, still shows first while something plays.
 
 <p align="center">
   <img src="docs/screenshots/screensaver.png" width="260" alt="Visualizer and screensaver settings">
@@ -695,13 +699,14 @@ what plays, the weather and the PC's figures on the GameDAC screen while the hea
   <img src="docs/screenshots/info-screen-settings-pc.png" width="260" alt="The Info Screen's settings in OpenChatMix: memory and fans">
 </p>
 
-**When it shows.** In the screensaver's place: after the screensaver's delay without sound and without the
-headset or OpenChatMix being used (the delay shows on the *Headset* tab even with no animation chosen), and while
-the *Screensaver on/off* hotkey keeps it on. While music or a video plays, the visualizer shows when it is on, and
-the Info Screen takes its place when it is off. When the music ends, the Info Screen comes back at once: sound
-that the visualizer or the Info Screen showed for does not count toward the delay. Turning the knob or a change
-made in OpenChatMix shows the GameDAC's own screen, as with the screensaver, and screens of other add-ons, such as
-Discord messages, still go over it. *Test* on the *Headset* tab tries the animation, not the Info Screen.
+**When it shows.** In the screensaver's place: after the screensaver's delay without the headset or
+OpenChatMix being used and, unless *Keep on while sound plays* is on, without sound (the delay shows on
+the *Headset* tab even with no animation chosen), and while the *Screensaver on/off* hotkey keeps it on.
+While music or a video plays, the visualizer shows when it is on, and the Info Screen takes its place when
+it is off. When the music ends, the Info Screen comes back at once: sound that the visualizer or the Info
+Screen showed for does not count toward the delay. Turning the knob or a change made in OpenChatMix shows
+the GameDAC's own screen, as with the screensaver, and screens of other add-ons, such as Discord messages,
+still go over it. *Test* on the *Headset* tab tries the animation, not the Info Screen.
 
 **What it shows**, all on one screen, each item only when it is on and has a value:
 

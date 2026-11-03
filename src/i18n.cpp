@@ -600,8 +600,8 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Searching…",  // AddOnSearching
     L"The add-on did not answer.",  // AddOnNoAnswer
     L"Keep on while sound plays",  // IdleWhileSound
-    L"Plays the screensaver while sound plays, too: only using the headset or OpenChatMix brings the usual screen back, and the screensaver returns after the chosen delay. The visualizer still shows first while it is on.",  // IdleWhileSoundHint
-    L"Plays on the GameDAC screen even while sound plays, so the OLED does not burn in. Using the GameDAC or OpenChatMix brings the usual screen back until the chosen delay passes.",  // IdleHintWhileSound
+    L"Sound does not hold the screensaver back. The visualizer, when it is on, still shows first while something plays.",  // IdleWhileSoundHint
+    L"Plays on the GameDAC screen even while sound plays, so the OLED does not burn in. The GameDAC knob or a change in OpenChatMix brings the usual screen back until the delay passes again.",  // IdleHintWhileSound
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1195,9 +1195,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Завантаження…",
     L"Пошук…",
     L"Доповнення не відповіло.",
-    L"Працює і під час звуку",  // IdleWhileSound
-    L"Показує заставку й тоді, коли грає звук: звичайний екран повертає лише користування гарнітурою чи OpenChatMix, і заставка повертається за обрану затримку. Візуалізатор, коли він увімкнений, показується першим.",  // IdleWhileSoundHint
-    L"Показується на екрані GameDAC навіть під час звуку, щоб OLED не вигоряв. Керування гарнітурою чи OpenChatMix повертає звичайний екран до спливу обраної затримки.",  // IdleHintWhileSound
+    L"Запускати й під час звуку",
+    L"Звук не відкладає заставку. Візуалізатор, коли він увімкнений, і далі показується першим, поки щось грає.",
+    L"Відтворюється на дисплеї GameDAC і під час звуку, щоб OLED не вигорав. Коліщатко GameDAC або зміна в OpenChatMix повертають звичайний екран, доки знову не мине затримка.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1791,9 +1791,9 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Yükleniyor…",
     L"Aranıyor…",
     L"Eklenti yanıt vermedi.",
-    L"Ses çalarken de açık kalır",  // IdleWhileSound
-    L"Ses çalarken de ekran koruyucuyu gösterir: normal ekranı yalnızca kulaklığı veya OpenChatMix'i kullanmak geri getirir, ekran koruyucu seçilen gecikmeden sonra geri döner. Görselleştirici açıkken önce o gösterilir.",  // IdleWhileSoundHint
-    L"Ses çalarken bile GameDAC ekranında oynatılır, böylece OLED yanmaz. GameDAC'i veya OpenChatMix'i kullanmak seçilen gecikme geçene kadar normal ekranı geri getirir.",  // IdleHintWhileSound
+    L"Ses çalarken de açık kalır",
+    L"Ses, ekran koruyucuyu geciktirmez. Görselleştirici açıksa, bir şey çalarken yine önce o gösterilir.",
+    L"Ses çalarken de GameDAC ekranında oynar, böylece OLED yanmaz. GameDAC düğmesi ya da OpenChatMix'teki bir değişiklik, gecikme yeniden dolana kadar her zamanki ekranı geri getirir.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

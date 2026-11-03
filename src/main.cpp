@@ -198,7 +198,6 @@ public:
     void OnIdleImage(const std::wstring& path) override;
     void OnIdleTest() override;
     void OnIdleBluetoothIcon(IconCorner corner) override;
-    void OnIdleWhileSound() override;
     void OnAddOnPreview(const std::wstring& path, const std::wstring& event) override;
     void OnSettingsEdit(const std::function<void(Settings&)>& edit) override;
     std::vector<AudioEndpoint> PlaybackDevices() override;
@@ -2486,7 +2485,6 @@ void PushIdleScreen() {
     ui::IdleScreenView view;
     view.animation = idle.animation;
     view.delaySeconds = idle.delaySeconds;
-    view.whileSound = idle.whileSound;
     view.imageName = idle.image.empty() ? L"" : FileNameOf(idle.image);
     view.showing = g_app.idleShowing;
     view.ggApps = g_app.ggScreen.names;
@@ -3861,12 +3859,6 @@ void Host::OnIdleBluetoothIcon(IconCorner corner) {
 
 void Host::OnIdleDelay(int seconds) {
     g_app.settings.idleScreen.delaySeconds = seconds;
-    Save();
-    PushIdleScreen();
-}
-
-void Host::OnIdleWhileSound() {
-    g_app.settings.idleScreen.whileSound = !g_app.settings.idleScreen.whileSound;
     Save();
     PushIdleScreen();
 }
