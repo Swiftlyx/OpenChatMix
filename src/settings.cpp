@@ -1085,6 +1085,7 @@ Settings LoadSettings(const std::wstring& path) {
     settings.idleScreen.animation = ParseIdleAnimation(ReadString(path, kIdleSection, L"Animation", L"off"));
     settings.idleScreen.delaySeconds =
         std::clamp(static_cast<int>(GetPrivateProfileIntW(kIdleSection, L"Delay", 60, path.c_str())), 5, 3600);
+    settings.idleScreen.whileSound = GetPrivateProfileIntW(kIdleSection, L"WhileSound", 0, path.c_str()) != 0;
     settings.idleScreen.image = ReadString(path, kIdleSection, L"Image", L"");
     settings.visualizer.enabled = GetPrivateProfileIntW(kVisualizerSection, L"Enabled", 0, path.c_str()) != 0;
     settings.visualizer.mediaOnly = _wcsicmp(ReadString(path, kVisualizerSection, L"For", L"media").c_str(), L"sound") != 0;
@@ -1220,6 +1221,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
                                kIdleAnimationNames[static_cast<size_t>(settings.idleScreen.animation)], path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"Delay", std::to_wstring(settings.idleScreen.delaySeconds).c_str(),
                                path.c_str());
+    WritePrivateProfileStringW(kIdleSection, L"WhileSound", settings.idleScreen.whileSound ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(kIdleSection, L"Image", settings.idleScreen.image.c_str(), path.c_str());
     WritePrivateProfileStringW(kVisualizerSection, L"Enabled", settings.visualizer.enabled ? L"1" : L"0", path.c_str());
     WritePrivateProfileStringW(kVisualizerSection, L"For", settings.visualizer.mediaOnly ? L"media" : L"sound",

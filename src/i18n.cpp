@@ -599,6 +599,9 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Loading…",  // AddOnLoading
     L"Searching…",  // AddOnSearching
     L"The add-on did not answer.",  // AddOnNoAnswer
+    L"Keep on while sound plays",  // IdleWhileSound
+    L"Plays the screensaver while sound plays, too: only using the headset or OpenChatMix brings the usual screen back, and the screensaver returns after the chosen delay. The visualizer still shows first while it is on.",  // IdleWhileSoundHint
+    L"Plays on the GameDAC screen even while sound plays, so the OLED does not burn in. Using the GameDAC or OpenChatMix brings the usual screen back until the chosen delay passes.",  // IdleHintWhileSound
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1192,6 +1195,9 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Завантаження…",
     L"Пошук…",
     L"Доповнення не відповіло.",
+    L"Працює і під час звуку",  // IdleWhileSound
+    L"Показує заставку й тоді, коли грає звук: звичайний екран повертає лише користування гарнітурою чи OpenChatMix, і заставка повертається за обрану затримку. Візуалізатор, коли він увімкнений, показується першим.",  // IdleWhileSoundHint
+    L"Показується на екрані GameDAC навіть під час звуку, щоб OLED не вигоряв. Керування гарнітурою чи OpenChatMix повертає звичайний екран до спливу обраної затримки.",  // IdleHintWhileSound
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1785,6 +1791,9 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Yükleniyor…",
     L"Aranıyor…",
     L"Eklenti yanıt vermedi.",
+    L"Ses çalarken de açık kalır",  // IdleWhileSound
+    L"Ses çalarken de ekran koruyucuyu gösterir: normal ekranı yalnızca kulaklığı veya OpenChatMix'i kullanmak geri getirir, ekran koruyucu seçilen gecikmeden sonra geri döner. Görselleştirici açıkken önce o gösterilir.",  // IdleWhileSoundHint
+    L"Ses çalarken bile GameDAC ekranında oynatılır, böylece OLED yanmaz. GameDAC'i veya OpenChatMix'i kullanmak seçilen gecikme geçene kadar normal ekranı geri getirir.",  // IdleHintWhileSound
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {
