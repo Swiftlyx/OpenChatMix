@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0.3 — 2026-11-10
+
+- **Keep on while sound plays** (Nova Pro): a switch under the screensaver's *Start after* on the *Headset* tab.
+  When it is on, sound no longer counts toward the delay: the screensaver, or an add-on's idle screen such as the
+  Info Screen in its place, starts after the chosen delay while a game or music plays too, so the GameDAC's OLED is
+  not left on one screen for hours. Turning the knob or a change in OpenChatMix shows the usual screen until the
+  delay passes again, and the visualizer, when it is on, still shows first while something plays. Off by default.
+  Contributed by [@CharlesMcquade](https://github.com/CharlesMcquade) in
+  [#15](https://github.com/Swiftlyx/OpenChatMix/pull/15).
+- The Nova 7 Gen 2 protocol's equalizer (Nova 7 `22A1`, Nova 7 Gen 2 `227E`, the Gen 2 7X and 7P models) sends the
+  filter frequencies little-endian, the order [@zer0ed](https://github.com/zer0ed) confirmed by ear on both headsets
+  in [#7](https://github.com/Swiftlyx/OpenChatMix/issues/7). Until now most bands landed far above what anyone can
+  hear, so presets such as Bass Boost did not sound as they should. The equalizer is no longer marked experimental,
+  and the `Nova7EqLittleEndian` test switch from 2.9.2 is gone. Filter types other than peaks are still sent as
+  peaks.
+
 ## 3.0.2 — 2026-11-02
 
 - The visualizer with *Music and video* follows only the apps that play: a voice in Discord, the game or a
