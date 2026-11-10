@@ -115,19 +115,18 @@ struct EqualizerSpec {
     EqFormat format = EqFormat::Graphic;
     bool experimental = false;  // Written from protocol descriptions only, not yet confirmed on the headset.
     bool notch = false;         // Parametric: the headset has a notch filter type of its own.
-    // Parametric: only peaks are known to play right. The Nova 7 Gen 2 whistles loudly with some shelves and passes
-    // (issue #7), so other types become peaks before they are sent.
+    // Parametric: only peaks are known to play right. The Nova 7 Gen 2 whistled loudly with some shelves and passes
+    // (issue #7) while its frequencies still went out byte-swapped, so other types become peaks before they are sent.
     bool peaksOnly = false;
     uint8_t customSlot = 4;     // Nova Elite: the onboard slot of the custom setting.
     // Fixed bands of their own, as labelled under the sliders, in the first entries of a curve; empty: the ten
     // octave bands.
     std::span<const wchar_t* const> bandLabels = {};
     // Parametric: the command that names the filters before they go out and the one that applies them after (0:
-    // none), whether the bands command carries the link byte, the byte order of the frequency and the gain's form.
+    // none), whether the bands command carries the link byte and the gain's form.
     uint8_t nameCommand = 0;
     uint8_t applyCommand = 0;
     bool linkByte = false;
-    bool bigEndianFrequency = false;
     FilterGain filterGain = FilterGain::Tenths;
     SoundChip chip = SoundChip::Av6x02;  // Chip.
     // The custom curve is preset index presets.size().

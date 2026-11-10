@@ -274,12 +274,10 @@ constexpr EqualizerSpec kNova7Gen2Equalizer{.bandsCommand = 0x33,
                                             .range = 20,
                                             .presets = kNova7Presets,
                                             .format = EqFormat::Parametric,
-                                            .experimental = true,
                                             .peaksOnly = true,
                                             .nameCommand = 0xA7,
                                             .applyCommand = 0x27,
-                                            .linkByte = true,
-                                            .bigEndianFrequency = true};
+                                            .linkByte = true};
 const HeadsetFeatures kNova7{
     .sections = kNova7Sections,
     .equalizer = kNova7Equalizer,
@@ -469,9 +467,10 @@ constexpr uint8_t kMicVolumeCommand = 0x37;
 constexpr uint8_t kSidetoneCommand = 0x39;
 
 // Nova 7 Gen 2 parametric equalizer, as Linux-Arctis-Manager describes the protocol: A7 [link] [kind] [name],
-// then 33 [link] and ten filters of six bytes each (see AppendFilter, frequency big-endian), then 27 to apply them.
-// The Nova 5 and Nova 3 Wireless, as HeadsetControl sends them: 33 and the ten filters alone, frequency
-// little-endian (the spec's parametric fields).
+// then 33 [link] and ten filters of six bytes each (see AppendFilter), then 27 to apply them. The frequency is
+// little-endian, as tried by ear on 22A1 and 227E (issue #7), not big-endian as Linux-Arctis-Manager writes it.
+// The Nova 5 and Nova 3 Wireless, as HeadsetControl sends them: 33 and the ten filters alone (the spec's
+// parametric fields).
 constexpr uint8_t kGen2Radio = 0x00;        // The 2.4 GHz link; 1 is Bluetooth, 2 the microphone.
 constexpr uint8_t kGen2CustomPreset = 0x01;  // 0 is a SteelSeries preset.
 constexpr char kGen2PresetName[] = "OpenChatMix";
@@ -682,8 +681,8 @@ uint8_t WireType(::FilterType type) {
     return kWirePeak;
 }
 
-// One filter in six bytes: frequency (u16, in the spec's byte order), type, gain (in the spec's form) and Q (x1000,
-// u16 little-endian). A headset with a notch type of its own gets it at the deepest cut, as GG sends it; without one,
+// One filter in six bytes: frequency (u16 little-endian), type, gain (in the spec's form) and Q (x1000, u16
+// little-endian). A headset with a notch type of its own gets it at the deepest cut, as GG sends it; without one,
 // like PresetFilters, the deepest peak cut stands in for it.
 void AppendFilter(std::vector<uint8_t>& out, EqBand band, const EqualizerSpec& spec) {
     const bool notch = band.type == ::FilterType::Notch;
@@ -698,10 +697,8 @@ void AppendFilter(std::vector<uint8_t>& out, EqBand band, const EqualizerSpec& s
         band.enabled ? static_cast<uint16_t>(std::lround(std::clamp(band.frequency, kEqMinFrequency, kEqMaxFrequency)))
                      : kWireBandOff;
     const uint16_t q = static_cast<uint16_t>(std::lround(std::clamp(band.q, kEqMinQ, kEqMaxQ) * 1000.0f));
-    const uint8_t frequencyHigh = static_cast<uint8_t>(frequency >> 8);
-    const uint8_t frequencyLow = static_cast<uint8_t>(frequency & 0xFF);
-    out.push_back(spec.bigEndianFrequency ? frequencyHigh : frequencyLow);
-    out.push_back(spec.bigEndianFrequency ? frequencyLow : frequencyHigh);
+    out.push_back(static_cast<uint8_t>(frequency & 0xFF));
+    out.push_back(static_cast<uint8_t>(frequency >> 8));
     out.push_back(band.enabled ? WireType(band.type) : kWirePeak);
     out.push_back(spec.filterGain == FilterGain::HalfDecibels
                       ? static_cast<uint8_t>(std::lround((gain + kHalfDecibelsMaxGain) * 2.0f))
