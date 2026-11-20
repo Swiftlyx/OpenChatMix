@@ -602,6 +602,11 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"Keep on while sound plays",  // IdleWhileSound
     L"Sound does not hold the screensaver back. The visualizer, when it is on, still shows first while something plays.",  // IdleWhileSoundHint
     L"Plays on the GameDAC screen even while sound plays, so the OLED does not burn in. The GameDAC knob or a change in OpenChatMix brings the usual screen back until the delay passes again.",  // IdleHintWhileSound
+    L"Button, single press",  // NoiseButton
+    L"ANC on/off",  // NoiseButtonHeadset
+    L"Transparency on/off",  // NoiseButtonTransparency
+    L"Nothing",  // NoiseButtonNothing
+    L"Experimental, and only while OpenChatMix runs: it switches the mode right after the headset does, so ANC still turns on for a moment. A double press and the base station's menu work as before.",  // NoiseButtonHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1198,6 +1203,11 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"Запускати й під час звуку",
     L"Звук не відкладає заставку. Візуалізатор, коли він увімкнений, і далі показується першим, поки щось грає.",
     L"Відтворюється на дисплеї GameDAC і під час звуку, щоб OLED не вигорав. Коліщатко GameDAC або зміна в OpenChatMix повертають звичайний екран, доки знову не мине затримка.",
+    L"Одне натискання",
+    L"ANC увімк./вимк.",
+    L"Прозорість увімк./вимк.",
+    L"Нічого",
+    L"Експериментально і лише поки OpenChatMix працює: після натискання кнопки гарнітури він одразу перемикає режим, тож ANC на мить таки вмикається. Подвійне натискання й меню базової станції працюють як і раніше.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1794,6 +1804,11 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"Ses çalarken de açık kalır",
     L"Ses, ekran koruyucuyu geciktirmez. Görselleştirici açıksa, bir şey çalarken yine önce o gösterilir.",
     L"Ses çalarken de GameDAC ekranında oynar, böylece OLED yanmaz. GameDAC düğmesi ya da OpenChatMix'teki bir değişiklik, gecikme yeniden dolana kadar her zamanki ekranı geri getirir.",
+    L"Düğme, tek basış",
+    L"ANC aç/kapat",
+    L"Şeffaflık aç/kapat",
+    L"Hiçbir şey",
+    L"Deneysel ve yalnızca OpenChatMix çalışırken: mod kulaklıktan hemen sonra değiştirilir, bu yüzden ANC yine de bir an açılır. Çift basış ve baz istasyonunun menüsü eskisi gibi çalışır.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {

@@ -57,6 +57,7 @@ constexpr const wchar_t* kHotkeyKeys[kHotkeyCount] = {L"HotkeyTowardGame", L"Hot
                                                        L"HotkeyMuteAux", L"HotkeyNextOutput", L"HotkeyNextMicrophone",
                                                        L"HotkeyScreensaver"};
 constexpr const wchar_t* kThemeNames[] = {L"system", L"light", L"dark"};
+constexpr const wchar_t* kNoiseButtonNames[] = {L"headset", L"transparency", L"nothing"};
 constexpr const wchar_t* kBackdropNames[] = {L"acrylic", L"mica", L"solid"};
 constexpr const wchar_t* kContrastNames[] = {L"standard", L"medium", L"high"};
 constexpr const wchar_t* kTrayNames[] = {L"color", L"monochrome"};
@@ -1003,6 +1004,8 @@ Settings LoadSettings(const std::wstring& path) {
     settings.knobPopup = ReadInt(path, L"KnobPopup", 1) != 0;
     settings.noisePopup = ReadInt(path, L"NoisePopup", 1) != 0;
     settings.noiseScreen = ReadInt(path, L"NoiseScreen", 1) != 0;
+    settings.noiseButton =
+        ParseName(ReadString(path, kMainSection, L"NoiseButton", L"headset"), kNoiseButtonNames, NoiseButton::Headset);
     settings.popups = ReadInt(path, L"Popups", 1) != 0;
     settings.popupCorner = static_cast<PopupCorner>(std::clamp(ReadInt(path, L"PopupCorner", 0), 0, 3));
     settings.gameVolume = std::clamp(ReadInt(path, L"GameVolume", 100), 0, 100);
@@ -1137,6 +1140,7 @@ void SaveSettings(const std::wstring& path, const Settings& settings) {
     WriteString(path, L"KnobPopup", settings.knobPopup ? L"1" : L"0");
     WriteString(path, L"NoisePopup", settings.noisePopup ? L"1" : L"0");
     WriteString(path, L"NoiseScreen", settings.noiseScreen ? L"1" : L"0");
+    WriteString(path, L"NoiseButton", kNoiseButtonNames[static_cast<int>(settings.noiseButton)]);
     WriteString(path, L"Popups", settings.popups ? L"1" : L"0");
     WriteString(path, L"PopupCorner", std::to_wstring(static_cast<int>(settings.popupCorner)).c_str());
     WriteString(path, L"GameVolume", std::to_wstring(settings.gameVolume).c_str());

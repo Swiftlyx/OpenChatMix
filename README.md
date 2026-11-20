@@ -111,14 +111,15 @@ native settings, so GG and Sonar can stay closed:
 - **Manual assignment.** Open a group and add any running app, or browse for an `.exe`, even if it
   is closed.
 - **Native headset settings**, shown only for the connected model: the 10-band Engine EQ with the
-  SteelSeries presets (Flat, Bass Boost, Focus, Smiley) and a custom curve (on the Nova Elite and
-  Nova 7 Gen 2 a parametric one: ten filters on a graph, each with its frequency, gain and Q, and on the
-  Nova Elite its type; the Nova 7 Gen 2 gets peaks only, as it whistles with some shelves and passes; on the
-  Nova Elite also the equalizers of the sound over Bluetooth and of the microphone), microphone volume,
-  sidetone, mic mute LED, gain, volume limiter, GameDAC brightness and screen dimming, the line out
-  (speakers, or a stream mix of the main sound, the aux input and the microphone), noise control (off,
-  transparency or ANC), auto power-off, 2.4 GHz mode, Bluetooth options and the battery levels, the base
-  station's spare battery included, depending on the headset.
+  SteelSeries presets (Flat, Bass Boost, Focus, Smiley) and a custom curve (on the Nova Elite and Nova 7 Gen
+  2 a parametric one: ten filters on a graph, each with its frequency, gain and Q, and on the Nova Elite its
+  type; the Nova 7 Gen 2 gets peaks only, as it whistles with some shelves and passes; on the Nova Elite
+  also the equalizers of the sound over Bluetooth and of the microphone), microphone volume, sidetone, mic
+  mute LED, gain, volume limiter, GameDAC brightness and screen dimming, the line out (speakers, or a stream
+  mix of the main sound, the aux input and the microphone), noise control (off, transparency or ANC; on the
+  Nova Elite also what a single press of the headset's button does, experimental and while OpenChatMix
+  runs), auto power-off, 2.4 GHz mode, Bluetooth options and the battery levels, the base station's spare
+  battery included, depending on the headset.
 - **Game presets on the headset itself.** Any game preset (built-in or from Sonar) can be put on the
   headset's own Engine EQ, converted to its ten bands (on the Nova Elite with its own filters, as GG
   sends them; on the Nova 7 Gen 2 with its shelves and passes as peaks), so it works without virtual
@@ -805,7 +806,7 @@ Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](htt
 | | PC → device | `00 33 b1…b10 00` | Custom EQ bands on the original Nova 7 firmware, `0x14` = 0 dB, 0.5 dB steps |
 | Nova Elite (interface 3, experimental) | PC → device | `01 8D 01` · `01 49 01` | As on the Nova Pro, with report ID `0x01` |
 | | PC → device | `01 B0` | Status: Bluetooth at bytes 4–5, battery 0–100 at 6, spare battery at 7, headset link at 14 (`08` connected), charging at 15 (`02` charging) |
-| | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` | Dial event; battery event (headset %, spare %, charging state) |
+| | device → PC | `07 45 gg cc` · `07 B7 hh ss cs` · `07 BD m` · `07 B8 l` | Dial event; battery event (headset %, spare %, charging state); noise control and ANC level changed on the headset. A press of the headset's button that turns ANC on sends `07 B8 l` about 100 ms before `07 BD 02`, the base station's menu `07 BD 02` alone, which tells the two apart ([#18](https://github.com/Swiftlyx/OpenChatMix/issues/18)) |
 | | PC → device | `01 37` `01 BF` `01 BD` `01 B8` `01 B9` `01 27` `01 85` `01 83` `01 89` `01 C1` `01 B2` `01 B3` | Settings (experimental): mic volume, mute LED, noise control (0 off, 1 transparency, 2 ANC), ANC level, transparency level, volume limiter, brightness, dimming, home screen, auto-off, Bluetooth at power-on, during calls; line out and stream mix as on the Nova Pro; `01 09` saves 500 ms later |
 | | PC → device | feature `01 1B k a… n… f…` (1036 bytes) | Equalizer (experimental): kind (the index of a built-in preset, 0 Flat to 3 Smiley; 4 custom; 5 a GG game preset), a 6-byte alias, a 61-byte name, then ten filters of frequency (u16 LE), type (1 peak, 2 low pass, 3 high pass, 4 low shelf, 5 high shelf, 6 notch), gain (i8, 0.1 dB) and Q (u16 LE, ×1000); the rest zeros. A band that is off goes as 20001 Hz without gain |
 | | PC → device | feature `01 1F k a… n… g1…g10` (1036 bytes) | Equalizer of the sound over Bluetooth (experimental): kind, alias and name as above, then ten gains of fixed bands (i8, 0.1 dB) |

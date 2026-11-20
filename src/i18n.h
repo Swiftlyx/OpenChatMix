@@ -600,6 +600,11 @@ enum class Text {
     IdleWhileSound,
     IdleWhileSoundHint,
     IdleHintWhileSound,
+    NoiseButton,
+    NoiseButtonHeadset,
+    NoiseButtonTransparency,
+    NoiseButtonNothing,
+    NoiseButtonHint,
     Count,
 };
 

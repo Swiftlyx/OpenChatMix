@@ -266,6 +266,10 @@ AddOnKind AddOnKindOf(const std::wstring& path);
 // Where popups show on the primary monitor.
 enum class PopupCorner { TopRight, TopLeft, BottomRight, BottomLeft };
 
+// What the app makes of a single press of the headset's button that turns ANC on (HeadsetFeatures::noiseButton):
+// leaves it, turns transparency on or off instead, or goes back to the mode before.
+enum class NoiseButton { Headset, Transparency, Nothing };
+
 struct Settings {
     std::map<std::wstring, AppRule, NoCaseLess> apps;  // Executable name -> rule; Game apps are not stored.
     // Apps left out of ChatMix (removed from Game): in no group, their volume untouched, and in virtual device mode
@@ -285,6 +289,7 @@ struct Settings {
     bool knobPopup = true;                             // Balance popup for the knob of a GameDAC or base station.
     bool noisePopup = true;                            // Popup when noise control changes on the headset.
     bool noiseScreen = true;                           // The same on the base station screen (Nova Pro Wireless).
+    NoiseButton noiseButton = NoiseButton::Headset;    // Carried out by the app while it runs.
     bool popups = true;                                // Popups at all; the low battery warning has its own switch.
     PopupCorner popupCorner = PopupCorner::TopRight;
     bool warnGg = true;                                // Notify when SteelSeries GG takes over the headset.

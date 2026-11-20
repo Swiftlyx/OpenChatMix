@@ -182,6 +182,9 @@ struct HeadsetFeatures {
     bool experimental = false;           // Settings written from protocol descriptions only; the tab says so.
     bool volumeKnob = false;             // A knob that sets the volume itself and reports it (07 25).
     bool chargingCase = false;           // The spare battery is that of a charging case of its own (GameBuds).
+    // A press of the headset's button that turns ANC on reports the ANC level about 100 ms before the mode, while
+    // the base station's menu reports the mode alone, so the app can tell the press apart (Nova Elite, issue #18).
+    bool noiseButton = false;
 
     bool HasSettings() const { return !sections.empty() || equalizer.bandsCommand != 0; }
     const EqualizerSpec& Extra(ExtraEqualizer which) const {
@@ -242,8 +245,12 @@ struct HeadsetUpdate {
 std::vector<HeadsetUpdate> ParseHeadsetReport(const DeviceModel& model, const uint8_t* data, size_t size,
                                               uint8_t lastQuery = 0);
 void ApplyUpdate(const HeadsetFeatures& features, HeadsetState& state, const HeadsetUpdate& update);
-// The noise control command of base stations that have it (off, transparency, ANC).
+// The noise control command of base stations that have it (off, transparency, ANC), its transparency and ANC
+// modes, and the Nova Elite's ANC level.
 inline constexpr uint8_t kNoiseControlCommand = 0xBD;
+inline constexpr uint8_t kNoiseTransparent = 1;
+inline constexpr uint8_t kNoiseCancelling = 2;
+inline constexpr uint8_t kNoiseCancellingLevel = 0xB8;
 
 // The commands that set the curve, in order: one for a graphic equalizer, three for a parametric one, one feature
 // report (without its report ID) for the Nova Elite, those of every band for a sound chip. preset: the index of the

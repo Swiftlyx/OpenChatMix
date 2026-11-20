@@ -172,6 +172,17 @@ void Panel::DrawHeadset() {
             rows.push_back({RowHeight(setting), [this, spec](float top) { DrawSettingRow(*spec, top); },
                             toggle ? HashId(kKindSetting, std::to_wstring(setting.command)) : 0u});
         }
+        // What a single press of the headset's button does, carried out by the app.
+        if (section.title == Text::NoiseControl && features_->noiseButton) {
+            static constexpr Text kNoiseButtonLabels[] = {Text::NoiseButtonHeadset, Text::NoiseButtonTransparency,
+                                                          Text::NoiseButtonNothing};
+            rows.push_back(DropdownItem(
+                HashId(kKindSetting, L"noisebutton"), T(Text::NoiseButton), static_cast<int>(settings_.noiseButton),
+                static_cast<int>(std::size(kNoiseButtonLabels)),
+                [](int i) { return std::wstring(T(kNoiseButtonLabels[i])); },
+                [this](int i) { Edit([i](Settings& s) { s.noiseButton = static_cast<NoiseButton>(i); }); },
+                T(Text::NoiseButtonHint)));
+        }
         y = DrawCard(y, rows) + design::kSectionGap;
     }
     if (features_->oled) {

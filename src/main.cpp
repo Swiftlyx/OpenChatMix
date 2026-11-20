@@ -106,6 +106,7 @@ constexpr wchar_t kGlyphMicrophone = 0xE720;
 constexpr wchar_t kGlyphScreensaver = 0xE7F4;  // TVMonitor.
 constexpr wchar_t kGlyphHeadset = 0xE7F6;
 constexpr ULONGLONG kNoiseNoticeMs = 2500;  // How long the base station screen shows a new noise control mode.
+constexpr ULONGLONG kNoiseButtonMs = 300;   // The longest gap between the level and the mode of a button press.
 constexpr wchar_t kGlyphBattery0 = 0xEBA0;  // EBA0..EBAA: battery 0-100% in steps of 10.
 constexpr wchar_t kGlyphTrayOpen = 0xF4C3;
 constexpr wchar_t kGlyphTraySettings = 0xE713;
@@ -340,6 +341,7 @@ struct App {
     ULONGLONG heardBeforeRun = 0;      // ...and lastHeardSoundTick before that run began.
     AddOnCard noticeCard;                // A notice of the app's own, shown over add-on screens until noticeUntil.
     ULONGLONG noticeUntil = 0;
+    ULONGLONG noiseLevelTick = 0;        // When the headset last reported its ANC level by itself.
     bool idleShowing = false;
     std::optional<UpdateRelease> update;
     ui::UpdateView updateView;
@@ -2880,6 +2882,21 @@ void ShowNoiseControl(int mode) {
     }
 }
 
+// The mode the app sets in place of the ANC a press of the headset's button just turned on (Settings::noiseButton):
+// transparency toggled from the mode before, or that mode again; -1 leaves the headset's own.
+int NoiseButtonMode(int before, int after, ULONGLONG now) {
+    if (!g_app.features || !g_app.features->noiseButton || after != kNoiseCancelling ||
+        before == kNoiseCancelling || now - g_app.noiseLevelTick > kNoiseButtonMs) {
+        return -1;
+    }
+    switch (g_app.settings.noiseButton) {
+    case NoiseButton::Transparency: return before == kNoiseTransparent ? 0 : kNoiseTransparent;
+    case NoiseButton::Nothing: return before;
+    case NoiseButton::Headset: break;
+    }
+    return -1;
+}
+
 // The display is open for the screensaver, for the visualizer, for add-on screens while the add-ons run and for
 // the app's own notices; its regular check runs while it is open.
 void UpdateDisplayUse() {
@@ -4853,9 +4870,18 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
                     ApplyUpdate(*g_app.features, g_app.headset, update);
                     // Changes the app made itself are already in the state; a status reply is no news.
                     const int changed = g_app.headset.values[kNoiseControlCommand];
+                    if (update.fromEvent && update.command == kNoiseCancellingLevel) {
+                        g_app.noiseLevelTick = GetTickCount64();
+                    }
                     if (update.fromEvent && update.command == kNoiseControlCommand && noise >= 0 && changed != noise) {
-                        Log("noise control %d on the headset", changed);
-                        ShowNoiseControl(changed);
+                        if (const int mode = NoiseButtonMode(noise, changed, GetTickCount64()); mode >= 0) {
+                            Log("noise control %d by the headset's button, set to %d", changed, mode);
+                            g_app.host.OnHeadsetSetting(kNoiseControlCommand, mode);
+                            ShowNoiseControl(mode);
+                        } else {
+                            Log("noise control %d on the headset", changed);
+                            ShowNoiseControl(changed);
+                        }
                     }
                     if (g_app.headset.bluetooth != bluetooth) {
                         Log("Bluetooth %s (mode %d, link %d)", BluetoothName(g_app.headset.bluetooth), update.value,

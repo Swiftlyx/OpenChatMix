@@ -57,8 +57,6 @@ constexpr SettingSection kNovaProWiredSections[] = {
 // Noise control of the Nova Pro Wireless and Nova Elite base stations: off, transparency or ANC, with the
 // transparency level (and on the Elite the ANC level).
 constexpr uint8_t kNoiseMode = kNoiseControlCommand;
-constexpr uint8_t kNoiseTransparent = 1;
-constexpr uint8_t kNoiseCancelling = 2;
 constexpr uint8_t kTransparencyLevel = 0xB9;
 constexpr SettingOption kNoiseModes[] = {{0, OptOff}, {kNoiseTransparent, OptTransparency},
                                          {kNoiseCancelling, OptNoiseCancelling}};
@@ -393,7 +391,8 @@ constexpr SettingSpec kEliteMicrophone[] = {
 };
 constexpr SettingSpec kEliteNoise[] = {
     {kNoiseMode, NoiseMode, SettingKind::Choice, 0, 2, kNoiseModes},
-    {0xB8, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kThreeLevels, kNoiseMode, kNoiseCancelling},
+    {kNoiseCancellingLevel, NoiseCancellingLevel, SettingKind::Choice, 1, 3, kThreeLevels, kNoiseMode,
+     kNoiseCancelling},
     {kTransparencyLevel, TransparencyLevel, SettingKind::Slider, 1, 10, {}, kNoiseMode, kNoiseTransparent},
 };
 constexpr SettingSpec kEliteSound[] = {
@@ -453,6 +452,7 @@ const HeadsetFeatures kNovaElite{
     .batteryQuery = kStatusRequest,
     .experimental = true,
     .volumeKnob = true,
+    .noiseButton = true,
 };
 
 constexpr uint8_t kNovaProEventReportId = 0x07;
@@ -815,7 +815,7 @@ std::vector<HeadsetUpdate> ParseEliteReport(const uint8_t* data, size_t size) {
                 setting(kNoiseMode, data[10]),
                 setting(0xBF, data[11]),
                 setting(0xC1, data[12]),
-                setting(0xB8, data[16])};
+                setting(kNoiseCancellingLevel, data[16])};
     }
     if (size >= 6 && data[0] == kEliteCommandReportId && data[1] == kEliteDisplayQuery) {
         return {setting(0x83, data[2]), setting(0x85, data[3]), setting(0x89, data[5])};
