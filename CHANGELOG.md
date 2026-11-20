@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.4 — 2026-11-20
+
+- **Nova Elite: what a single press of the headset's button does** (experimental): a choice under *Noise control* on
+  the *Headset* tab. The headset's own single press turns ANC on and off; OpenChatMix can turn transparency on and
+  off instead, or keep the mode as it was. It tells the press apart from the base station's menu by the ANC level
+  the headset reports just before the mode, and switches the mode right after the headset does, so ANC still turns
+  on for a moment, and only while OpenChatMix runs. A double press and the menu work as before. Asked for by
+  [@Lasfecas](https://github.com/Lasfecas) in [#18](https://github.com/Swiftlyx/OpenChatMix/issues/18), with the
+  captures it is built on.
+
 ## 3.0.3 — 2026-11-10
 
 - **Keep on while sound plays** (Nova Pro): a switch under the screensaver's *Start after* on the *Headset* tab.
