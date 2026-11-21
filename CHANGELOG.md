@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.5 — 2026-11-21
+
+- Equalizer frequencies from 1 kHz on show in kHz with the decimals they need, as GG shows them (15.35 kHz, where it
+  used to show 15 kHz), and dragging a band or its − and + buttons move it in 10 Hz steps above 1 kHz, where it was
+  100 Hz above 10 kHz. Typing an exact value worked before and still does. Asked about by
+  [@Lasfecas](https://github.com/Lasfecas) in [#18](https://github.com/Swiftlyx/OpenChatMix/issues/18).
+- Nova Elite: the hint for the single press of the headset's button says that a press while ANC is on still turns it
+  off. The headset reports that the same way as the base station's menu, so OpenChatMix cannot tell the two apart.
+
 ## 3.0.4 — 2026-11-20
 
 - **Nova Elite: what a single press of the headset's button does** (experimental): a choice under *Noise control* on
