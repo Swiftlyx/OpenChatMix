@@ -18,6 +18,8 @@
 #include "process_meters.h"
 #include "settings.h"
 
+struct DeviceModel;
+
 // Applies ChatMix levels to the apps on the target render endpoints through the per-channel volume of
 // their audio sessions. Windows multiplies it with the session volume, which the volume mixer shows
 // and which stays the user's own. Windows also persists the channel volume per app, so a session keeps
@@ -33,9 +35,9 @@ public:
     bool Init(HWND notifyWindow);
     void Shutdown();
 
-    // Targets the render endpoints of a SteelSeries product, or the default output when empty
-    // or when the product exposes no endpoint.
-    void SetTarget(std::optional<uint16_t> productId);
+    // Targets the render endpoints of a SteelSeries headset model, or the default output without one
+    // or when the headset exposes no endpoint. The model must outlive the mixer (SupportedDevices()).
+    void SetTarget(const DeviceModel* model);
     // Further endpoints whose apps are listed and get their levels, e.g. the virtual Game and Chat devices.
     // heard: what plays there reaches the target too (virtual devices bridged to it), so it counts in
     // PeakLevel(); speakers a group plays on directly do not.
@@ -108,7 +110,7 @@ private:
     void ReleaseWhere(Pred&& pred);
 
     HWND notify_ = nullptr;
-    std::optional<uint16_t> target_;
+    const DeviceModel* target_ = nullptr;
     std::vector<std::wstring> extraIds_;
     bool extraHeard_ = true;
     Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator_;

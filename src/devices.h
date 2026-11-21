@@ -77,10 +77,17 @@ struct DeviceModel {
     uint8_t statusGameOffset;  // NovaStatus only: offsets inside the b0 status report.
     uint8_t statusChatOffset;
     uint8_t statusBatteryMax = 100;  // NovaStatus only: full battery in the b0 report; 4 on five-step models.
+    // The USB device that holds the sound when it is not the one with productId (the Arctis Pro Wireless base
+    // station: 1290 for its commands, 1294 for its Game and Chat devices); 0 when both are one.
+    uint16_t audioProductId = 0;
 };
 
 std::span<const DeviceModel> SupportedDevices();
 const DeviceModel* FindDeviceModel(uint16_t productId);
+// The model whose playback or recording devices sit on that USB device: by productId or audioProductId.
+const DeviceModel* FindAudioModel(uint16_t productId);
+// A playback or recording device of the model, by the SteelSeries product ID of its USB device.
+bool IsModelAudio(const DeviceModel& model, std::optional<uint16_t> productId);
 // The headset mixes Game and Chat itself by its dial, so the app adds no balance of its own.
 bool MixesInHeadset(const DeviceModel& model);
 // The position of that dial can be read; the Arctis Pro Wireless keeps its knob to itself.

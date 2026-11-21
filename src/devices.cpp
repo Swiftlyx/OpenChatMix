@@ -76,7 +76,7 @@ constexpr DeviceModel kModels[] = {
     {0x12D5, L"Arctis 7P", Arctis1Legacy, Arctis7XP, 0, 0},
     {0x12C2, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
     {0x12C4, L"Arctis 9", Arctis9Legacy, Arctis9, 0, 0},
-    {0x1290, L"Arctis Pro Wireless", ProWirelessLegacy, ArctisProWireless, 0, 0},
+    {0x1290, L"Arctis Pro Wireless", ProWirelessLegacy, ArctisProWireless, 0, 0, 100, 0x1294},
     {0x12EC, L"Arctis Nova 3", Nova3Wired, Nova3, 0, 0},
     {0x1250, L"Arctis 5", Arctis5Legacy, Arctis5, 0, 0},
     {0x1251, L"Arctis 5 Dota 2 Edition", Arctis5Legacy, Arctis5, 0, 0},
@@ -138,6 +138,20 @@ const DeviceModel* FindDeviceModel(uint16_t productId) {
         }
     }
     return nullptr;
+}
+
+const DeviceModel* FindAudioModel(uint16_t productId) {
+    for (const auto& model : kModels) {
+        if (IsModelAudio(model, productId)) {
+            return &model;
+        }
+    }
+    return nullptr;
+}
+
+bool IsModelAudio(const DeviceModel& model, std::optional<uint16_t> productId) {
+    return productId && *productId != 0 &&
+           (*productId == model.productId || *productId == model.audioProductId);
 }
 
 std::optional<uint16_t> ParseSteelSeriesProductId(std::wstring_view path) {

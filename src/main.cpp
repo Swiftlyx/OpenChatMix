@@ -1057,7 +1057,7 @@ HeadsetSides MixingHeadsetSides(const std::vector<AudioEndpoint>& endpoints) {
         return sides;
     }
     for (const auto& endpoint : endpoints) {
-        if (endpoint.steelSeriesProductId != g_app.device.Model()->productId) {
+        if (!IsModelAudio(*g_app.device.Model(), endpoint.steelSeriesProductId)) {
             continue;
         }
         // The parentheses of the Windows name hold the headset's own name for the device, which is not translated.
@@ -1095,7 +1095,7 @@ std::wstring RoutingOutputId(const std::vector<AudioEndpoint>& endpoints) {
             return sides.game;
         }
         for (const auto& endpoint : endpoints) {
-            if (endpoint.steelSeriesProductId == g_app.device.Model()->productId) {
+            if (IsModelAudio(*g_app.device.Model(), endpoint.steelSeriesProductId)) {
                 return endpoint.id;
             }
         }
@@ -1191,7 +1191,7 @@ void RefreshOutputName() {
             g_app.outputName = endpoint.name;
             g_app.outputLink = EndpointLinkOf(endpoint.id);
             g_app.outputOnHeadset =
-                g_app.device.IsOpen() && endpoint.steelSeriesProductId == g_app.device.Model()->productId;
+                g_app.device.IsOpen() && IsModelAudio(*g_app.device.Model(), endpoint.steelSeriesProductId);
         }
     }
     FindCompanion(endpoints);
@@ -2994,7 +2994,7 @@ void ProbeUnsupportedHeadsets() {
     endpoints.insert(endpoints.end(), captures.begin(), captures.end());
     for (const AudioEndpoint& endpoint : endpoints) {
         const std::optional<uint16_t> productId = endpoint.steelSeriesProductId;
-        if (productId && !FindDeviceModel(*productId) &&
+        if (productId && !FindAudioModel(*productId) &&
             std::find(productIds.begin(), productIds.end(), *productId) == productIds.end()) {
             productIds.push_back(*productId);
         }
@@ -3049,7 +3049,7 @@ void ConnectDevice() {
         g_app.headset = HeadsetState();
         g_app.dialLevels.reset();
         LoadHeadsetState(g_app.iniPath, model.productId, *g_app.features, g_app.headset);
-        g_app.mixer.SetTarget(model.productId);
+        g_app.mixer.SetTarget(&model);
         // A knob that mixes in the headset and is not read leaves the panel at the middle.
         g_app.levels = MixesInHeadset(model) && !ReportsDial(model) ? Levels{} : DialLevels(g_app.levels);
         g_app.panel->SetLevels(g_app.levels);
@@ -3061,7 +3061,7 @@ void ConnectDevice() {
         SetTimer(g_app.window, kTimerProfileHeadset, kProfileHeadsetDelayMs, nullptr);
     } else {
         Log("no supported headset");
-        g_app.mixer.SetTarget(std::nullopt);
+        g_app.mixer.SetTarget(nullptr);
         ProbeUnsupportedHeadsets();
     }
     g_app.panel->SetBalanceDial(HasBalanceDial());
@@ -3115,7 +3115,7 @@ void HandleDeviceLost() {
     g_app.device.Close();
     UpdateAddOns();
     g_app.features = nullptr;
-    g_app.mixer.SetTarget(std::nullopt);
+    g_app.mixer.SetTarget(nullptr);
     g_app.panel->SetBalanceDial(false);
     if (!g_app.settings.routing.enabled) {
         UpdateMixerEndpoints();
@@ -3180,9 +3180,8 @@ std::optional<GameProfile> ActiveProfile() {
 // The headset equalizer preset a profile sets on the connected headset: from the headset's own settings in the
 // profile, otherwise from those for all devices.
 int ProfileHeadsetEq(const GameProfile& profile) {
-    const uint16_t productId = g_app.device.Model()->productId;
     for (const auto& [device, sound] : profile.devices) {
-        if (SteelSeriesProductOf(device) == productId) {
+        if (IsModelAudio(*g_app.device.Model(), SteelSeriesProductOf(device))) {
             return sound.headsetEq;
         }
     }
@@ -4188,7 +4187,7 @@ std::vector<AudioEndpoint> PreferredMics() {
 // stays in Windows as a playback device.
 bool HeadsetSwitchedOff(const AudioEndpoint& endpoint) {
     return g_app.device.IsOpen() && g_app.headset.headsetOff &&
-           endpoint.steelSeriesProductId == g_app.device.Model()->productId;
+           IsModelAudio(*g_app.device.Model(), endpoint.steelSeriesProductId);
 }
 
 // The connected devices the order may switch to: PreferredOutputs() without the excluded ones.

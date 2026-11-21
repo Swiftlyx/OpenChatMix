@@ -1028,7 +1028,7 @@ void Panel::DrawProfileEdit() {
     // other devices have none.
     const HeadsetFeatures* headset = features_;
     if (!device.empty()) {
-        const DeviceModel* model = FindDeviceModel(SteelSeriesProductOf(device));
+        const DeviceModel* model = FindAudioModel(SteelSeriesProductOf(device));
         headset = model ? &FeaturesFor(model->family) : nullptr;
     }
     if (headset && headset->equalizer.bandsCommand && headset->equalizer.presetCommand) {

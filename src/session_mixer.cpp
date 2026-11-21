@@ -173,8 +173,8 @@ void SessionMixer::Shutdown() {
     enumerator_.Reset();
 }
 
-void SessionMixer::SetTarget(std::optional<uint16_t> productId) {
-    target_ = productId;
+void SessionMixer::SetTarget(const DeviceModel* model) {
+    target_ = model;
     Rebind();
 }
 
@@ -214,8 +214,7 @@ std::vector<SessionMixer::Endpoint> SessionMixer::ResolveEndpoints() {
             if (FAILED(devices->Item(i, &device))) {
                 continue;
             }
-            const auto productId = ParseSteelSeriesProductId(EndpointAdapterId(device.Get()));
-            if (productId && *productId == *target_) {
+            if (IsModelAudio(*target_, ParseSteelSeriesProductId(EndpointAdapterId(device.Get())))) {
                 add(device.Get(), EndpointFriendlyName(device.Get()));
             }
         }
