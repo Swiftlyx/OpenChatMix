@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.6 — 2026-11-21
+
+- Arctis Pro Wireless: OpenChatMix finds the headset's Game and Chat devices. The base station is two USB devices,
+  `1290` for its commands and `1294` for its sound, and OpenChatMix looked for Game and Chat only on the first. So
+  it did not send the Chat group to the Chat device and balanced the sound itself, as on other headphones, while the
+  base station's knob turned the chat down together with the game. Reported by
+  [@Aude-Dog](https://github.com/Aude-Dog) in [#16](https://github.com/Swiftlyx/OpenChatMix/issues/16).
+
 ## 3.0.5 — 2026-11-21
 
 - Equalizer frequencies from 1 kHz on show in kHz with the decimals they need, as GG shows them (15.35 kHz, where it
