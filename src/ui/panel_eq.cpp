@@ -38,15 +38,18 @@ constexpr Text kSmartVolumeLabels[kSmartVolumeCount] = {Text::EffectOff, Text::S
                                                         Text::SmartLoud};
 constexpr float kEffectStep = 1.0f;
 
+// Whole hertz; from 1 kHz on in kHz with only the decimals the value needs (15.35 kHz).
 std::wstring FormatFrequency(float hz) {
     wchar_t text[32];
+    hz = std::round(hz);
     if (hz >= 1000.0f) {
-        swprintf_s(text, hz >= 10000.0f ? L"%.0f kHz" : L"%.1f kHz", hz / 1000.0f);
+        swprintf_s(text, L"%.3f", hz / 1000.0f);
         std::wstring result = text;
-        if (const size_t zero = result.find(L".0 "); zero != std::wstring::npos) {
-            result.erase(zero, 2);
+        result.erase(result.find_last_not_of(L'0') + 1);
+        if (result.back() == L'.') {
+            result.pop_back();
         }
-        return result;
+        return result + L" kHz";
     }
     swprintf_s(text, L"%.0f Hz", hz);
     return text;
@@ -64,14 +67,10 @@ std::wstring FormatQ(float q) {
     return text;
 }
 
-// Whole hertz below 1 kHz, then three significant digits.
+// Whole hertz below 1 kHz, then tens of hertz.
 float RoundFrequency(float hz) {
     hz = std::clamp(hz, kEqMinFrequency, kEqMaxFrequency);
-    if (hz < 1000.0f) {
-        return std::round(hz);
-    }
-    const float step = hz < 10000.0f ? 10.0f : 100.0f;
-    return std::round(hz / step) * step;
+    return hz < 1000.0f ? std::round(hz) : std::round(hz / 10.0f) * 10.0f;
 }
 
 struct ChannelColors {

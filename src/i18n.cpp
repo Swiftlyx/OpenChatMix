@@ -606,7 +606,7 @@ constexpr std::array<const wchar_t*, kCount> kEnglish = {
     L"ANC on/off",  // NoiseButtonHeadset
     L"Transparency on/off",  // NoiseButtonTransparency
     L"Nothing",  // NoiseButtonNothing
-    L"Experimental, and only while OpenChatMix runs: it switches the mode right after the headset does, so ANC still turns on for a moment. A double press and the base station's menu work as before.",  // NoiseButtonHint
+    L"Experimental, and only while OpenChatMix runs: when a press turns ANC on, it switches the mode right after, so ANC still turns on for a moment. A press while ANC is on still turns it off, as the headset reports that just like the base station's menu. A double press and the menu work as before.",  // NoiseButtonHint
 };
 
 constexpr std::array<const wchar_t*, kCount> kUkrainian = {
@@ -1207,7 +1207,7 @@ constexpr std::array<const wchar_t*, kCount> kUkrainian = {
     L"ANC увімк./вимк.",
     L"Прозорість увімк./вимк.",
     L"Нічого",
-    L"Експериментально і лише поки OpenChatMix працює: після натискання кнопки гарнітури він одразу перемикає режим, тож ANC на мить таки вмикається. Подвійне натискання й меню базової станції працюють як і раніше.",
+    L"Експериментально і лише поки OpenChatMix працює: коли натискання кнопки гарнітури вмикає ANC, він одразу перемикає режим, тож ANC на мить таки вмикається. Натискання, коли ANC увімкнено, все одно його вимикає: гарнітура повідомляє про це так само, як меню базової станції. Подвійне натискання й меню працюють як і раніше.",
 };
 
 constexpr std::array<const wchar_t*, kCount> kTurkish = {
@@ -1808,7 +1808,7 @@ constexpr std::array<const wchar_t*, kCount> kTurkish = {
     L"ANC aç/kapat",
     L"Şeffaflık aç/kapat",
     L"Hiçbir şey",
-    L"Deneysel ve yalnızca OpenChatMix çalışırken: mod kulaklıktan hemen sonra değiştirilir, bu yüzden ANC yine de bir an açılır. Çift basış ve baz istasyonunun menüsü eskisi gibi çalışır.",
+    L"Deneysel ve yalnızca OpenChatMix çalışırken: kulaklığın düğmesine basmak ANC'yi açtığında mod hemen ardından değiştirilir, bu yüzden ANC yine de bir an açılır. ANC açıkken basmak onu yine kapatır: kulaklık bunu baz istasyonunun menüsüyle aynı şekilde bildirir. Çift basış ve menü eskisi gibi çalışır.",
 };
 
 constexpr bool IsComplete(const std::array<const wchar_t*, kCount>& table) {
