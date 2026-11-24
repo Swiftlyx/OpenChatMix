@@ -26,6 +26,26 @@ inline std::optional<std::wstring> ChooseDevice(const std::vector<std::wstring>&
     return std::nullopt;
 }
 
+// The device to go back to when the default moved to a device that connected moments ago, while the device in use
+// before is still connected and placed above it in the order: Windows and some drivers make a device the default
+// when it connects, which is no choice of the user's. arrived: the devices that connected moments ago. Devices the
+// order does not place keep the switch.
+inline std::optional<std::wstring> ArrivalSwitchBack(const std::vector<std::wstring>& connected,
+                                                     const std::set<std::wstring>& arrived, const std::wstring& last,
+                                                     const std::wstring& current,
+                                                     const std::vector<std::wstring>& order) {
+    if (last.empty() || current == last || !arrived.count(current) ||
+        std::find(connected.begin(), connected.end(), last) == connected.end()) {
+        return std::nullopt;
+    }
+    const auto lastPlace = std::find(order.begin(), order.end(), last);
+    const auto currentPlace = std::find(order.begin(), order.end(), current);
+    if (lastPlace == order.end() || currentPlace == order.end() || lastPlace > currentPlace) {
+        return std::nullopt;
+    }
+    return last;
+}
+
 // The devices a channel may play on, most preferred first: the connected devices its order lists, in that order, then
 // the other connected ones as connected has them. Excluded devices are left out.
 inline std::vector<std::wstring> ChannelDevices(const std::vector<std::wstring>& connected,

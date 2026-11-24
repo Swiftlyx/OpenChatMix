@@ -119,6 +119,9 @@ constexpr UINT kRoutingRetryMs = 3000;
 constexpr UINT kReconnectDelayMs = 1500;  // Lets all interfaces of a freshly plugged device enumerate.
 constexpr UINT kResumeDelayMs = 3000;     // Headsets re-enumerate after sleep.
 constexpr UINT kRebindDelayMs = 500;      // Coalesces bursts of endpoint notifications.
+// A device that connected this recently and became the default was made so by Windows or its driver; Bluetooth
+// devices may take a moment after they appear.
+constexpr ULONGLONG kArrivalSwitchMs = 5000;
 constexpr UINT kGgWatchMs = 5000;
 constexpr UINT kIdleCheckMs = 250;
 constexpr UINT kOutputBatteryPollMs = 60000;  // A Bluetooth output's battery, as Windows reports it.
@@ -305,8 +308,10 @@ struct App {
     bool micPaused = false;
     std::set<std::wstring> knownOutputs;  // Connected playback devices at the last check.
     std::wstring lastOutput;              // The output in use at the last check.
-    std::set<std::wstring> knownMics;     // The same for the microphones.
+    std::map<std::wstring, ULONGLONG> outputArrivals;  // Devices that connected lately, by the tick first seen.
+    std::set<std::wstring> knownMics;                  // The same for the microphones.
     std::wstring lastMic;
+    std::map<std::wstring, ULONGLONG> micArrivals;
     ULONGLONG lastSoundTick = 0;
     ULONGLONG lastActivityTick = 0;  // Changes made in OpenChatMix that the headset display shows.
     ULONGLONG idlePreviewStart = 0;
@@ -4404,8 +4409,32 @@ void NextMicrophone() {
     }
 }
 
+// The devices among connected that connected within kArrivalSwitchMs; arrivals keeps when each was first seen.
+// Nothing arrives at the first check (known is empty), when every device is new.
+std::set<std::wstring> RecentArrivals(std::map<std::wstring, ULONGLONG>& arrivals, const std::set<std::wstring>& known,
+                                      const std::vector<std::wstring>& connected) {
+    const ULONGLONG now = GetTickCount64();
+    std::erase_if(arrivals, [&](const auto& arrival) {
+        return now - arrival.second > kArrivalSwitchMs ||
+               std::find(connected.begin(), connected.end(), arrival.first) == connected.end();
+    });
+    if (!known.empty()) {
+        for (const std::wstring& id : connected) {
+            if (!known.count(id)) {
+                arrivals.emplace(id, now);
+            }
+        }
+    }
+    std::set<std::wstring> recent;
+    for (const auto& arrival : arrivals) {
+        recent.insert(arrival.first);
+    }
+    return recent;
+}
+
 // After devices came or went: the most preferred device left when the output disconnected, and the
-// most preferred device again when it reconnects. A device the user picks by hand stays otherwise.
+// most preferred device again when it reconnects. A device the user picks by hand stays otherwise, but not one
+// that Windows made the default as it connected while a device placed above it plays (issue #20).
 void FollowOutputPriority() {
     const DevicePriority& settings = g_app.settings.outputs;
     std::vector<AudioEndpoint> outputs = PreferredOutputs();
@@ -4415,6 +4444,7 @@ void FollowOutputPriority() {
         connected.push_back(endpoint.id);
     }
     const std::wstring current = CurrentOutput();
+    const std::set<std::wstring> arrived = RecentArrivals(g_app.outputArrivals, g_app.knownOutputs, connected);
     const std::optional<std::wstring> target = ChooseDevice(connected, g_app.knownOutputs, g_app.lastOutput,
                                                             settings.order, settings.switchOnLoss,
                                                             settings.returnToPreferred);
@@ -4423,6 +4453,16 @@ void FollowOutputPriority() {
     if (target && *target != current && !IsExcludedOutput(*target)) {
         SwitchOutput(outputs.front(), true);
         return;
+    }
+    if (const auto back = ArrivalSwitchBack(connected, arrived, g_app.lastOutput, current, settings.order);
+        back && !IsExcludedOutput(*back)) {
+        for (const auto& endpoint : outputs) {
+            if (endpoint.id == *back) {
+                Log("the default output moved to a device that just connected");
+                SwitchOutput(endpoint, false);
+                return;
+            }
+        }
     }
     g_app.lastOutput = current;
     PushOutputs();
@@ -4444,12 +4484,23 @@ void FollowMicPriority() {
     const bool cable = std::any_of(captures.begin(), captures.end(), [&current](const AudioEndpoint& endpoint) {
         return endpoint.id == current && IsVirtualEndpoint(endpoint);
     });
+    const std::set<std::wstring> arrived = RecentArrivals(g_app.micArrivals, g_app.knownMics, connected);
     const std::optional<std::wstring> target = ChooseDevice(connected, g_app.knownMics, g_app.lastMic, settings.order,
                                                             settings.switchOnLoss, settings.returnToPreferred);
     g_app.knownMics = std::set<std::wstring>(connected.begin(), connected.end());
     if (!cable && target && *target != current && !IsExcluded(settings, *target)) {
         SwitchMic(mics.front(), true);
         return;
+    }
+    if (const auto back = ArrivalSwitchBack(connected, arrived, g_app.lastMic, current, settings.order);
+        !cable && back && !IsExcluded(settings, *back)) {
+        for (const auto& endpoint : mics) {
+            if (endpoint.id == *back) {
+                Log("the default microphone moved to a device that just connected");
+                SwitchMic(endpoint, false);
+                return;
+            }
+        }
     }
     g_app.lastMic = current;
     PushMics();
@@ -5177,6 +5228,12 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In
     // and saved its settings.
     int argc = 0;
     if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc)) {
+        // The administrator half of an update into a protected folder does nothing else.
+        if (argc == 4 && wcscmp(argv[1], kInstallUpdateFlag) == 0) {
+            const int code = RunElevatedInstall(argv[2], argv[3]);
+            LocalFree(argv);
+            return code;
+        }
         for (int i = 1; i + 1 < argc; ++i) {
             if (wcscmp(argv[i], L"--after-update") == 0 || wcscmp(argv[i], L"--restart") == 0) {
                 if (HANDLE previous = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(_wtoi(argv[i + 1])))) {

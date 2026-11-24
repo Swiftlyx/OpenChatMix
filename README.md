@@ -191,6 +191,9 @@ native settings, so GG and Sonar can stay closed:
   one, the sound that plays on another output meanwhile, such as Bluetooth headphones, gets the balance too.
 - **Device priority.** Put the connected output devices in your order of preference; optionally the sound
   moves to the next one when the output disconnects and back when the preferred device reconnects.
+  When Windows switches to a device as it connects while one placed above it plays, the sound goes back
+  ([#20](https://github.com/Swiftlyx/OpenChatMix/issues/20) by [@JacobBrown4](https://github.com/JacobBrown4));
+  the microphones work the same way.
   The *Next output device* hotkey follows the same order. Disconnected and disabled devices and
   virtual cables are not listed. Devices you never want to switch to go into *Never switch to*. Game, Chat,
   Media and Aux can each get an order of their own as well (see [Virtual device mode](#virtual-device-mode)).
@@ -234,7 +237,8 @@ native settings, so GG and Sonar can stay closed:
   the warning can be hidden or turned off, and never appears for other headsets.
 - **Updates from GitHub** (optional): once a day OpenChatMix asks the project's GitHub releases for
   a newer version. *Install* downloads it, checks it against the release's `SHA256SUMS.txt` and
-  restarts. Turn the check off in *Settings → Updates*.
+  restarts. In a folder only administrators may write to, such as Program Files or the root of the
+  Windows drive, Windows asks for permission first. Turn the check off in *Settings → Updates*.
 - No telemetry. The update check is the only network access.
 
 <p align="center">

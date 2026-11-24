@@ -1,6 +1,8 @@
 #include "updater.h"
 
 #include <bcrypt.h>
+#include <objbase.h>
+#include <shellapi.h>
 #include <winhttp.h>
 
 #include <algorithm>
@@ -11,6 +13,7 @@
 #include <vector>
 
 #include "app.h"
+#include "autostart_task.h"
 #include "json.h"
 #include "log.h"
 #include "settings.h"
@@ -22,6 +25,10 @@ constexpr size_t kMaxJsonBytes = 1 << 20;
 constexpr size_t kMaxExeBytes = 32 << 20;
 constexpr wchar_t kExeAsset[] = L"OpenChatMix.exe";
 constexpr wchar_t kSumsAsset[] = L"SHA256SUMS.txt";
+// The download handed to the administrator half, in the temp folder.
+constexpr wchar_t kStagedFile[] = L"OpenChatMix.exe.download";
+// How long the update waits for the administrator half, the consent prompt included.
+constexpr DWORD kElevatedInstallMs = 5 * 60 * 1000;
 
 struct InternetHandle {
     HINTERNET handle = nullptr;
@@ -213,12 +220,122 @@ bool WriteFileAll(const std::wstring& path, const std::string& data) {
                     written == data.size() && FlushFileBuffers(file);
     CloseHandle(file);
     if (!ok) {
+        const DWORD error = GetLastError();
         DeleteFileW(path.c_str());
+        SetLastError(error);
     }
     return ok;
 }
 
-bool Install(const UpdateRelease& release) {
+std::optional<std::string> ReadFileAll(const std::wstring& path, size_t limit) {
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return std::nullopt;
+    }
+    std::optional<std::string> data;
+    LARGE_INTEGER size{};
+    if (GetFileSizeEx(file, &size) && size.QuadPart > 0 && static_cast<unsigned long long>(size.QuadPart) <= limit) {
+        std::string bytes(static_cast<size_t>(size.QuadPart), '\0');
+        DWORD read = 0;
+        if (ReadFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr) && read == bytes.size()) {
+            data = std::move(bytes);
+        }
+    }
+    CloseHandle(file);
+    return data;
+}
+
+// Puts exe in place of the running executable: written beside it as "<exe>.new", the running one renamed to
+// "<exe>.old" (a running executable can be renamed but not overwritten), then the new one moved in. Returns
+// ERROR_SUCCESS, or the error of the step that failed once the earlier steps are undone.
+DWORD PlaceExecutable(const std::string& exe) {
+    const std::wstring path = ExePath();
+    const std::wstring fresh = path + L".new";
+    const std::wstring old = path + L".old";
+    auto lastError = [] {
+        const DWORD error = GetLastError();
+        return error != ERROR_SUCCESS ? error : ERROR_GEN_FAILURE;
+    };
+    if (!WriteFileAll(fresh, exe)) {
+        const DWORD error = lastError();
+        Log("update: cannot write next to the executable, error %lu", error);
+        return error;
+    }
+    if (!MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        const DWORD error = lastError();
+        Log("update: cannot move the running executable, error %lu", error);
+        DeleteFileW(fresh.c_str());
+        return error;
+    }
+    if (!MoveFileExW(fresh.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        const DWORD error = lastError();
+        Log("update: cannot place the new executable, error %lu", error);
+        MoveFileExW(old.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+        DeleteFileW(fresh.c_str());
+        return error;
+    }
+    return ERROR_SUCCESS;
+}
+
+// A folder only administrators may write to: the checked download goes to the temp folder, and this
+// executable, started as administrator once the user agrees, checks it against the same hash and puts it in
+// place. The hash travels on the command line, so the file it checks is the one it writes.
+bool InstallElevated(HWND window, const std::string& exe, const std::string& hash) {
+    wchar_t temp[MAX_PATH + 1] = {};
+    const DWORD length = GetTempPathW(ARRAYSIZE(temp), temp);
+    if (length == 0 || length > MAX_PATH) {
+        Log("update: no temp folder, error %lu", GetLastError());
+        return false;
+    }
+    const std::wstring staged = std::wstring(temp) + kStagedFile;
+    if (!WriteFileAll(staged, exe)) {
+        Log("update: cannot write to the temp folder, error %lu", GetLastError());
+        return false;
+    }
+    const std::wstring path = ExePath();
+    const std::wstring parameters =
+        std::wstring(kInstallUpdateFlag) + L" \"" + staged + L"\" " + std::wstring(hash.begin(), hash.end());
+    SHELLEXECUTEINFOW info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+    info.hwnd = window;
+    info.lpVerb = L"runas";
+    info.lpFile = path.c_str();
+    info.lpParameters = parameters.c_str();
+    info.nShow = SW_HIDE;
+    Log("update: the folder needs administrator rights");
+    // ShellExecuteEx may hand the request to shell extensions, which need COM on this thread.
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool started = ShellExecuteExW(&info) && info.hProcess;
+    const DWORD startError = GetLastError();
+    if (SUCCEEDED(com)) {
+        CoUninitialize();
+    }
+    if (!started) {
+        if (startError == ERROR_CANCELLED) {
+            Log("update: administrator rights declined");
+        } else {
+            Log("update: cannot start as administrator, error %lu", startError);
+        }
+        DeleteFileW(staged.c_str());
+        return false;
+    }
+    DWORD code = ERROR_TIMEOUT;
+    const bool finished = WaitForSingleObject(info.hProcess, kElevatedInstallMs) == WAIT_OBJECT_0;
+    if (finished) {
+        GetExitCodeProcess(info.hProcess, &code);
+        DeleteFileW(staged.c_str());
+    }
+    CloseHandle(info.hProcess);
+    if (code != ERROR_SUCCESS) {
+        Log("update: the administrator install failed, error %lu", code);
+        return false;
+    }
+    return true;
+}
+
+bool Install(HWND window, const UpdateRelease& release) {
     if (release.exeUrl.empty() || release.sumsUrl.empty()) {
         Log("update: release %s has no executable or checksums", Utf8(release.version).c_str());
         return false;
@@ -235,23 +352,10 @@ bool Install(const UpdateRelease& release) {
         Log("update: download missing or checksum mismatch");
         return false;
     }
-    // A running executable can be renamed but not overwritten; it is deleted on the next start.
-    const std::wstring path = ExePath();
-    const std::wstring fresh = path + L".new";
-    const std::wstring old = path + L".old";
-    if (!WriteFileAll(fresh, *exe)) {
-        Log("update: cannot write next to the executable, error %lu", GetLastError());
-        return false;
-    }
-    if (!MoveFileExW(path.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        Log("update: cannot move the running executable, error %lu", GetLastError());
-        DeleteFileW(fresh.c_str());
-        return false;
-    }
-    if (!MoveFileExW(fresh.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-        Log("update: cannot place the new executable, error %lu", GetLastError());
-        MoveFileExW(old.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
-        DeleteFileW(fresh.c_str());
+    const DWORD placed = PlaceExecutable(*exe);
+    // Elevation does not help an administrator who still may not write there.
+    if (placed != ERROR_SUCCESS && (placed != ERROR_ACCESS_DENIED || IsElevated() ||
+                                    !InstallElevated(window, *exe, *expected))) {
         return false;
     }
     Log("update: %s installed", Utf8(release.version).c_str());
@@ -285,7 +389,30 @@ void CheckForUpdate(HWND window, UINT message, bool manual) {
 }
 
 void InstallUpdate(HWND window, UINT message, const UpdateRelease& release) {
-    std::thread([window, message, release] { PostMessageW(window, message, Install(release) ? 1 : 0, 0); }).detach();
+    std::thread([window, message, release] {
+        PostMessageW(window, message, Install(window, release) ? 1 : 0, 0);
+    }).detach();
+}
+
+int RunElevatedInstall(const std::wstring& file, const std::wstring& hash) {
+    const auto data = ReadFileAll(file, kMaxExeBytes);
+    if (!data) {
+        return ERROR_READ_FAULT;
+    }
+    std::string expected = Utf8(hash);
+    std::transform(expected.begin(), expected.end(), expected.begin(),
+                   [](char c) { return static_cast<char>(tolower(static_cast<unsigned char>(c))); });
+    const auto actual = Sha256Hex(*data);
+    if (!actual || expected.size() != 64 || *actual != expected) {
+        return ERROR_INVALID_DATA;
+    }
+    if (const DWORD placed = PlaceExecutable(*data); placed != ERROR_SUCCESS) {
+        return static_cast<int>(placed);
+    }
+    // Only administrators may delete the old executable there, and the updated app runs without those rights:
+    // Windows deletes it on the next restart instead.
+    MoveFileExW((ExePath() + L".old").c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+    return 0;
 }
 
 void CleanUpAfterUpdate() {
