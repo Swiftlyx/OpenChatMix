@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.7 — 2026-11-24
+
+- **Updates in a protected folder**: when OpenChatMix sits in a folder only administrators may write to, such as
+  Program Files or the root of the Windows drive, *Install* asks Windows for permission and puts the new version in
+  place. Before, the update failed there. OpenChatMix checks the download against the release's `SHA256SUMS.txt` as
+  before, and the part that runs as administrator checks it once more before it writes. Reported by
+  [@Lasfecas](https://github.com/Lasfecas) in [#18](https://github.com/Swiftlyx/OpenChatMix/issues/18).
+- **Device priority**: when Windows or a device's driver makes a device the default as it connects, while a device
+  placed above it in the list plays, the sound goes back to that device; the microphones work the same way. Before,
+  OpenChatMix kept the switch as if you had picked the device. Devices the list does not place yet keep the switch.
+  Reported by [@JacobBrown4](https://github.com/JacobBrown4), who found the cause in the source, in
+  [#20](https://github.com/Swiftlyx/OpenChatMix/issues/20).
+
 ## 3.0.6 — 2026-11-21
 
 - Arctis Pro Wireless: OpenChatMix finds the headset's Game and Chat devices. The base station is two USB devices,
